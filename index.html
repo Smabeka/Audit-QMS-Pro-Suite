@@ -1,501 +1,392 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Audit Quality Management</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>AuditQMS Pro Suite</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-  :root{
-    --bg:#f7f5ee; --paper:#ffffff; --line:#e2dbc9; --line2:#eee7d5; --ink:#2a2620;
-    --muted:#8a8168; --navy:#1c2b4a; --navyBg:#e4e9f2; --rust:#9b3f28; --rustBg:#f6e4dd;
-    --green:#3f6b2e; --greenBg:#e6ede0; --amber:#8a5a10; --amberBg:#faedd4;
-  }
-  *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Public Sans',sans-serif;}
-  h1,h2,h3,.serif{font-family:'Fraunces',serif;}
-  .wrap{max-width:900px;margin:0 auto;padding:0 20px;}
-  header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,245,238,.95);backdrop-filter:blur(6px);z-index:10;}
-  .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;}
-  .brand{display:flex;align-items:center;gap:10px;}
-  .logo{width:32px;height:32px;border-radius:8px;background:var(--navy);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;}
-  .brand h1{font-size:15px;margin:0;color:var(--navy);}
-  .brand p{font-size:10px;color:var(--muted);margin:0;text-transform:uppercase;letter-spacing:.05em;}
-  nav{display:flex;gap:4px;}
-  nav button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit;}
-  nav button.active{color:var(--rust);border-color:var(--rust);}
-  main{padding:24px 0 60px;}
-  .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(30,25,15,.04);}
-  .p4{padding:16px;}
-  .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;}
-  @media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr);}}
-  .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px;}
-  .stat-value{font-size:24px;font-family:'Fraunces',serif;color:var(--navy);}
-  input,select{background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:inherit;width:100%;}
-  input:focus,select:focus{outline:none;border-color:var(--rust);box-shadow:0 0 0 3px rgba(155,63,40,.12);}
-  label.field{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:14px;cursor:pointer;border:none;font-family:inherit;}
-  .btn-primary{background:var(--navy);color:#fff;font-weight:500;}
-  .btn-primary:hover{background:#16223b;}
-  .btn-ghost{background:transparent;border:1px solid var(--line);color:#4a4535;}
-  .btn-ghost:hover{background:#efe9dc;}
-  .btn-danger{background:transparent;border:1px solid #e8c3b5;color:var(--rust);}
-  .btn-danger:hover{background:var(--rustBg);}
-  .tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid;font-size:11px;font-weight:500;}
-  .tag-neutral{background:#efe9dc;color:#5c5540;border-color:#ddd4bc;}
-  .tag-rust{background:var(--rustBg);color:var(--rust);border-color:#e8c3b5;}
-  .tag-green{background:var(--greenBg);color:var(--green);border-color:#c7dab8;}
-  .tag-navy{background:var(--navyBg);color:var(--navy);border-color:#c3cee2;}
-  .tag-amber{background:var(--amberBg);color:var(--amber);border-color:#efd6a0;}
-  .grid2{display:grid;grid-template-columns:1fr;gap:12px;}
-  @media(min-width:640px){.grid2{grid-template-columns:1fr 1fr;}}
-  .grid3{display:grid;grid-template-columns:1fr;gap:12px;}
-  @media(min-width:640px){.grid3{grid-template-columns:1fr 1fr 1fr;}}
-  .audit-row{width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;}
-  .audit-row:hover{background:#faf8f2;}
-  .audit-title{font-size:14px;font-weight:500;color:var(--ink);}
-  .audit-sub{font-size:11px;color:#a39a86;}
-  .section-box{border:1px solid var(--line2);border-radius:10px;padding:12px;margin-bottom:10px;}
-  .item-row{display:flex;align-items:flex-start;gap:8px;padding:4px 0;}
-  .result-toggle{display:flex;gap:2px;flex-shrink:0;}
-  .result-toggle button{background:none;border:none;cursor:pointer;padding:4px;border-radius:4px;font-size:16px;line-height:1;}
-  .result-toggle button.active{background:#efe9dc;}
-  .finding-box{border:1px solid var(--line2);border-radius:10px;padding:12px;margin-bottom:10px;}
-  .muted-italic{color:#a39a86;font-style:italic;font-size:13px;}
-  .flex-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
-  .status-pill{font-size:11px;padding:4px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:none;cursor:pointer;font-family:inherit;}
-  .status-pill.active{border-color:rgba(155,63,40,.5);color:var(--rust);background:var(--rustBg);}
-  .top-border{border-top:1px solid var(--line2);padding-top:12px;margin-top:12px;}
-  .x-btn{background:none;border:none;color:#c9c0a8;cursor:pointer;padding:2px;}
-  .x-btn:hover{color:var(--rust);}
-  .saved-flash{font-size:10px;color:var(--green);}
-  .center{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+:root{--bg:#f7f5ee;--paper:#fff;--line:#e2dbc9;--line2:#eee7d5;--ink:#2a2620;--muted:#8a8168;--navy:#1c2b4a;--navyBg:#e4e9f2;--rust:#9b3f28;--rustBg:#f6e4dd;--green:#3f6b2e;--greenBg:#e6ede0;--amber:#8a5a10;--amberBg:#faedd4;}
+*{box-sizing:border-box;}body{margin:0;background:var(--bg);color:var(--ink);font-family:'Public Sans',sans-serif;}
+h1,h2,h3{font-family:'Fraunces',serif;}
+.wrap{max-width:1000px;margin:0 auto;padding:0 20px;}
+header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,245,238,.95);backdrop-filter:blur(6px);z-index:10;}
+.headrow{display:flex;align-items:center;justify-content:space-between;padding:14px 0;}
+.brand{display:flex;align-items:center;gap:12px;}
+.logo-box{width:40px;height:40px;border-radius:8px;background:var(--navy);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.brand h1{font-size:16px;margin:0;color:var(--navy);}
+.brand p{font-size:10px;color:var(--muted);margin:0;text-transform:uppercase;letter-spacing:.05em;}
+nav{display:flex;gap:4px;}
+nav button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit;}
+nav button.active{color:var(--rust);border-color:var(--rust);}
+main{padding:24px 0 60px;}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(30,25,15,.04);}
+.p4{padding:16px;}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;}
+@media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr);}}
+.stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px;}
+.stat-value{font-size:28px;font-family:'Fraunces',serif;color:var(--navy);}
+input,select,textarea{background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:inherit;width:100%;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--rust);box-shadow:0 0 0 3px rgba(155,63,40,.12);}
+label.field{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:14px;cursor:pointer;border:none;font-family:inherit;}
+.btn-p{background:var(--navy);color:#fff;font-weight:500;}.btn-p:hover{background:#16223b;}
+.btn-g{background:transparent;border:1px solid var(--line);color:#4a4535;}.btn-g:hover{background:#efe9dc;}
+.btn-d{background:transparent;border:1px solid #e8c3b5;color:var(--rust);}.btn-d:hover{background:var(--rustBg);}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;border:1px solid;font-size:11px;font-weight:500;}
+.tr{background:var(--rustBg);color:var(--rust);border-color:#e8c3b5;}
+.tg{background:var(--greenBg);color:var(--green);border-color:#c7dab8;}
+.tn{background:var(--navyBg);color:var(--navy);border-color:#c3cee2;}
+.ta{background:var(--amberBg);color:var(--amber);border-color:#efd6a0;}
+.audit-row{width:100%;display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:none;border:none;cursor:pointer;text-align:left;font-family:inherit;border-left:4px solid var(--navy);border-radius:8px;margin-bottom:6px;}
+.audit-row:hover{background:#faf8f2;}
+.atitle{font-size:14px;font-weight:500;color:var(--ink);}
+.asub{font-size:11px;color:#a39a86;margin-top:2px;}
+.section-box{border:1px solid var(--line2);border-radius:10px;padding:12px;margin-bottom:10px;}
+.item-row{display:flex;align-items:flex-start;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);}
+.item-row:last-child{border-bottom:none;}
+.itext{font-size:13px;flex:1;padding-top:2px;}
+.rbtns{display:flex;gap:4px;flex-shrink:0;}
+.rbtn{background:none;border:1px solid var(--line);cursor:pointer;padding:3px 9px;border-radius:4px;font-size:12px;font-family:inherit;}
+.rbtn.pass{background:var(--greenBg);border-color:#c7dab8;color:var(--green);}
+.rbtn.fail{background:var(--rustBg);border-color:#e8c3b5;color:var(--rust);}
+.rbtn.na{background:var(--amberBg);border-color:#efd6a0;color:var(--amber);}
+.fcard{border:1px solid var(--line2);border-radius:10px;padding:12px;margin-bottom:10px;border-left:4px solid var(--rust);}
+.fr{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
+.fpill{font-size:11px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:none;cursor:pointer;font-family:inherit;}
+.fpill.active{border-color:var(--rust);color:var(--rust);background:var(--rustBg);}
+.sf{font-size:10px;color:var(--green);transition:opacity .3s;}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;}
+.bbtn{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;font-family:inherit;margin-bottom:16px;padding:0;}
+.bbtn:hover{color:var(--ink);}
+.sbar{height:6px;border-radius:3px;background:var(--line2);margin-top:8px;}
+.sfill{height:6px;border-radius:3px;background:var(--green);}
+.empty{text-align:center;padding:40px;color:var(--muted);font-style:italic;font-size:14px;}
+@media print{.btn,.btn-p,.btn-g,.btn-d,nav,header{display:none!important;}body{background:white;}}
 </style>
 </head>
 <body>
 <div id="app"></div>
-
 <script>
-/* ---------- storage ---------- */
-const STORE_KEY = "audit-qms-standalone-v1";
-function loadStore(){ try{ const r = localStorage.getItem(STORE_KEY); return r? JSON.parse(r): null; }catch(e){ return null; } }
-function saveStore(d){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(d)); }catch(e){ console.error(e); } }
+var SK = 'aqms-v5';
+function ld(){try{var r=localStorage.getItem(SK);return r?JSON.parse(r):null;}catch(e){return null;}}
+function sv(d){try{localStorage.setItem(SK,JSON.stringify(d));}catch(e){}}
+function uid(){return Math.random().toString(36).slice(2,9);}
+function td(){return new Date().toISOString().slice(0,10);}
+function du(d){return Math.ceil((new Date(d)-new Date(td()))/86400000);}
+function ex(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
 
-const uid = () => Math.random().toString(36).slice(2,9);
-const today = () => new Date().toISOString().slice(0,10);
-const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
+var STDS=['ISO 9001:2015 - Quality','ISO 22000 / FSSC 22000 - Food Safety','BRCGS Food Safety','ISO 45001:2018 - OHS Safety','ISO 14001:2015 - Environmental','HACCP','Internal GMP','Supplier Audit'];
+var SEVS=['Minor','Major','Critical'];
+var STATS=['Open','In Progress','Closed'];
+var STONE={Open:'tr','In Progress':'ta',Closed:'tg',Planned:'tn',Completed:'tg'};
 
-const STANDARDS = ["ISO 9001:2015","ISO 22000","FSSC 22000","BRCGS","HACCP","Internal GMP"];
-const SEVERITIES = ["Minor","Major","Critical"];
-const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
-const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
-
-function seedAudit(title, standard, area, sections){
-  return {
-    id: uid(), title, standard, area, auditor:"", date: today(), status:"Planned",
-    sections: sections.map(s => ({ id: uid(), name: s.name, items: s.items.map(text => ({id:uid(), text, result:null, note:""})) })),
-    findings: []
-  };
+function acc(s){
+  if(s.indexOf('45001')>-1)return'amber';
+  if(s.indexOf('22000')>-1||s.indexOf('BRCGS')>-1||s.indexOf('HACCP')>-1||s.indexOf('GMP')>-1)return'green';
+  return'navy';
 }
 
-function seedData(){
-  const a = seedAudit("Q3 GMP Verification — Bakery Line 2","FSSC 22000","Production",[
-    {name:"Personnel Hygiene", items:["Hairnets and beard snoods worn correctly","No jewellery or false nails observed","Hand-wash stations stocked and functional"]},
-    {name:"CCP Monitoring", items:["Chiller temp logs complete and within range","Metal detector verification records up to date"]},
-    {name:"Housekeeping", items:["Floors and drains clean, no standing water","Waste segregated and bins covered"]}
+function mkAudit(title,std,area,secs){
+  return{id:uid(),title:title,standard:std,area:area,auditor:'',date:td(),status:'Planned',
+    sections:secs.map(function(s){return{id:uid(),name:s.name,items:s.items.map(function(t){return{id:uid(),text:t,result:null,note:''};})};}),
+    findings:[]};
+}
+
+function seed(){
+  var a=mkAudit('Q3 GMP Verification - Bakery Line 2','ISO 22000 / FSSC 22000 - Food Safety','Production',[
+    {name:'Personnel Hygiene',items:['Hairnets worn correctly','No jewellery observed','Hand-wash stations stocked','PPE acceptable']},
+    {name:'CCP Monitoring',items:['Chiller temp logs complete','Metal detector records up to date','Cooking temperature verified']},
+    {name:'Documentation',items:['HACCP plan reviewed and signed','NCR register up to date','Corrective action records complete']}
   ]);
-  a.sections[1].items[1].result = "Fail";
-  a.findings = [{
-    id: uid(), clause:"CCP Monitoring", desc:"Metal detector verification log missing entries for two shifts",
-    severity:"Major", owner:"Line Supervisor", dueDate:"2026-07-18",
-    actionText:"Reissue verification log, retrain shift leads, daily QA spot-check for 2 weeks", status:"Open"
-  }];
-  return { audits: [a] };
+  a.sections[0].items[0].result='Pass';a.sections[0].items[1].result='Pass';a.sections[0].items[2].result='Pass';
+  a.sections[1].items[1].result='Fail';a.sections[1].items[1].note='Missing shift 2 entries';
+  a.findings=[
+    {id:uid(),clause:'CCP Monitoring',desc:'Metal detector log missing entries for shift 2',severity:'Major',owner:'Line Supervisor',dueDate:'2026-07-30',actionText:'Retrain staff on log completion',status:'Open'},
+    {id:uid(),clause:'Documentation',desc:'HACCP plan not reviewed within 12-month cycle',severity:'Minor',owner:'QA Manager',dueDate:'2026-08-15',actionText:'Schedule HACCP plan review',status:'In Progress'}
+  ];
+  return{audits:[a]};
 }
 
-let state = loadStore() || seedData();
-let tab = "dashboard";
-let jumpTo = null;
-let showNewAudit = false;
-let openAuditId = null;
-let capaFilter = "All";
-let savedFlashTimer = null;
+var S=ld()||seed();
+var tab='dashboard',showNew=false,openId=null,cf='All',stimer=null;
 
-function persist(){
-  saveStore(state);
-  const el = document.getElementById("saved-flash");
-  if(el){ el.style.opacity = "1"; clearTimeout(savedFlashTimer); savedFlashTimer = setTimeout(()=>{ if(el) el.style.opacity="0"; }, 900); }
+function persist(){sv(S);var el=document.getElementById('sf');if(el){el.style.opacity='1';clearTimeout(stimer);stimer=setTimeout(function(){if(el)el.style.opacity='0';},1200);}}
+
+function score(a){
+  var items=[];a.sections.forEach(function(s){s.items.forEach(function(i){if(i.result==='Pass'||i.result==='Fail')items.push(i);});});
+  if(!items.length)return null;
+  return Math.round(items.filter(function(i){return i.result==='Pass';}).length/items.length*100);
 }
 
-function esc(str){ const d=document.createElement("div"); d.textContent = str==null? "": str; return d.innerHTML; }
+var LOGO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 60" width="40" height="30"><style>text{font-family:Arial Black,sans-serif;font-weight:900;fill:#fff;}</style><text x="2" y="52" font-size="56">AQ</text></svg>';
+var LOGO_URL = 'data:image/svg+xml;base64,' + btoa(LOGO_SVG);
 
-/* ---------- render ---------- */
 function render(){
-  const root = document.getElementById("app");
-  root.innerHTML = `
-    <header>
-      <div class="wrap headrow">
-        <div class="brand">
-          <div class="logo">✓</div>
-          <div><h1>Audit Quality Management</h1><p>Checklists · Findings · CAPA</p></div>
-        </div>
-        <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
-      </div>
-      <div class="wrap" style="display:flex;gap:4px;">
-        ${navBtn("dashboard","Dashboard")}
-        ${navBtn("audits","Audit Register")}
-        ${navBtn("capa","CAPA Tracker")}
-      </div>
-    </header>
-    <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : renderCapa()}
-    </main>
-  `;
-  attachHandlers();
+  var body='';
+  if(tab==='dashboard')body=rDash();
+  else if(tab==='audits')body=rAudits();
+  else body=rCapa();
+
+  var h='<header><div class="wrap headrow">';
+  h+='<div class="brand">';
+  h+='<div class="logo-box"><img src="'+LOGO_URL+'" width="36" height="27" alt="AQ"/></div>';
+  h+='<div><h1>AuditQMS Pro Suite</h1><p>Food &middot; Safety &middot; Environment &middot; Lab</p></div>';
+  h+='</div>';
+  h+='<span class="sf" id="sf" style="opacity:0">&#9679; saved</span>';
+  h+='</div><div class="wrap"><nav>';
+  h+='<button data-nav="dashboard" class="'+(tab==='dashboard'?'active':'')+'">Dashboard</button>';
+  h+='<button data-nav="audits" class="'+(tab==='audits'?'active':'')+'">Audit Register</button>';
+  h+='<button data-nav="capa" class="'+(tab==='capa'?'active':'')+'">CAPA Tracker</button>';
+  h+='</nav></div></header>';
+  h+='<main class="wrap">'+body+'</main>';
+  document.getElementById('app').innerHTML=h;
+  bind();
 }
 
-function navBtn(key,label){
-  return `<button data-nav="${key}" class="${tab===key?'active':''}">${label}</button>`;
+function rDash(){
+  var audits=S.audits;
+  var allF=[];
+  audits.forEach(function(a){a.findings.forEach(function(f){allF.push(Object.assign({},f,{auditTitle:a.title,auditId:a.id}));});});
+  var openF=allF.filter(function(f){return f.status!=='Closed';});
+  var over=openF.filter(function(f){return f.dueDate&&du(f.dueDate)<0;});
+  var scored=audits.map(score).filter(function(s){return s!==null;});
+  var avg=scored.length?Math.round(scored.reduce(function(a,b){return a+b;},0)/scored.length):null;
+
+  var h='<div class="stats">';
+  h+='<div class="card p4"><div class="stat-label">Total Audits</div><div class="stat-value">'+audits.length+'</div></div>';
+  h+='<div class="card p4"><div class="stat-label">Open Findings</div><div class="stat-value">'+openF.length+'</div></div>';
+  h+='<div class="card p4"><div class="stat-label">Overdue CAPAs</div><div class="stat-value" style="color:'+(over.length>0?'var(--rust)':'var(--navy)')+'">'+over.length+'</div></div>';
+  h+='<div class="card p4"><div class="stat-label">Avg Compliance</div><div class="stat-value">'+(avg!==null?avg+'%':'&#8212;')+'</div></div>';
+  h+='</div>';
+
+  h+='<div class="card p4">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">';
+  h+='<h3 style="font-size:16px;margin:0">Audit Overview</h3>';
+  h+='<button class="btn btn-g btn-sm" onclick="window.print()">&#128438; Print</button>';
+  h+='</div>';
+  if(audits.length){
+    audits.forEach(function(a){
+      var s=score(a);var tone=STONE[a.status]||'tn';var accent=acc(a.standard);
+      h+='<button data-jump="'+a.id+'" class="audit-row" style="border-left-color:var(--'+accent+')">';
+      h+='<div><div class="atitle">'+ex(a.title)+'</div><div class="asub">'+ex(a.standard)+' &middot; '+ex(a.area||'&#8212;')+'</div></div>';
+      h+='<div class="fr">'+(s!==null?'<span style="font-size:13px;font-weight:600">'+s+'%</span>':'')+'<span class="tag '+tone+'">'+a.status+'</span></div>';
+      h+='</button>';
+    });
+  }else{h+='<div class="empty">No audits yet. Create one in Audit Register.</div>';}
+  h+='</div>';
+
+  if(openF.length){
+    h+='<div class="card p4" style="margin-top:16px"><h3 style="font-size:16px;margin:0 0 12px">Open Findings</h3>';
+    openF.forEach(function(f){
+      var sTone=f.severity==='Critical'||f.severity==='Major'?'tr':'ta';
+      var stTone=STONE[f.status]||'tn';
+      var dc=f.dueDate&&du(f.dueDate)<0?'var(--rust)':'var(--muted)';
+      var ot=f.dueDate&&du(f.dueDate)<0?' &#9888; OVERDUE':'';
+      h+='<div class="fcard"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">';
+      h+='<div><div style="font-size:13px;font-weight:600">'+ex(f.desc)+'</div>';
+      h+='<div style="font-size:11px;color:var(--muted);margin-top:3px">'+ex(f.auditTitle)+' &middot; '+ex(f.clause)+'</div></div>';
+      h+='<div class="fr"><span class="tag '+sTone+'">'+f.severity+'</span><span class="tag '+stTone+'">'+f.status+'</span></div></div>';
+      if(f.dueDate)h+='<div style="font-size:11px;color:'+dc+';margin-top:6px">Due: '+f.dueDate+ot+'</div>';
+      h+='</div>';
+    });
+    h+='</div>';
+  }
+  return h;
 }
 
-function scoreOf(audit){
-  const items = audit.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
-  if(items.length===0) return null;
-  return Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100);
+function rAudits(){
+  if(openId){var found=null;S.audits.forEach(function(a){if(a.id===openId)found=a;});if(found)return rDetail(found);}
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">';
+  h+='<h2 style="font-size:20px;margin:0">Audit Register</h2>';
+  h+='<button class="btn btn-p" data-action="toggle-new">+ New Audit</button></div>';
+  if(showNew){
+    var stdOpts=STDS.map(function(s){return'<option>'+s+'</option>';}).join('');
+    h+='<div class="card p4 g3" style="margin-bottom:16px">';
+    h+='<label class="field">Audit Title *<input id="na-t" placeholder="e.g. Q3 GMP Verification"/></label>';
+    h+='<label class="field">Standard<select id="na-s">'+stdOpts+'</select></label>';
+    h+='<label class="field">Area<input id="na-a" placeholder="e.g. Production"/></label>';
+    h+='<label class="field">Lead Auditor<input id="na-au"/></label>';
+    h+='<label class="field">Date<input id="na-d" type="date" value="'+td()+'"/></label>';
+    h+='<div style="display:flex;align-items:flex-end;gap:8px">';
+    h+='<button class="btn btn-g" data-action="cancel-new">Cancel</button>';
+    h+='<button class="btn btn-p" data-action="create">Create</button></div></div>';
+  }
+  if(S.audits.length){
+    S.audits.forEach(function(a){
+      var s=score(a);var tone=STONE[a.status]||'tn';var accent=acc(a.standard);
+      h+='<button data-open="'+a.id+'" class="audit-row" style="border-left-color:var(--'+accent+')">';
+      h+='<div><div class="atitle">'+ex(a.title)+'</div><div class="asub">'+ex(a.standard)+' &middot; '+ex(a.area||'&#8212;')+' &middot; '+a.date+'</div></div>';
+      h+='<div class="fr">'+(s!==null?'<span style="font-size:13px">'+s+'%</span>':'')+'<span class="tag '+tone+'">'+a.status+'</span></div>';
+      h+='</button>';
+    });
+  }else{h+='<div class="empty">No audits yet. Click + New Audit to start.</div>';}
+  return h;
 }
 
-function renderDashboard(){
-  const audits = state.audits;
-  const allFindings = audits.flatMap(a=>a.findings.map(f=>({...f, auditTitle:a.title, auditId:a.id})));
-  const openFindings = allFindings.filter(f=>f.status!=="Closed");
-  const overdue = openFindings.filter(f=>f.dueDate && daysUntil(f.dueDate)<0);
-  const critical = openFindings.filter(f=>f.severity==="Critical"||f.severity==="Major");
-  const scored = audits.map(scoreOf).filter(s=>s!==null);
-  const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
-
-  return `
-    <div class="stats">
-      ${statCard("Total Audits", audits.length)}
-      ${statCard("Open Findings", openFindings.length)}
-      ${statCard("Overdue CAPAs", overdue.length)}
-      ${statCard("Avg. Compliance", avgScore!==null?avgScore+"%":"—")}
-    </div>
-    <div class="card p4" style="margin-bottom:16px;">
-      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
-      ${critical.filter(f=>f.status!=="Closed").length===0 ? `<p class="muted-italic">No major or critical findings open right now.</p>` :
-        critical.filter(f=>f.status!=="Closed").slice(0,6).map(f=>`
-          <button data-jump-audit="${f.auditId}" class="audit-row" style="background:#faf8f2;border:1px solid #e8e1cd;border-radius:8px;margin-bottom:6px;">
-            <div style="min-width:0;">
-              <div style="font-size:14px;">${esc(f.desc)}</div>
-              <div class="audit-sub">${esc(f.auditTitle)} · ${esc(f.clause)}</div>
-            </div>
-            <div class="flex-wrap">
-              ${f.dueDate && daysUntil(f.dueDate)<0 ? `<span class="tag tag-rust">overdue</span>`:''}
-              <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
-            </div>
-          </button>`).join('')}
-    </div>
-    <div class="card p4">
-      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Audit Overview</h3>
-      ${audits.map(a=>{
-        const s = scoreOf(a);
-        return `<button data-jump-audit="${a.id}" class="audit-row" style="border-radius:8px;">
-          <div style="display:flex;align-items:center;gap:8px;min-width:0;flex:1;overflow:hidden;">
-            <span style="color:#c9c0a8;flex-shrink:0;">›</span><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(a.title)}</span>
-          </div>
-          <div class="flex-wrap" style="flex-shrink:0;margin-left:12px;">
-            ${s!==null?`<span style="font-size:12px;color:var(--muted);">${s}%</span>`:''}
-            <span class="tag tag-${statusTone[a.status]}">${a.status}</span>
-          </div>
-        </button>`;
-      }).join('')}
-    </div>
-  `;
-}
-function statCard(label,value){
-  return `<div class="card p4"><div class="stat-label">${label}</div><div class="stat-value">${value}</div></div>`;
-}
-
-function renderAudits(){
-  const audits = state.audits;
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">Audit Register</h2>
-      <button class="btn btn-primary" data-action="toggle-new-audit">+ New Audit</button>
-    </div>
-    ${showNewAudit ? `
-      <div class="card p4 grid3" style="margin-bottom:16px;">
-        <label class="field">Title<input id="na-title" /></label>
-        <label class="field">Standard<select id="na-standard">${STANDARDS.map(s=>`<option>${s}</option>`).join('')}</select></label>
-        <label class="field">Area<input id="na-area" /></label>
-        <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
-          <button class="btn btn-ghost" data-action="cancel-new-audit">Cancel</button>
-          <button class="btn btn-primary" data-action="create-audit">Create</button>
-        </div>
-      </div>` : ``}
-    <div>
-      ${audits.map(a => renderAuditRow(a)).join('') || `<p class="muted-italic">No audits yet.</p>`}
-    </div>
-  `;
-}
-
-function renderAuditRow(a){
-  const open = openAuditId === a.id;
-  const openFindings = a.findings.filter(f=>f.status!=="Closed").length;
-  return `
-    <div class="card" style="margin-bottom:10px;overflow:hidden;">
-      <button class="audit-row" data-toggle-audit="${a.id}">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-          <span style="color:#a39a86;">${open?'▾':'›'}</span>
-          <div style="min-width:0;">
-            <div class="audit-title">${esc(a.title)}</div>
-            <div class="audit-sub">${esc(a.standard)} · ${esc(a.area)||'—'} · ${a.date}</div>
-          </div>
-        </div>
-        <div class="flex-wrap">
-          ${openFindings>0?`<span class="tag tag-rust">${openFindings} open</span>`:''}
-          <span class="tag tag-${statusTone[a.status]}">${a.status}</span>
-        </div>
-      </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderAuditDetail(a)}</div>` : ''}
-    </div>
-  `;
-}
-
-function renderAuditDetail(a){
-  const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
-  const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
-  return `
-    <div class="card p4" style="margin-bottom:12px;">
-      <div class="grid2">
-        <label class="field">Audit Title<input data-audit-field="${a.id}:title" value="${esc(a.title)}" /></label>
-        <label class="field">Standard<select data-audit-field="${a.id}:standard">${STANDARDS.map(s=>`<option ${s===a.standard?'selected':''}>${s}</option>`).join('')}</select></label>
-        <label class="field">Area<input data-audit-field="${a.id}:area" value="${esc(a.area)}" /></label>
-        <label class="field">Auditor<input data-audit-field="${a.id}:auditor" value="${esc(a.auditor)}" placeholder="Name" /></label>
-        <label class="field">Date<input type="date" data-audit-field="${a.id}:date" value="${a.date}" /></label>
-        <label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>
-      </div>
-      <div class="top-border" style="display:flex;align-items:center;justify-content:space-between;">
-        ${score!==null ? `<div style="display:flex;align-items:center;gap:8px;"><span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span><span style="font-size:12px;color:var(--muted);">compliance score</span></div>` : `<span class="muted-italic">Score appears once checklist items are marked</span>`}
-        <button class="btn btn-danger" data-action="delete-audit" data-audit="${a.id}">Delete Audit</button>
-      </div>
-    </div>
-
-    <div class="card p4" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Checklist</h3>
-      ${a.sections.map(sec => `
-        <div class="section-box">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <strong style="font-size:14px;">${esc(sec.name)}</strong>
-            <button class="x-btn" data-action="remove-section" data-audit="${a.id}" data-section="${sec.id}">✕</button>
-          </div>
-          ${sec.items.map(it => `
-            <div class="item-row">
-              <div class="result-toggle">
-                <button data-toggle-result="${a.id}:${sec.id}:${it.id}:Pass" class="${it.result==='Pass'?'active':''}" style="color:#3f6b2e;">✓</button>
-                <button data-toggle-result="${a.id}:${sec.id}:${it.id}:Fail" class="${it.result==='Fail'?'active':''}" style="color:#9b3f28;">✕</button>
-                <button data-toggle-result="${a.id}:${sec.id}:${it.id}:NA" class="${it.result==='NA'?'active':''}" style="color:#a39a86;">–</button>
-              </div>
-              <div style="flex:1;min-width:0;">
-                <div style="font-size:14px;">${esc(it.text)}</div>
-                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />` : ''}
-              </div>
-              <button class="x-btn" data-action="remove-item" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}">🗑</button>
-            </div>
-          `).join('')}
-          <div style="display:flex;gap:6px;margin-top:8px;">
-            <input placeholder="Add checklist item…" data-new-item="${a.id}:${sec.id}" style="flex:1;font-size:13px;padding:6px 8px;" />
-            <button class="btn btn-ghost" data-action="add-item" data-audit="${a.id}" data-section="${sec.id}">+</button>
-          </div>
-        </div>
-      `).join('')}
-      <div style="display:flex;gap:8px;">
-        <input placeholder="New section name (e.g. Allergen Control)" id="new-section-${a.id}" style="flex:1;" />
-        <button class="btn btn-ghost" data-action="add-section" data-audit="${a.id}">+ Add Section</button>
-      </div>
-    </div>
-
-    <div class="card p4">
-      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Findings & CAPA</h3>
-      ${a.findings.map(f => `
-        <div class="finding-box">
-          <div style="display:flex;justify-content:space-between;gap:8px;">
-            <div style="font-size:14px;flex:1;">${esc(f.desc)}</div>
-            <button class="x-btn" data-action="remove-finding" data-audit="${a.id}" data-finding="${f.id}">✕</button>
-          </div>
-          <div class="flex-wrap" style="font-size:12px;color:var(--muted);margin:6px 0;">
-            <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
-            <span>${esc(f.clause)}</span>
-            ${f.owner?`<span>👤 ${esc(f.owner)}</span>`:''}
-            ${f.dueDate?`<span style="${daysUntil(f.dueDate)<0 && f.status!=='Closed' ? 'color:var(--rust);font-weight:600;':''}">📅 ${f.dueDate}${daysUntil(f.dueDate)<0 && f.status!=='Closed'?' (overdue)':''}</span>`:''}
-          </div>
-          ${f.actionText?`<div class="muted-italic" style="font-size:12px;">CAPA: ${esc(f.actionText)}</div>`:''}
-          <div class="flex-wrap" style="margin-top:8px;">
-            ${["Open","In Progress","Closed"].map(s=>`<button class="status-pill ${f.status===s?'active':''}" data-set-finding-status="${a.id}:${f.id}:${s}">${s}</button>`).join('')}
-          </div>
-        </div>
-      `).join('')}
-      <div class="grid2 top-border">
-        <label class="field">Clause / Section<select id="nf-clause-${a.id}">${a.sections.map(s=>`<option>${esc(s.name)}</option>`).join('')}</select></label>
-        <label class="field">Severity<select id="nf-severity-${a.id}">${SEVERITIES.map(s=>`<option>${s}</option>`).join('')}</select></label>
-        <label class="field">Owner<input id="nf-owner-${a.id}" /></label>
-        <label class="field">CAPA Due Date<input type="date" id="nf-due-${a.id}" /></label>
-        <label class="field" style="grid-column:1/-1;">Finding Description<input id="nf-desc-${a.id}" placeholder="What was observed…" /></label>
-        <label class="field" style="grid-column:1/-1;">Corrective Action<input id="nf-action-${a.id}" placeholder="Planned CAPA…" /></label>
-        <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderCapa(){
-  const all = state.audits.flatMap(a=>a.findings.map(f=>({...f, auditTitle:a.title, auditId:a.id})));
-  const filtered = all.filter(f => capaFilter==="All" || f.status===capaFilter || (capaFilter==="Overdue" && f.dueDate && daysUntil(f.dueDate)<0 && f.status!=="Closed"));
-  const sorted = [...filtered].sort((a,b)=>(a.dueDate||"9999").localeCompare(b.dueDate||"9999"));
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">CAPA Tracker</h2>
-      <div class="flex-wrap">
-        ${["All","Open","In Progress","Closed","Overdue"].map(f=>`<button class="status-pill ${capaFilter===f?'active':''}" data-capa-filter="${f}">${f}</button>`).join('')}
-      </div>
-    </div>
-    <div>
-      ${sorted.length===0 ? `<p class="muted-italic">No CAPAs match this filter.</p>` : sorted.map(f=>{
-        const overdue = f.dueDate && daysUntil(f.dueDate)<0 && f.status!=="Closed";
-        return `<button data-jump-audit="${f.auditId}" class="card p4" style="display:flex;width:100%;text-align:left;gap:12px;flex-wrap:wrap;margin-bottom:8px;cursor:pointer;${overdue?'border-color:#e8c3b5;':''}">
-          <div style="flex:1;min-width:200px;">
-            <div style="font-size:14px;">${esc(f.desc)}</div>
-            <div class="audit-sub">${esc(f.auditTitle)} · ${esc(f.clause)}</div>
-          </div>
-          <div class="flex-wrap" style="font-size:12px;color:var(--muted);">
-            ${f.owner?`<span>👤 ${esc(f.owner)}</span>`:''}
-            ${f.dueDate?`<span style="${overdue?'color:var(--rust);font-weight:600;':''}">📅 ${f.dueDate}</span>`:''}
-            <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
-            <span class="tag tag-${statusTone[f.status]}">${f.status}</span>
-          </div>
-        </button>`;
-      }).join('')}
-    </div>
-  `;
-}
-
-/* ---------- event handling ---------- */
-function attachHandlers(){
-  document.querySelectorAll('[data-nav]').forEach(el=>el.onclick=()=>{ tab = el.dataset.nav; if(tab!=="audits") openAuditId=null; render(); });
-  document.querySelectorAll('[data-jump-audit]').forEach(el=>el.onclick=()=>{ jumpTo = el.dataset.jumpAudit; openAuditId = jumpTo; tab="audits"; render(); });
-  const toggleNew = document.querySelector('[data-action="toggle-new-audit"]'); if(toggleNew) toggleNew.onclick=()=>{ showNewAudit=!showNewAudit; render(); };
-  const cancelNew = document.querySelector('[data-action="cancel-new-audit"]'); if(cancelNew) cancelNew.onclick=()=>{ showNewAudit=false; render(); };
-  const createAudit = document.querySelector('[data-action="create-audit"]');
-  if(createAudit) createAudit.onclick=()=>{
-    const title = document.getElementById('na-title').value.trim();
-    if(!title) return;
-    const standard = document.getElementById('na-standard').value;
-    const area = document.getElementById('na-area').value;
-    const a = seedAudit(title, standard, area, [{name:"General", items:[]}]);
-    state.audits.unshift(a);
-    openAuditId = a.id; showNewAudit=false; persist(); render();
-  };
-
-  document.querySelectorAll('[data-toggle-audit]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.toggleAudit; openAuditId = openAuditId===id ? null : id; render();
+function rDetail(a){
+  var s=score(a);
+  var stOpts=['Planned','In Progress','Completed','Closed'].map(function(x){return'<option'+(a.status===x?' selected':'')+'>'+x+'</option>';}).join('');
+  var h='<button class="bbtn" data-action="back">&#8592; Back to Register</button>';
+  h+='<div class="card p4" style="margin-bottom:16px">';
+  h+='<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px">';
+  h+='<div><h2 style="font-size:18px;margin:0 0 4px">'+ex(a.title)+'</h2>';
+  h+='<div style="font-size:12px;color:var(--muted)">'+ex(a.standard)+' &middot; '+ex(a.area||'&#8212;')+' &middot; '+a.date+'</div></div>';
+  h+='<div class="fr"><select id="ast">'+stOpts+'</select>';
+  if(s!==null)h+='<span style="font-weight:700;color:var(--navy)">'+s+'% compliance</span>';
+  h+='</div></div>';
+  if(s!==null)h+='<div class="sbar"><div class="sfill" style="width:'+s+'%"></div></div>';
+  h+='</div>';
+  h+='<h3 style="font-size:16px;margin:0 0 12px">Checklist Sections</h3>';
+  a.sections.forEach(function(sec){
+    h+='<div class="section-box"><div style="font-weight:600;font-size:14px;margin-bottom:8px">'+ex(sec.name)+'</div>';
+    sec.items.forEach(function(item){
+      var pc=item.result==='Pass'?' pass':'';var fc=item.result==='Fail'?' fail':'';var nc=item.result==='N/A'?' na':'';
+      h+='<div class="item-row"><div class="itext">'+ex(item.text)+'</div><div class="rbtns">';
+      h+='<button data-res="Pass" data-sec="'+sec.id+'" data-item="'+item.id+'" class="rbtn'+pc+'">&#10003; Pass</button>';
+      h+='<button data-res="Fail" data-sec="'+sec.id+'" data-item="'+item.id+'" class="rbtn'+fc+'">&#10007; Fail</button>';
+      h+='<button data-res="N/A" data-sec="'+sec.id+'" data-item="'+item.id+'" class="rbtn'+nc+'">N/A</button>';
+      h+='</div></div>';
+      if(item.result==='Fail')h+='<input style="font-size:12px;padding:5px 8px;margin-top:4px" placeholder="Note..." value="'+ex(item.note)+'" data-nsec="'+sec.id+'" data-nitem="'+item.id+'"/>';
+    });
+    h+='</div>';
   });
+  var sevOpts=SEVS.map(function(s){return'<option>'+s+'</option>';}).join('');
+  h+='<div style="margin-top:20px">';
+  h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">';
+  h+='<h3 style="font-size:16px;margin:0">Findings &amp; CAPAs ('+a.findings.length+')</h3>';
+  h+='<button class="btn btn-p btn-sm" data-action="add-f">+ Add Finding</button></div>';
+  h+='<div id="ff" style="display:none" class="card p4 g2" style="margin-bottom:12px">';
+  h+='<label class="field">Clause<input id="fc"/></label>';
+  h+='<label class="field">Severity<select id="fsev">'+sevOpts+'</select></label>';
+  h+='<label class="field" style="grid-column:1/-1">Description<textarea id="fd" rows="2"></textarea></label>';
+  h+='<label class="field">Responsible Person<input id="fo"/></label>';
+  h+='<label class="field">Due Date<input id="fdd" type="date"/></label>';
+  h+='<label class="field" style="grid-column:1/-1">Corrective Action<textarea id="fa" rows="2"></textarea></label>';
+  h+='<div style="grid-column:1/-1;display:flex;gap:8px">';
+  h+='<button class="btn btn-g" data-action="cancel-f">Cancel</button>';
+  h+='<button class="btn btn-p" data-action="save-f">Save Finding</button></div></div>';
+  if(a.findings.length){
+    a.findings.forEach(function(f){
+      var st=f.severity==='Critical'||f.severity==='Major'?'tr':'ta';
+      var sopts=STATS.map(function(x){return'<option'+(f.status===x?' selected':'')+'>'+x+'</option>';}).join('');
+      var dc=f.dueDate&&du(f.dueDate)<0?'var(--rust)':'var(--muted)';
+      var ot=f.dueDate&&du(f.dueDate)<0?' &#9888; OVERDUE':'';
+      h+='<div class="fcard">';
+      h+='<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+      h+='<div><div style="font-size:13px;font-weight:600">'+ex(f.desc)+'</div>';
+      h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">Clause: '+ex(f.clause)+' &middot; Owner: '+ex(f.owner)+'</div></div>';
+      h+='<div class="fr"><span class="tag '+st+'">'+f.severity+'</span>';
+      h+='<select data-sf="'+f.id+'" style="width:auto;font-size:12px;padding:3px 6px">'+sopts+'</select></div></div>';
+      if(f.actionText)h+='<div style="font-size:12px;color:var(--muted)">Action: '+ex(f.actionText)+'</div>';
+      if(f.dueDate)h+='<div style="font-size:11px;color:'+dc+';margin-top:4px">Due: '+f.dueDate+ot+'</div>';
+      h+='<button class="btn btn-d btn-sm" style="margin-top:8px" data-df="'+f.id+'">Delete</button>';
+      h+='</div>';
+    });
+  }else{h+='<div class="empty">No findings yet.</div>';}
+  h+='</div>';
+  return h;
+}
 
-  document.querySelectorAll('[data-audit-field]').forEach(el=>{
-    el.onchange = () => {
-      const [id, field] = el.dataset.auditField.split(':');
-      const a = state.audits.find(x=>x.id===id);
-      a[field] = el.value; persist(); render();
+function rCapa(){
+  var allF=[];
+  S.audits.forEach(function(a){a.findings.forEach(function(f){allF.push(Object.assign({},f,{auditTitle:a.title,auditId:a.id}));});});
+  var filtered=cf==='All'?allF:allF.filter(function(f){return f.status===cf;});
+  var over=allF.filter(function(f){return f.status!=='Closed'&&f.dueDate&&du(f.dueDate)<0;});
+  var h='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px">';
+  h+='<h2 style="font-size:20px;margin:0">CAPA Tracker</h2><div class="fr">';
+  ['All','Open','In Progress','Closed'].forEach(function(f){
+    var cnt=f==='All'?' ('+allF.length+')':'';
+    h+='<button class="fpill'+(cf===f?' active':'')+'" data-fil="'+f+'">'+f+cnt+'</button>';
+  });
+  h+='</div></div>';
+  if(over.length){
+    h+='<div class="card p4" style="border-left:4px solid var(--rust);margin-bottom:16px">';
+    h+='<div style="font-weight:600;color:var(--rust);margin-bottom:6px">&#9888; '+over.length+' Overdue CAPA'+(over.length>1?'s':'')+'</div>';
+    over.forEach(function(f){h+='<div style="font-size:13px;margin-bottom:4px">'+ex(f.desc)+' <span style="color:var(--muted);font-size:11px">&middot; '+ex(f.auditTitle)+'</span></div>';});
+    h+='</div>';
+  }
+  if(filtered.length){
+    filtered.forEach(function(f){
+      var st=f.severity==='Critical'||f.severity==='Major'?'tr':'ta';
+      var sopts=STATS.map(function(x){return'<option'+(f.status===x?' selected':'')+'>'+x+'</option>';}).join('');
+      var dc=f.dueDate&&du(f.dueDate)<0?'var(--rust)':'var(--muted)';
+      var ot=f.dueDate&&du(f.dueDate)<0?' &#9888; OVERDUE':'';
+      h+='<div class="fcard"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">';
+      h+='<div><div style="font-size:13px;font-weight:600">'+ex(f.desc)+'</div>';
+      h+='<div style="font-size:11px;color:var(--muted);margin-top:2px">'+ex(f.auditTitle)+' &middot; Clause: '+ex(f.clause)+' &middot; Owner: '+ex(f.owner||'&#8212;')+'</div></div>';
+      h+='<div class="fr"><span class="tag '+st+'">'+f.severity+'</span>';
+      h+='<select data-cs="'+f.id+'" data-ca="'+f.auditId+'" style="width:auto;font-size:12px;padding:3px 6px">'+sopts+'</select></div></div>';
+      if(f.actionText)h+='<div style="font-size:12px;color:var(--muted)">Action: '+ex(f.actionText)+'</div>';
+      if(f.dueDate)h+='<div style="font-size:11px;color:'+dc+';margin-top:4px">Due: '+f.dueDate+ot+'</div>';
+      h+='</div>';
+    });
+  }else{h+='<div class="empty">No '+(cf!=='All'?cf+' ':'')+'findings found.</div>';}
+  return h;
+}
+
+function getAudit(){var a=null;S.audits.forEach(function(x){if(x.id===openId)a=x;});return a;}
+
+function bind(){
+  document.querySelectorAll('[data-nav]').forEach(function(el){el.onclick=function(){tab=el.dataset.nav;openId=null;render();};});
+  document.querySelectorAll('[data-jump]').forEach(function(el){el.onclick=function(){tab='audits';openId=el.dataset.jump;render();};});
+  document.querySelectorAll('[data-open]').forEach(function(el){el.onclick=function(){openId=el.dataset.open;render();};});
+  var back=document.querySelector('[data-action="back"]');if(back)back.onclick=function(){openId=null;render();};
+  var tn=document.querySelector('[data-action="toggle-new"]');if(tn)tn.onclick=function(){showNew=!showNew;render();};
+  var cn=document.querySelector('[data-action="cancel-new"]');if(cn)cn.onclick=function(){showNew=false;render();};
+  var cr=document.querySelector('[data-action="create"]');
+  if(cr)cr.onclick=function(){
+    var t=document.getElementById('na-t').value.trim();if(!t)return;
+    var a=mkAudit(t,document.getElementById('na-s').value,document.getElementById('na-a').value,[{name:'General',items:[]}]);
+    a.auditor=document.getElementById('na-au').value;a.date=document.getElementById('na-d').value;
+    S.audits.unshift(a);openId=a.id;showNew=false;persist();render();
+  };
+  var as=document.getElementById('ast');
+  if(as)as.onchange=function(){var a=getAudit();if(a){a.status=as.value;persist();}};
+  document.querySelectorAll('[data-res]').forEach(function(el){
+    el.onclick=function(){
+      var a=getAudit();if(!a)return;
+      var sec=null;a.sections.forEach(function(s){if(s.id===el.dataset.sec)sec=s;});if(!sec)return;
+      var item=null;sec.items.forEach(function(i){if(i.id===el.dataset.item)item=i;});
+      if(item){item.result=item.result===el.dataset.res?null:el.dataset.res;persist();render();}
     };
   });
-
-  document.querySelectorAll('[data-action="delete-audit"]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.audit; state.audits = state.audits.filter(a=>a.id!==id); openAuditId=null; persist(); render();
+  document.querySelectorAll('[data-nitem]').forEach(function(el){
+    el.oninput=function(){
+      var a=getAudit();if(!a)return;
+      var sec=null;a.sections.forEach(function(s){if(s.id===el.dataset.nsec)sec=s;});if(!sec)return;
+      var item=null;sec.items.forEach(function(i){if(i.id===el.dataset.nitem)item=i;});
+      if(item){item.note=el.value;persist();}
+    };
   });
-
-  document.querySelectorAll('[data-toggle-result]').forEach(el=>el.onclick=()=>{
-    const [auditId, secId, itemId, val] = el.dataset.toggleResult.split(':');
-    const a = state.audits.find(x=>x.id===auditId);
-    const sec = a.sections.find(s=>s.id===secId);
-    const item = sec.items.find(i=>i.id===itemId);
-    item.result = item.result===val ? null : val;
-    persist(); render();
+  var af=document.querySelector('[data-action="add-f"]');if(af)af.onclick=function(){var f=document.getElementById('ff');if(f)f.style.display=f.style.display==='none'?'grid':'none';};
+  var canf=document.querySelector('[data-action="cancel-f"]');if(canf)canf.onclick=function(){var f=document.getElementById('ff');if(f)f.style.display='none';};
+  var svf=document.querySelector('[data-action="save-f"]');
+  if(svf)svf.onclick=function(){
+    var desc=document.getElementById('fd').value.trim();if(!desc)return;
+    var a=getAudit();if(!a)return;
+    a.findings.push({id:uid(),clause:document.getElementById('fc').value,desc:desc,
+      severity:document.getElementById('fsev').value,owner:document.getElementById('fo').value,
+      dueDate:document.getElementById('fdd').value,actionText:document.getElementById('fa').value,status:'Open'});
+    persist();render();
+  };
+  document.querySelectorAll('[data-df]').forEach(function(el){
+    el.onclick=function(){var a=getAudit();if(a){a.findings=a.findings.filter(function(f){return f.id!==el.dataset.df;});persist();render();}};
   });
-
-  document.querySelectorAll('[data-item-note]').forEach(el=>el.onchange=()=>{
-    const [auditId, secId, itemId] = el.dataset.itemNote.split(':');
-    const a = state.audits.find(x=>x.id===auditId);
-    const sec = a.sections.find(s=>s.id===secId);
-    const item = sec.items.find(i=>i.id===itemId);
-    item.note = el.value; persist();
+  document.querySelectorAll('[data-sf]').forEach(function(el){
+    el.onchange=function(){var a=getAudit();if(!a)return;var f=null;a.findings.forEach(function(x){if(x.id===el.dataset.sf)f=x;});if(f){f.status=el.value;persist();}};
   });
-
-  document.querySelectorAll('[data-action="remove-item"]').forEach(el=>el.onclick=()=>{
-    const a = state.audits.find(x=>x.id===el.dataset.audit);
-    const sec = a.sections.find(s=>s.id===el.dataset.section);
-    sec.items = sec.items.filter(i=>i.id!==el.dataset.item);
-    persist(); render();
-  });
-
-  document.querySelectorAll('[data-action="add-item"]').forEach(el=>el.onclick=()=>{
-    const input = document.querySelector(`[data-new-item="${el.dataset.audit}:${el.dataset.section}"]`);
-    const text = input.value.trim(); if(!text) return;
-    const a = state.audits.find(x=>x.id===el.dataset.audit);
-    const sec = a.sections.find(s=>s.id===el.dataset.section);
-    sec.items.push({id:uid(), text, result:null, note:""});
-    persist(); render();
-  });
-
-  document.querySelectorAll('[data-action="remove-section"]').forEach(el=>el.onclick=()=>{
-    const a = state.audits.find(x=>x.id===el.dataset.audit);
-    a.sections = a.sections.filter(s=>s.id!==el.dataset.section);
-    persist(); render();
-  });
-
-  document.querySelectorAll('[data-action="add-section"]').forEach(el=>el.onclick=()=>{
-    const input = document.getElementById(`new-section-${el.dataset.audit}`);
-    const name = input.value.trim(); if(!name) return;
-    const a = state.audits.find(x=>x.id===el.dataset.audit);
-    a.sections.push({id:uid(), name, items:[]});
-    persist(); render();
-  });
-
-  document.querySelectorAll('[data-action="remove-finding"]').forEach(el=>el.onclick=()=>{
-    const a = state.audits.find(x=>x.id===el.dataset.audit);
-    a.findings = a.findings.filter(f=>f.id!==el.dataset.finding);
-    persist(); render();
-  });
-
-  document.querySelectorAll('[data-set-finding-status]').forEach(el=>el.onclick=()=>{
-    const [auditId, findingId, status] = el.dataset.setFindingStatus.split(':');
-    const a = state.audits.find(x=>x.id===auditId);
-    const f = a.findings.find(x=>x.id===findingId);
-    f.status = status; persist(); render();
-  });
-
-  document.querySelectorAll('[data-action="add-finding"]').forEach(el=>el.onclick=()=>{
-    const auditId = el.dataset.audit;
-    const desc = document.getElementById(`nf-desc-${auditId}`).value.trim();
-    if(!desc) return;
-    const a = state.audits.find(x=>x.id===auditId);
-    a.findings.push({
-      id: uid(),
-      clause: document.getElementById(`nf-clause-${auditId}`).value,
-      desc,
-      severity: document.getElementById(`nf-severity-${auditId}`).value,
-      owner: document.getElementById(`nf-owner-${auditId}`).value,
-      dueDate: document.getElementById(`nf-due-${auditId}`).value,
-      actionText: document.getElementById(`nf-action-${auditId}`).value,
-      status: "Open"
-    });
-    persist(); render();
-  });
-
-  document.querySelectorAll('[data-capa-filter]').forEach(el=>el.onclick=()=>{
-    capaFilter = el.dataset.capaFilter; render();
+  document.querySelectorAll('[data-fil]').forEach(function(el){el.onclick=function(){cf=el.dataset.fil;render();};});
+  document.querySelectorAll('[data-cs]').forEach(function(el){
+    el.onchange=function(){
+      var a=null;S.audits.forEach(function(x){if(x.id===el.dataset.ca)a=x;});if(!a)return;
+      var f=null;a.findings.forEach(function(x){if(x.id===el.dataset.cs)f=x;});
+      if(f){f.status=el.value;persist();render();}
+    };
   });
 }
-
 render();
 </script>
 </body>
