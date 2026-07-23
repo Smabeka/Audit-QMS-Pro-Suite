@@ -2,7 +2,7 @@
   "name": "AuditQMS Pro Suite",
   "short_name": "AuditQMS",
   "description": "HACCP-based food safety audit and compliance management system",
-  "start_url": "/Audit-QMS/",
+  "start_url": "/Audit-QMS-Pro-Suite/",
   "display": "standalone",
   "background_color": "#f7f5ee",
   "theme_color": "#1c2b4a",
