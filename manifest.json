@@ -1,13 +1,12 @@
 {
-  "name": "AuditQMS Pro Suite",
-  "short_name": "AuditQMS",
-  "description": "HACCP-based food safety audit and compliance management system",
-  "start_url": "/Audit-QMS-Pro-Suite/",
+  "name": "AQMS Pro Suite",
+  "short_name": "AQMS Pro Suite",
+  "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#f7f5ee",
   "theme_color": "#1c2b4a",
   "icons": [
-    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
-    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"}
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
