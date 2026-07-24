@@ -1,4 +1,4 @@
-const CACHE = 'auditqms-v2';
+const CACHE = 'AQMS Pro Suite-v2';
 const ASSETS = ['./', './index.html'];
 
 self.addEventListener('install', function(e) {
