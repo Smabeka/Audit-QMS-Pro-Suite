@@ -1,20 +1,16 @@
 {
   "name": "AQMS Pro Suite",
-  "short_name": "AQMS",
-  "start_url": "./",
+  "short_name": "AQMS Pro Suite",
+  "description": "Offline-first audit, checklist, and CAPA management for food safety, quality, and environmental compliance.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "id": "./index.html",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#f7f5ee",
   "theme_color": "#1c2b4a",
   "icons": [
-    {
-      "src": "./icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "./icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
   ]
 }
