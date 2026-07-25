@@ -816,7 +816,11 @@ function buildAuditPrintReport(a){
 /* ---------- event handling ---------- */
 function attachHandlers(){
   document.querySelectorAll('[data-nav]').forEach(el=>el.onclick=()=>{ tab = el.dataset.nav; if(tab!=="audits") openAuditId=null; render(); });
-  document.querySelectorAll('[data-jump-audit]').forEach(el=>el.onclick=()=>{ jumpTo = el.dataset.jumpAudit; openAuditId = jumpTo; tab="audits"; render(); });
+  document.querySelectorAll('[data-jump-audit]').forEach(el=>el.onclick=()=>{
+    jumpTo = el.dataset.jumpAudit; openAuditId = jumpTo; tab="audits";
+    auditSearch = ""; auditStandardFilter = "All"; auditStatusFilter = "All"; auditRiskFilter = "All";
+    render();
+  });
   const toggleNew = document.querySelector('[data-action="toggle-new-audit"]'); if(toggleNew) toggleNew.onclick=()=>{ showNewAudit=!showNewAudit; render(); };
   const cancelNew = document.querySelector('[data-action="cancel-new-audit"]'); if(cancelNew) cancelNew.onclick=()=>{ showNewAudit=false; render(); };
   const createAudit = document.querySelector('[data-action="create-audit"]');
