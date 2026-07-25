@@ -211,6 +211,11 @@ const TEMPLATES = {
   ]
 };
 const SEVERITIES = ["Minor","Major","Critical"];
+const DEPARTMENTS = [
+  "QA","Production/Factory","Laboratory","Processing","Mixing/Ripple Plant","Dry Materials",
+  "Human Resource","Research and Development","Administration","Engineering",
+  "Warehouse & Supply Chain","Customer Service and Care","Stock Control","Receiving and Dispatch"
+];
 const FINDING_CATEGORIES = ["Hygiene","Documentation","Equipment","Pest Control","Storage","Personnel","Cleaning","Traceability","Monthly Management Review","Operation Review Meetings","Weekly Operation Review","Daily Operation Review","Training Matrix","Other"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
@@ -225,7 +230,7 @@ function logHistory(a, text){
 
 function seedAudit(title, standard, area, sections, auditNumber){
   return {
-    id: uid(), auditNumber: auditNumber || null, title, standard, area, auditor:"", date: today(), status:"Planned",
+    id: uid(), auditNumber: auditNumber || null, title, standard, area, auditor:"", auditee:"", date: today(), status:"Planned",
     riskLevel: "Medium", history: [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }],
     sections: sections.map(s => ({ id: uid(), name: s.name, items: s.items.map(text => ({id:uid(), text, result:null, note:""})) })),
     findings: []
@@ -263,6 +268,7 @@ function migrateAuditNumbers(){
   state.audits.forEach(a=>{
     if(!a.riskLevel){ a.riskLevel = "Medium"; changed = true; }
     if(!a.history){ a.history = [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }]; changed = true; }
+    if(a.auditee === undefined){ a.auditee = ""; changed = true; }
   });
   if(changed) saveStore(state);
 }
@@ -498,7 +504,7 @@ function renderAudits(){
       <div class="card p4 grid3" style="margin-bottom:16px;">
         <label class="field">Title<input id="na-title" /></label>
         <label class="field">Standard<select id="na-standard">${STANDARDS.map(s=>`<option>${s}</option>`).join('')}</select></label>
-        <label class="field">Area<input id="na-area" /></label>
+        <label class="field">Department / Area<input id="na-area" /></label>
         <div class="muted-italic" style="grid-column:1/-1;font-size:12px;">Checklist sections auto-populate from a starter template for the selected standard — you can edit or add to them after creating the audit.</div>
         <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
           <button class="btn btn-ghost" data-action="cancel-new-audit">Cancel</button>
@@ -544,8 +550,9 @@ function renderAuditDetail(a){
         <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
         <label class="field">Audit Title<input data-audit-field="${a.id}:title" value="${esc(a.title)}" /></label>
         <label class="field">Standard<select data-audit-field="${a.id}:standard">${STANDARDS.map(s=>`<option ${s===a.standard?'selected':''}>${s}</option>`).join('')}</select></label>
-        <label class="field">Area<input data-audit-field="${a.id}:area" value="${esc(a.area)}" /></label>
-        <label class="field">Auditor<input data-audit-field="${a.id}:auditor" value="${esc(a.auditor)}" placeholder="Name" /></label>
+        <label class="field">Department / Area<input data-audit-field="${a.id}:area" value="${esc(a.area)}" /></label>
+        <label class="field">Auditor<input data-audit-field="${a.id}:auditor" value="${esc(a.auditor)}" placeholder="e.g. Sandiso" /></label>
+        <label class="field">Auditee<input data-audit-field="${a.id}:auditee" value="${esc(a.auditee)}" placeholder="e.g. Saider" /></label>
         <label class="field">Date<input type="date" data-audit-field="${a.id}:date" value="${a.date}" /></label>
         <label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>
         <label class="field">Risk Level<select data-audit-field="${a.id}:riskLevel">${RISK_LEVELS.map(s=>`<option ${s===a.riskLevel?'selected':''}>${s}</option>`).join('')}</select></label>
@@ -614,7 +621,7 @@ function renderAuditDetail(a){
         </div>
       `).join('')}
       <div class="grid2 top-border">
-        <label class="field">Clause / Section<select id="nf-clause-${a.id}">${a.sections.map(s=>`<option>${esc(s.name)}</option>`).join('')}</select></label>
+        <label class="field">Department / Section<select id="nf-clause-${a.id}">${DEPARTMENTS.map(d=>`<option>${d}</option>`).join('')}</select></label>
         <label class="field">Category<select id="nf-category-${a.id}">${FINDING_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
         <label class="field">Severity<select id="nf-severity-${a.id}">${SEVERITIES.map(s=>`<option>${s}</option>`).join('')}</select></label>
         <label class="field">Owner<input id="nf-owner-${a.id}" /></label>
@@ -864,7 +871,7 @@ function buildAuditPrintReport(a){
 
   const findingsRows = a.findings.length ? `
     <div class="section-title">Findings & CAPA</div>
-    <table><thead><tr><th>Description</th><th>Clause</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>Description</th><th>Department</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th></tr></thead>
     <tbody>
       ${a.findings.map(f=>`<tr><td>${esc(f.desc)}</td><td>${esc(f.clause)}</td><td>${f.severity}</td><td>${esc(f.owner)||'—'}</td><td>${f.dueDate||'—'}</td><td>${esc(f.actionText)||'—'}</td><td>${f.status}</td></tr>`).join('')}
     </tbody></table>
@@ -890,7 +897,8 @@ function buildAuditPrintReport(a){
       <tbody>
         <tr><th>Audit Number</th><td>${esc(a.auditNumber)||'—'}</td><th>Standard</th><td>${esc(a.standard)}</td></tr>
         <tr><th>Audit Title</th><td colspan="3">${esc(a.title)}</td></tr>
-        <tr><th>Area</th><td>${esc(a.area)||'—'}</td><th>Auditor</th><td>${esc(a.auditor)||'—'}</td></tr>
+        <tr><th>Department / Area</th><td>${esc(a.area)||'—'}</td><th>Auditor</th><td>${esc(a.auditor)||'—'}</td></tr>
+        <tr><th>Auditee</th><td colspan="3">${esc(a.auditee)||'—'}</td></tr>
         <tr><th>Date</th><td>${a.date}</td><th>Status</th><td>${a.status}</td></tr>
         <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
       </tbody>
@@ -1113,10 +1121,10 @@ function attachHandlers(){
     if(typeof XLSX === 'undefined'){ alert('Excel library failed to load — check your internet connection and try again.'); return; }
     const auditRows = state.audits.map(a=>({
       "Audit Number": a.auditNumber||'', "Title": a.title, "Standard": a.standard, "Area": a.area,
-      "Auditor": a.auditor, "Date": a.date, "Status": a.status, "Compliance %": scoreOf(a)
+      "Auditor": a.auditor, "Auditee": a.auditee, "Date": a.date, "Status": a.status, "Compliance %": scoreOf(a)
     }));
     const findingRows = state.audits.flatMap(a=>a.findings.map(f=>({
-      "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Clause": f.clause, "Description": f.desc,
+      "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Department": f.clause, "Description": f.desc,
       "Severity": f.severity, "Owner": f.owner, "Due Date": f.dueDate, "CAPA": f.actionText, "Status": f.status
     })));
     const wb = XLSX.utils.book_new();
@@ -1129,7 +1137,7 @@ function attachHandlers(){
   const csvBtn = document.querySelector('[data-action="export-csv"]');
   if(csvBtn) csvBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
-    const headers = ["Audit Number","Audit Title","Clause","Description","Severity","Owner","Due Date","CAPA","Status"];
+    const headers = ["Audit Number","Audit Title","Department","Description","Severity","Owner","Due Date","CAPA","Status"];
     const rows = state.audits.flatMap(a=>a.findings.map(f=>[
       a.auditNumber||'', a.title, f.clause, f.desc, f.severity, f.owner||'', f.dueDate||'', f.actionText||'', f.status
     ]));
