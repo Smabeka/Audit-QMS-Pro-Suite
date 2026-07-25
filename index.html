@@ -77,16 +77,42 @@
   .x-btn:hover{color:var(--rust);}
   .saved-flash{font-size:10px;color:var(--green);}
   .center{display:flex;align-items:center;justify-content:center;min-height:100vh;}
+  .pro-tag{background:var(--navy);color:#fff;font-size:10px;font-weight:700;letter-spacing:.06em;padding:3px 8px;border-radius:999px;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(30,25,15,.45);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px;}
+  .modal-card{background:var(--paper);border-radius:12px;padding:20px;max-width:360px;width:100%;}
+  #print-report{display:none;}
+  @media print{
+    body{background:#fff;}
+    header,.no-print{display:none !important;}
+    #app > *:not(#print-report){display:none !important;}
+    #print-report{display:block !important;}
+    #print-report table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;}
+    #print-report th,#print-report td{border:1px solid #ccc;padding:6px 8px;text-align:left;}
+    #print-report th{background:#eef1f6;}
+    #print-report h1{font-size:20px;margin:0 0 2px;}
+    #print-report .meta{font-size:12px;color:#555;margin-bottom:10px;}
+    #print-report .section-title{font-size:13px;font-weight:700;margin:16px 0 6px;text-transform:uppercase;letter-spacing:.04em;}
+    #print-report .sig-row{display:flex;gap:40px;margin-top:40px;}
+    #print-report .sig-line{flex:1;border-top:1px solid #333;padding-top:4px;font-size:11px;color:#555;}
+  }
 </style>
 </head>
 <body>
 <div id="app"></div>
+<div id="print-report"></div>
 
 <script>
 /* ---------- storage ---------- */
 const STORE_KEY = "audit-qms-standalone-v1";
 function loadStore(){ try{ const r = localStorage.getItem(STORE_KEY); return r? JSON.parse(r): null; }catch(e){ return null; } }
 function saveStore(d){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(d)); }catch(e){ console.error(e); } }
+
+/* Pro unlock — change PRO_CODE to whatever code you distribute to paying users.
+   Note: this is a client-side check only (anyone could view-source to find it) —
+   it's a soft gate suitable for now, not real license enforcement. */
+const PRO_CODE = "AQMS-PRO-2026";
+function isPro(){ return localStorage.getItem("aqms-pro-unlocked") === "true"; }
+function unlockPro(code){ if(code.trim() === PRO_CODE){ localStorage.setItem("aqms-pro-unlocked","true"); return true; } return false; }
 
 const uid = () => Math.random().toString(36).slice(2,9);
 const today = () => new Date().toISOString().slice(0,10);
@@ -204,6 +230,10 @@ let showNewAudit = false;
 let openAuditId = null;
 let capaFilter = "All";
 let savedFlashTimer = null;
+let auditSearch = "";
+let auditStandardFilter = "All";
+let auditStatusFilter = "All";
+let showProModal = false;
 
 function persist(){
   saveStore(state);
@@ -223,7 +253,10 @@ function render(){
           <div class="logo">AQ</div>
           <div><h1>AuditQMS Pro Suite</h1><p>Food · Safety · Environment · Lab</p></div>
         </div>
-        <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
+        <div style="display:flex;align-items:center;gap:10px;">
+          ${isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`}
+          <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
+        </div>
       </div>
       <div class="wrap" style="display:flex;gap:4px;">
         ${navBtn("dashboard","Dashboard")}
@@ -234,8 +267,26 @@ function render(){
     <main class="wrap">
       ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : renderCapa()}
     </main>
+    ${showProModal ? renderProModal() : ''}
   `;
   attachHandlers();
+}
+
+function renderProModal(){
+  return `
+    <div class="modal-overlay" data-action="close-pro-modal">
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">Unlock Pro</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Pro unlocks Backup/Restore and PDF audit report exports.</p>
+        <label class="field">Access Code<input id="pro-code-input" placeholder="Enter code" /></label>
+        <div id="pro-error" style="color:var(--rust);font-size:12px;margin-top:6px;display:none;">Incorrect code — please try again.</div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">
+          <button class="btn btn-ghost" data-action="close-pro-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="submit-pro-code">Unlock</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function navBtn(key,label){
@@ -300,12 +351,31 @@ function statCard(label,value){
   return `<div class="card p4"><div class="stat-label">${label}</div><div class="stat-value">${value}</div></div>`;
 }
 
+function filteredAudits(){
+  return state.audits.filter(a=>{
+    const matchesSearch = !auditSearch || (a.title+" "+a.area+" "+a.auditor).toLowerCase().includes(auditSearch.toLowerCase());
+    const matchesStandard = auditStandardFilter==="All" || a.standard===auditStandardFilter;
+    const matchesStatus = auditStatusFilter==="All" || a.status===auditStatusFilter;
+    return matchesSearch && matchesStandard && matchesStatus;
+  });
+}
+
 function renderAudits(){
-  const audits = state.audits;
+  const audits = filteredAudits();
   return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">Audit Register</h2>
-      <button class="btn btn-primary" data-action="toggle-new-audit">+ New Audit</button>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="open-backup">⬇ Backup</button>
+        <button class="btn btn-ghost" data-action="open-restore">⬆ Restore</button>
+        <input type="file" id="restore-file-input" accept=".json" style="display:none;" />
+        <button class="btn btn-primary" data-action="toggle-new-audit">+ New Audit</button>
+      </div>
+    </div>
+    <div class="card p4 grid3" style="margin-bottom:16px;">
+      <label class="field">Search<input id="audit-search" placeholder="Title, area, auditor…" value="${esc(auditSearch)}" /></label>
+      <label class="field">Standard<select id="audit-filter-standard"><option>All</option>${STANDARDS.map(s=>`<option ${s===auditStandardFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Status<select id="audit-filter-status"><option>All</option>${["Planned","In Progress","Closed"].map(s=>`<option ${s===auditStatusFilter?'selected':''}>${s}</option>`).join('')}</select></label>
     </div>
     ${showNewAudit ? `
       <div class="card p4 grid3" style="margin-bottom:16px;">
@@ -319,7 +389,7 @@ function renderAudits(){
         </div>
       </div>` : ``}
     <div>
-      ${audits.map(a => renderAuditRow(a)).join('') || `<p class="muted-italic">No audits yet.</p>`}
+      ${audits.map(a => renderAuditRow(a)).join('') || `<p class="muted-italic">No audits match your search/filters.</p>`}
     </div>
   `;
 }
@@ -360,9 +430,12 @@ function renderAuditDetail(a){
         <label class="field">Date<input type="date" data-audit-field="${a.id}:date" value="${a.date}" /></label>
         <label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>
       </div>
-      <div class="top-border" style="display:flex;align-items:center;justify-content:space-between;">
+      <div class="top-border" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         ${score!==null ? `<div style="display:flex;align-items:center;gap:8px;"><span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span><span style="font-size:12px;color:var(--muted);">compliance score</span></div>` : `<span class="muted-italic">Score appears once checklist items are marked</span>`}
-        <button class="btn btn-danger" data-action="delete-audit" data-audit="${a.id}">Delete Audit</button>
+        <div class="flex-wrap">
+          <button class="btn btn-ghost" data-action="export-audit-pdf" data-audit="${a.id}">📄 PDF Report</button>
+          <button class="btn btn-danger" data-action="delete-audit" data-audit="${a.id}">Delete Audit</button>
+        </div>
       </div>
     </div>
 
@@ -464,6 +537,51 @@ function renderCapa(){
   `;
 }
 
+/* ---------- PDF audit report ---------- */
+function buildAuditPrintReport(a){
+  const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
+  const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
+  const checklistRows = a.sections.map(sec => `
+    <div class="section-title">${esc(sec.name)}</div>
+    <table><thead><tr><th>Item</th><th>Result</th><th>Note</th></tr></thead>
+    <tbody>
+      ${sec.items.map(it=>`<tr><td>${esc(it.text)}</td><td>${it.result||'—'}</td><td>${esc(it.note)||''}</td></tr>`).join('')}
+    </tbody></table>
+  `).join('');
+
+  const findingsRows = a.findings.length ? `
+    <div class="section-title">Findings & CAPA</div>
+    <table><thead><tr><th>Description</th><th>Clause</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th></tr></thead>
+    <tbody>
+      ${a.findings.map(f=>`<tr><td>${esc(f.desc)}</td><td>${esc(f.clause)}</td><td>${f.severity}</td><td>${esc(f.owner)||'—'}</td><td>${f.dueDate||'—'}</td><td>${esc(f.actionText)||'—'}</td><td>${f.status}</td></tr>`).join('')}
+    </tbody></table>
+  ` : `<div class="section-title">Findings & CAPA</div><p>No findings logged.</p>`;
+
+  document.getElementById('print-report').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      <div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>
+      <div>
+        <h1>AuditQMS Pro Suite</h1>
+        <div class="meta">Audit Report — Generated ${new Date().toLocaleString()}</div>
+      </div>
+    </div>
+    <table>
+      <tbody>
+        <tr><th>Audit Title</th><td>${esc(a.title)}</td><th>Standard</th><td>${esc(a.standard)}</td></tr>
+        <tr><th>Area</th><td>${esc(a.area)||'—'}</td><th>Auditor</th><td>${esc(a.auditor)||'—'}</td></tr>
+        <tr><th>Date</th><td>${a.date}</td><th>Status</th><td>${a.status}</td></tr>
+        <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
+      </tbody>
+    </table>
+    ${checklistRows}
+    ${findingsRows}
+    <div class="sig-row">
+      <div class="sig-line">Auditor Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
+      <div class="sig-line">Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
+    </div>
+  `;
+}
+
 /* ---------- event handling ---------- */
 function attachHandlers(){
   document.querySelectorAll('[data-nav]').forEach(el=>el.onclick=()=>{ tab = el.dataset.nav; if(tab!=="audits") openAuditId=null; render(); });
@@ -496,7 +614,10 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="delete-audit"]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.audit; state.audits = state.audits.filter(a=>a.id!==id); openAuditId=null; persist(); render();
+    const id = el.dataset.audit;
+    const a = state.audits.find(x=>x.id===id);
+    if(!confirm(`Delete "${a.title}"? This cannot be undone.`)) return;
+    state.audits = state.audits.filter(a=>a.id!==id); openAuditId=null; persist(); render();
   });
 
   document.querySelectorAll('[data-toggle-result]').forEach(el=>el.onclick=()=>{
@@ -579,6 +700,70 @@ function attachHandlers(){
 
   document.querySelectorAll('[data-capa-filter]').forEach(el=>el.onclick=()=>{
     capaFilter = el.dataset.capaFilter; render();
+  });
+
+  /* search & filter */
+  const searchInput = document.getElementById('audit-search');
+  if(searchInput){
+    searchInput.oninput = () => {
+      auditSearch = searchInput.value;
+      render();
+      const newInput = document.getElementById('audit-search');
+      if(newInput){ newInput.focus(); newInput.setSelectionRange(auditSearch.length, auditSearch.length); }
+    };
+  }
+  const stdFilter = document.getElementById('audit-filter-standard');
+  if(stdFilter) stdFilter.onchange = ()=>{ auditStandardFilter = stdFilter.value; render(); };
+  const statusFilter = document.getElementById('audit-filter-status');
+  if(statusFilter) statusFilter.onchange = ()=>{ auditStatusFilter = statusFilter.value; render(); };
+
+  /* pro modal */
+  const openProBtn = document.querySelector('[data-action="open-pro-modal"]'); if(openProBtn) openProBtn.onclick=()=>{ showProModal=true; render(); };
+  document.querySelectorAll('[data-action="close-pro-modal"]').forEach(el=>el.onclick=()=>{ showProModal=false; render(); });
+  const submitProBtn = document.querySelector('[data-action="submit-pro-code"]');
+  if(submitProBtn) submitProBtn.onclick=()=>{
+    const code = document.getElementById('pro-code-input').value;
+    if(unlockPro(code)){ showProModal=false; render(); }
+    else { document.getElementById('pro-error').style.display='block'; }
+  };
+
+  /* backup / restore (Pro gated) */
+  const backupBtn = document.querySelector('[data-action="open-backup"]');
+  if(backupBtn) backupBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-backup-${today()}.json`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+  const restoreBtn = document.querySelector('[data-action="open-restore"]');
+  const restoreFileInput = document.getElementById('restore-file-input');
+  if(restoreBtn) restoreBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    restoreFileInput.click();
+  };
+  if(restoreFileInput) restoreFileInput.onchange=()=>{
+    const file = restoreFileInput.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const data = JSON.parse(reader.result);
+        if(!data.audits) throw new Error("Invalid backup file");
+        if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) return;
+        state = data; openAuditId=null; persist(); render();
+      }catch(e){ alert("Could not read this file — please check it's a valid AQMS backup."); }
+    };
+    reader.readAsText(file);
+  };
+
+  /* PDF export (Pro gated) */
+  document.querySelectorAll('[data-action="export-audit-pdf"]').forEach(el=>el.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    buildAuditPrintReport(a);
+    window.print();
   });
 }
 
