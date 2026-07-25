@@ -1,39 +1,28 @@
-const CACHE = 'AQMS-Pro-Suite-v3';
+// AQMS Pro Suite service worker — v2.0 (adds update notifications)
+const CACHE = 'auditqms-pro-suite-v3';
+const ASSETS = ['./', './index.html'];
 
-const ASSETS = [
-  './',
-  './index.html',
-  './manifest.json',
-  './icon-192.png',
-  './icon-512.png',
-  './apple-touch-icon.png',
-  './favicon-32.png'
-];
-
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS))
-  );
+self.addEventListener('install', function(e) {
+  e.waitUntil(caches.open(CACHE).then(function(c) { return c.addAll(ASSETS); }));
   self.skipWaiting();
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys
-          .filter(key => key !== CACHE)
-          .map(key => caches.delete(key))
-      )
-    )
+self.addEventListener('activate', function(e) {
+  e.waitUntil(
+    caches.keys().then(function(keys) {
+      return Promise.all(keys.filter(function(k) { return k !== CACHE; }).map(function(k) { return caches.delete(k); }));
+    }).then(function() { return self.clients.claim(); })
   );
-  self.clients.claim();
 });
 
-self.addEventListener('fetch', event => {
-  event.respondWith(
-    caches.match(event.request).then(response =>
-      response || fetch(event.request)
-    )
+self.addEventListener('fetch', function(e) {
+  e.respondWith(
+    fetch(e.request).then(function(res) {
+      const resClone = res.clone();
+      caches.open(CACHE).then(function(c) { c.put(e.request, resClone); });
+      return res;
+    }).catch(function() {
+      return caches.match(e.request);
+    })
   );
 });
