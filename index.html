@@ -18,6 +18,13 @@
     --muted:#8a8168; --navy:#1c2b4a; --navyBg:#e4e9f2; --rust:#9b3f28; --rustBg:#f6e4dd;
     --green:#3f6b2e; --greenBg:#e6ede0; --amber:#8a5a10; --amberBg:#faedd4;
   }
+  body.dark{
+    --bg:#121212; --paper:#1d1d1d; --line:#333029; --line2:#2b2822; --ink:#f0ede4;
+    --muted:#a39a86; --navy:#5b7fc4; --navyBg:#26314a; --rust:#e08669; --rustBg:#3d251f;
+    --green:#8fc46e; --greenBg:#213321; --amber:#e0b95f; --amberBg:#3a3020;
+  }
+  body.dark .logo{background:var(--navy);}
+  body.dark header{background:rgba(18,18,18,.95);}
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Public Sans',sans-serif;}
   h1,h2,h3,.serif{font-family:'Fraunces',serif;}
@@ -114,9 +121,11 @@ const PRO_CODE = "AQMS-PRO-2026";
 function isPro(){ return localStorage.getItem("aqms-pro-unlocked") === "true"; }
 function unlockPro(code){ if(code.trim() === PRO_CODE){ localStorage.setItem("aqms-pro-unlocked","true"); return true; } return false; }
 
-const uid = () => Math.random().toString(36).slice(2,9);
+const APP_VERSION = "v2.0";
+const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2,9);
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
+function formatAuditNumber(n, year){ return `AUD-${year}-${String(n).padStart(4,'0')}`; }
 
 const STANDARDS = [
   "ISO 9001:2015","ISO 22000","FSSC 22000","BRCGS","HACCP","Internal GMP",
@@ -200,9 +209,9 @@ const SEVERITIES = ["Minor","Major","Critical"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
 
-function seedAudit(title, standard, area, sections){
+function seedAudit(title, standard, area, sections, auditNumber){
   return {
-    id: uid(), title, standard, area, auditor:"", date: today(), status:"Planned",
+    id: uid(), auditNumber: auditNumber || null, title, standard, area, auditor:"", date: today(), status:"Planned",
     sections: sections.map(s => ({ id: uid(), name: s.name, items: s.items.map(text => ({id:uid(), text, result:null, note:""})) })),
     findings: []
   };
@@ -213,17 +222,32 @@ function seedData(){
     {name:"Personnel Hygiene", items:["Hairnets and beard snoods worn correctly","No jewellery or false nails observed","Hand-wash stations stocked and functional"]},
     {name:"CCP Monitoring", items:["Chiller temp logs complete and within range","Metal detector verification records up to date"]},
     {name:"Housekeeping", items:["Floors and drains clean, no standing water","Waste segregated and bins covered"]}
-  ]);
+  ], formatAuditNumber(1, new Date().getFullYear()));
   a.sections[1].items[1].result = "Fail";
   a.findings = [{
     id: uid(), clause:"CCP Monitoring", desc:"Metal detector verification log missing entries for two shifts",
     severity:"Major", owner:"Line Supervisor", dueDate:"2026-07-18",
     actionText:"Reissue verification log, retrain shift leads, daily QA spot-check for 2 weeks", status:"Open"
   }];
-  return { audits: [a] };
+  return { audits: [a], auditSeq: 1 };
+}
+
+function migrateAuditNumbers(){
+  if(state.auditSeq === undefined){
+    state.auditSeq = 0;
+    [...state.audits].reverse().forEach(a=>{
+      if(!a.auditNumber){
+        state.auditSeq++;
+        const year = (a.date && new Date(a.date).getFullYear()) || new Date().getFullYear();
+        a.auditNumber = formatAuditNumber(state.auditSeq, year);
+      }
+    });
+    saveStore(state);
+  }
 }
 
 let state = loadStore() || seedData();
+migrateAuditNumbers();
 let tab = "dashboard";
 let jumpTo = null;
 let showNewAudit = false;
@@ -234,6 +258,8 @@ let auditSearch = "";
 let auditStandardFilter = "All";
 let auditStatusFilter = "All";
 let showProModal = false;
+let darkMode = localStorage.getItem("aqms-dark") === "true";
+let pendingDeleteAuditId = null;
 
 function persist(){
   saveStore(state);
@@ -245,15 +271,17 @@ function esc(str){ const d=document.createElement("div"); d.textContent = str==n
 
 /* ---------- render ---------- */
 function render(){
+  document.body.classList.toggle('dark', darkMode);
   const root = document.getElementById("app");
   root.innerHTML = `
     <header>
       <div class="wrap headrow">
         <div class="brand">
           <div class="logo">AQ</div>
-          <div><h1>AuditQMS Pro Suite</h1><p>Food · Safety · Environment · Lab</p></div>
+          <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>Food · Safety · Environment · Lab</p></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
+          <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
           ${isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`}
           <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
         </div>
@@ -268,8 +296,26 @@ function render(){
       ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : renderCapa()}
     </main>
     ${showProModal ? renderProModal() : ''}
+    ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
   `;
   attachHandlers();
+}
+
+function renderDeleteConfirmModal(){
+  const a = state.audits.find(x=>x.id===pendingDeleteAuditId);
+  if(!a) return '';
+  return `
+    <div class="modal-overlay" data-action="cancel-delete-audit">
+      <div class="modal-card" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--rust);">Delete Audit?</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">This will permanently delete "<strong>${esc(a.title)}</strong>"${a.auditNumber?` (${a.auditNumber})`:''} and cannot be undone.</p>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-ghost" data-action="cancel-delete-audit">Cancel</button>
+          <button class="btn btn-danger" style="background:var(--rust);color:#fff;border:none;" data-action="confirm-delete-audit">Delete</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderProModal(){
@@ -403,7 +449,7 @@ function renderAuditRow(a){
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
-            <div class="audit-title">${esc(a.title)}</div>
+            <div class="audit-title">${esc(a.title)} ${a.auditNumber?`<span style="color:var(--muted);font-weight:400;font-size:11px;">· ${a.auditNumber}</span>`:''}</div>
             <div class="audit-sub">${esc(a.standard)} · ${esc(a.area)||'—'} · ${a.date}</div>
           </div>
         </div>
@@ -423,6 +469,7 @@ function renderAuditDetail(a){
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <div class="grid2">
+        <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
         <label class="field">Audit Title<input data-audit-field="${a.id}:title" value="${esc(a.title)}" /></label>
         <label class="field">Standard<select data-audit-field="${a.id}:standard">${STANDARDS.map(s=>`<option ${s===a.standard?'selected':''}>${s}</option>`).join('')}</select></label>
         <label class="field">Area<input data-audit-field="${a.id}:area" value="${esc(a.area)}" /></label>
@@ -567,7 +614,8 @@ function buildAuditPrintReport(a){
     </div>
     <table>
       <tbody>
-        <tr><th>Audit Title</th><td>${esc(a.title)}</td><th>Standard</th><td>${esc(a.standard)}</td></tr>
+        <tr><th>Audit Number</th><td>${esc(a.auditNumber)||'—'}</td><th>Standard</th><td>${esc(a.standard)}</td></tr>
+        <tr><th>Audit Title</th><td colspan="3">${esc(a.title)}</td></tr>
         <tr><th>Area</th><td>${esc(a.area)||'—'}</td><th>Auditor</th><td>${esc(a.auditor)||'—'}</td></tr>
         <tr><th>Date</th><td>${a.date}</td><th>Status</th><td>${a.status}</td></tr>
         <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
@@ -596,7 +644,9 @@ function attachHandlers(){
     const area = document.getElementById('na-area').value;
     const tmpl = TEMPLATES[standard];
     const sections = tmpl ? tmpl.map(s=>({name:s.name, items:[...s.items]})) : [{name:"General", items:[]}];
-    const a = seedAudit(title, standard, area, sections);
+    state.auditSeq = (state.auditSeq||0) + 1;
+    const auditNumber = formatAuditNumber(state.auditSeq, new Date().getFullYear());
+    const a = seedAudit(title, standard, area, sections, auditNumber);
     state.audits.unshift(a);
     openAuditId = a.id; showNewAudit=false; persist(); render();
   };
@@ -614,11 +664,21 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="delete-audit"]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.audit;
-    const a = state.audits.find(x=>x.id===id);
-    if(!confirm(`Delete "${a.title}"? This cannot be undone.`)) return;
-    state.audits = state.audits.filter(a=>a.id!==id); openAuditId=null; persist(); render();
+    pendingDeleteAuditId = el.dataset.audit; render();
   });
+  document.querySelectorAll('[data-action="cancel-delete-audit"]').forEach(el=>el.onclick=()=>{
+    pendingDeleteAuditId = null; render();
+  });
+  const confirmDeleteBtn = document.querySelector('[data-action="confirm-delete-audit"]');
+  if(confirmDeleteBtn) confirmDeleteBtn.onclick=()=>{
+    state.audits = state.audits.filter(a=>a.id!==pendingDeleteAuditId);
+    openAuditId=null; pendingDeleteAuditId=null; persist(); render();
+  };
+
+  const darkToggle = document.querySelector('[data-action="toggle-dark"]');
+  if(darkToggle) darkToggle.onclick=()=>{
+    darkMode = !darkMode; localStorage.setItem("aqms-dark", darkMode ? "true" : "false"); render();
+  };
 
   document.querySelectorAll('[data-toggle-result]').forEach(el=>el.onclick=()=>{
     const [auditId, secId, itemId, val] = el.dataset.toggleResult.split(':');
@@ -769,10 +829,33 @@ function attachHandlers(){
 
 render();
 
+/* auto-save safety net — quietly persists every 5s in case a change slipped through */
+setInterval(() => { saveStore(state); }, 5000);
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js');
+    navigator.serviceWorker.register('./sw.js').then(function(reg){
+      reg.addEventListener('updatefound', function(){
+        const newWorker = reg.installing;
+        if(!newWorker) return;
+        newWorker.addEventListener('statechange', function(){
+          if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+            showUpdateBanner();
+          }
+        });
+      });
+    });
   });
+}
+
+function showUpdateBanner(){
+  if(document.getElementById('update-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1c2b4a;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:200;font-family:sans-serif;font-size:13px;gap:10px;';
+  banner.innerHTML = '<span>A new version of AuditQMS Pro Suite is available.</span><button id="reload-app-btn" style="background:#fff;color:#1c2b4a;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Reload</button>';
+  document.body.appendChild(banner);
+  document.getElementById('reload-app-btn').onclick = () => window.location.reload();
 }
 </script>
 </body>
