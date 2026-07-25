@@ -120,10 +120,13 @@ function saveStore(d){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(d)); 
    Note: this is a client-side check only (anyone could view-source to find it) —
    it's a soft gate suitable for now, not real license enforcement. */
 const PRO_CODE = "AQMS-PRO-2026";
-function isPro(){ return localStorage.getItem("aqms-pro-unlocked") === "true"; }
+/* Pro gate temporarily disabled — all Pro features are free for now.
+   Flip this back to true whenever you want to re-enable the paywall. */
+const PRO_GATE_ENABLED = false;
+function isPro(){ return !PRO_GATE_ENABLED || localStorage.getItem("aqms-pro-unlocked") === "true"; }
 function unlockPro(code){ if(code.trim() === PRO_CODE){ localStorage.setItem("aqms-pro-unlocked","true"); return true; } return false; }
 
-const APP_VERSION = "v2.0";
+const APP_VERSION = "2.0.0 Beta";
 const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2,9);
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
@@ -208,6 +211,7 @@ const TEMPLATES = {
   ]
 };
 const SEVERITIES = ["Minor","Major","Critical"];
+const FINDING_CATEGORIES = ["Hygiene","Documentation","Equipment","Pest Control","Storage","Personnel","Cleaning","Traceability","Monthly Management Review","Operation Review Meetings","Weekly Operation Review","Daily Operation Review","Training Matrix","Other"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
 
@@ -279,7 +283,15 @@ let showProModal = false;
 let darkMode = localStorage.getItem("aqms-dark") === "true";
 let pendingDeleteAuditId = null;
 let showCompanyModal = false;
-if(!state.companySettings){ state.companySettings = { name:"", address:"", footerText:"", logoDataUrl:"" }; }
+let settingsOpenSection = null;
+if(!state.companySettings){
+  state.companySettings = {
+    name: "SYDA MABEKA (PTY) LTD",
+    address: "12 Pretoria Road, Kempton Place, Johannesburg, Gauteng, 1619, South Africa",
+    footerText: "",
+    logoDataUrl: ""
+  };
+}
 
 function persist(){
   saveStore(state);
@@ -303,19 +315,20 @@ function render(){
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
-          ${isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`}
+          ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
           <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
         </div>
       </div>
-      <div class="wrap" style="display:flex;gap:4px;">
+      <div class="wrap" style="display:flex;gap:4px;flex-wrap:wrap;">
         ${navBtn("dashboard","Dashboard")}
         ${navBtn("audits","Audit Register")}
         ${navBtn("capa","CAPA Tracker")}
         ${navBtn("analytics","Analytics")}
+        ${navBtn("settings","Settings")}
       </div>
     </header>
     <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="capa" ? renderCapa() : renderAnalytics()}
+      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="capa" ? renderCapa() : tab==="analytics" ? renderAnalytics() : renderSettings()}
     </main>
     ${showProModal ? renderProModal() : ''}
     ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -602,6 +615,7 @@ function renderAuditDetail(a){
       `).join('')}
       <div class="grid2 top-border">
         <label class="field">Clause / Section<select id="nf-clause-${a.id}">${a.sections.map(s=>`<option>${esc(s.name)}</option>`).join('')}</select></label>
+        <label class="field">Category<select id="nf-category-${a.id}">${FINDING_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
         <label class="field">Severity<select id="nf-severity-${a.id}">${SEVERITIES.map(s=>`<option>${s}</option>`).join('')}</select></label>
         <label class="field">Owner<input id="nf-owner-${a.id}" /></label>
         <label class="field">CAPA Due Date<input type="date" id="nf-due-${a.id}" /></label>
@@ -756,6 +770,86 @@ function renderCharts(){
   }
 }
 
+/* ---------- settings ---------- */
+const SETTINGS_SECTIONS = [
+  { key:"about", label:"About", content: `
+    <p><strong>AQMS Pro Suite</strong> — Version ${APP_VERSION}</p>
+    <p>AQMS Pro Suite is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
+    <p>Built as a Progressive Web App (PWA), AQMS Pro Suite provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food manufacturing, catering, laboratories, warehousing, pharmaceuticals, mining, manufacturing, logistics, and other compliance-driven environments.</p>
+    <p><strong>Key Features</strong></p>
+    <ul>
+      <li>Audit Management</li><li>Dynamic Audit Templates</li><li>CAPA Management</li>
+      <li>Compliance Scoring</li><li>Dashboard & Analytics</li><li>Search and Advanced Filtering</li>
+      <li>PDF Audit Reports</li><li>Excel & CSV Export</li><li>Backup & Restore</li>
+      <li>Offline Progressive Web App (PWA)</li><li>Multi-Standard Audit Support</li>
+    </ul>
+  `},
+  { key:"release", label:"Release Notes", content: `
+    <p><strong>Version ${APP_VERSION}</strong></p>
+    <ul>
+      <li>Interactive compliance dashboard</li>
+      <li>Comprehensive audit register</li>
+      <li>CAPA tracking and management</li>
+      <li>Compliance scoring</li>
+      <li>Dynamic audit templates</li>
+      <li>Search and advanced filtering</li>
+      <li>Professional PDF audit reports</li>
+      <li>Excel and CSV export</li>
+      <li>JSON backup and restore</li>
+      <li>Installable Progressive Web App (PWA)</li>
+      <li>Complete offline functionality</li>
+      <li>Support for multiple international audit standards</li>
+      <li>Improved mobile and tablet experience</li>
+      <li>Performance improvements and bug fixes</li>
+    </ul>
+  `},
+  { key:"developer", label:"Developer", content: `
+    <p><strong>Developed by:</strong> Sandiso Mabeka</p>
+    <p><strong>Qualifications</strong></p>
+    <ul>
+      <li>National Diploma in Food Science &amp; Nutrition — Walter Sisulu University</li>
+      <li>Software Engineering Bootcamp — Stellenbosch University in partnership with HyperionDev</li>
+    </ul>
+    <p>AQMS Pro Suite was developed by combining practical experience in quality assurance, food safety, and compliance with modern software engineering to provide organizations with an efficient, reliable, and user-friendly digital audit management solution.</p>
+  `},
+  { key:"company", label:"Company", content: `
+    <p><strong>Company:</strong> SYDA MABEKA (PTY) LTD</p>
+    <p><strong>Business Address:</strong><br/>12 Pretoria Road<br/>Kempton Place<br/>Johannesburg, Gauteng<br/>1619<br/>South Africa</p>
+  `},
+  { key:"contact", label:"Contact", content: `
+    <p>For support, questions, or feedback:</p>
+    <p><a href="mailto:support@sydamabeka.co.za">support@sydamabeka.co.za</a></p>
+  `},
+  { key:"privacy", label:"Privacy Policy", content: `
+    <p>AQMS Pro Suite runs entirely offline. All audit data, findings, CAPA records, and company settings are stored locally on your device using browser storage — nothing is sent to, or stored on, any server operated by SYDA MABEKA (PTY) LTD.</p>
+    <p>The app loads a small number of third-party resources over the internet (Google Fonts, and the Chart.js and SheetJS libraries used for analytics charts and Excel export) — these providers do not receive any of your audit data, only a standard request for the resource file itself.</p>
+    <p>Because data is stored locally, you are responsible for backing it up (via the Backup feature) and for the security of the device you use the app on. Uninstalling the app or clearing browser site data will permanently delete locally stored audits unless you've exported a backup first.</p>
+    <p>Questions about this policy can be sent to <a href="mailto:support@sydamabeka.co.za">support@sydamabeka.co.za</a>.</p>
+  `},
+  { key:"version", label:"App Version", content: `
+    <p><strong>AQMS Pro Suite — Version ${APP_VERSION}</strong></p>
+    <p style="margin-top:14px;">© 2026 SYDA MABEKA (PTY) LTD. All rights reserved.</p>
+    <p>AQMS Pro Suite is proprietary software developed and maintained by SYDA MABEKA (PTY) LTD. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
+  `}
+];
+
+function renderSettings(){
+  return `
+    <h2 class="serif" style="font-size:18px;margin:0 0 16px;">Settings</h2>
+    <div class="card" style="overflow:hidden;">
+      ${SETTINGS_SECTIONS.map(sec => `
+        <div style="border-bottom:1px solid var(--line2);">
+          <button class="audit-row" data-toggle-settings="${sec.key}">
+            <span style="font-size:14px;font-weight:500;">${sec.label}</span>
+            <span style="color:#a39a86;">${settingsOpenSection===sec.key?'▾':'›'}</span>
+          </button>
+          ${settingsOpenSection===sec.key ? `<div style="padding:0 16px 16px;font-size:13px;line-height:1.6;color:var(--ink);">${sec.content}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 /* ---------- PDF audit report ---------- */
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
@@ -872,6 +966,12 @@ function attachHandlers(){
     darkMode = !darkMode; localStorage.setItem("aqms-dark", darkMode ? "true" : "false"); render();
   };
 
+  document.querySelectorAll('[data-toggle-settings]').forEach(el=>el.onclick=()=>{
+    const key = el.dataset.toggleSettings;
+    settingsOpenSection = settingsOpenSection === key ? null : key;
+    render();
+  });
+
   document.querySelectorAll('[data-toggle-result]').forEach(el=>el.onclick=()=>{
     const [auditId, secId, itemId, val] = el.dataset.toggleResult.split(':');
     const a = state.audits.find(x=>x.id===auditId);
@@ -941,6 +1041,7 @@ function attachHandlers(){
     a.findings.push({
       id: uid(),
       clause: document.getElementById(`nf-clause-${auditId}`).value,
+      category: document.getElementById(`nf-category-${auditId}`).value,
       desc,
       severity: document.getElementById(`nf-severity-${auditId}`).value,
       owner: document.getElementById(`nf-owner-${auditId}`).value,
