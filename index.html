@@ -12,6 +12,8 @@
 <meta name="theme-color" content="#1c2b4a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#f7f5ee; --paper:#ffffff; --line:#e2dbc9; --line2:#eee7d5; --ink:#2a2620;
@@ -209,9 +211,18 @@ const SEVERITIES = ["Minor","Major","Critical"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
 
+const RISK_LEVELS = ["Low","Medium","High","Critical"];
+const riskTone = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
+
+function logHistory(a, text){
+  if(!a.history) a.history = [];
+  a.history.push({ id: uid(), date: new Date().toISOString(), text });
+}
+
 function seedAudit(title, standard, area, sections, auditNumber){
   return {
     id: uid(), auditNumber: auditNumber || null, title, standard, area, auditor:"", date: today(), status:"Planned",
+    riskLevel: "Medium", history: [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }],
     sections: sections.map(s => ({ id: uid(), name: s.name, items: s.items.map(text => ({id:uid(), text, result:null, note:""})) })),
     findings: []
   };
@@ -244,6 +255,12 @@ function migrateAuditNumbers(){
     });
     saveStore(state);
   }
+  let changed = false;
+  state.audits.forEach(a=>{
+    if(!a.riskLevel){ a.riskLevel = "Medium"; changed = true; }
+    if(!a.history){ a.history = [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }]; changed = true; }
+  });
+  if(changed) saveStore(state);
 }
 
 let state = loadStore() || seedData();
@@ -257,9 +274,12 @@ let savedFlashTimer = null;
 let auditSearch = "";
 let auditStandardFilter = "All";
 let auditStatusFilter = "All";
+let auditRiskFilter = "All";
 let showProModal = false;
 let darkMode = localStorage.getItem("aqms-dark") === "true";
 let pendingDeleteAuditId = null;
+let showCompanyModal = false;
+if(!state.companySettings){ state.companySettings = { name:"", address:"", footerText:"", logoDataUrl:"" }; }
 
 function persist(){
   saveStore(state);
@@ -271,6 +291,7 @@ function esc(str){ const d=document.createElement("div"); d.textContent = str==n
 
 /* ---------- render ---------- */
 function render(){
+  scoreCache.clear();
   document.body.classList.toggle('dark', darkMode);
   const root = document.getElementById("app");
   root.innerHTML = `
@@ -290,15 +311,41 @@ function render(){
         ${navBtn("dashboard","Dashboard")}
         ${navBtn("audits","Audit Register")}
         ${navBtn("capa","CAPA Tracker")}
+        ${navBtn("analytics","Analytics")}
       </div>
     </header>
     <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : renderCapa()}
+      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="capa" ? renderCapa() : renderAnalytics()}
     </main>
     ${showProModal ? renderProModal() : ''}
     ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
+    ${showCompanyModal ? renderCompanyModal() : ''}
   `;
   attachHandlers();
+  if(tab==="analytics") renderCharts();
+}
+
+function renderCompanyModal(){
+  const c = state.companySettings;
+  return `
+    <div class="modal-overlay" data-action="close-company-modal">
+      <div class="modal-card" style="max-width:420px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">Company Settings</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">This branding appears on PDF audit reports.</p>
+        <div class="grid2" style="margin-bottom:10px;">
+          <label class="field" style="grid-column:1/-1;">Company Name<input id="cs-name" value="${esc(c.name)}" placeholder="e.g. Siyathemba Catering" /></label>
+          <label class="field" style="grid-column:1/-1;">Company Address / Contact<input id="cs-address" value="${esc(c.address)}" placeholder="Address, phone, email…" /></label>
+          <label class="field" style="grid-column:1/-1;">Report Footer Text<input id="cs-footer" value="${esc(c.footerText)}" placeholder="e.g. Confidential — Internal Use Only" /></label>
+          <label class="field" style="grid-column:1/-1;">Company Logo<input type="file" id="cs-logo" accept="image/*" /></label>
+          ${c.logoDataUrl ? `<div style="grid-column:1/-1;"><img src="${c.logoDataUrl}" style="max-height:50px;max-width:140px;border:1px solid var(--line);border-radius:6px;padding:4px;" /></div>` : ''}
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-ghost" data-action="close-company-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="save-company-settings">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function renderDeleteConfirmModal(){
@@ -339,10 +386,13 @@ function navBtn(key,label){
   return `<button data-nav="${key}" class="${tab===key?'active':''}">${label}</button>`;
 }
 
+let scoreCache = new Map();
 function scoreOf(audit){
+  if(scoreCache.has(audit.id)) return scoreCache.get(audit.id);
   const items = audit.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
-  if(items.length===0) return null;
-  return Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100);
+  const score = items.length===0 ? null : Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100);
+  scoreCache.set(audit.id, score);
+  return score;
 }
 
 function renderDashboard(){
@@ -399,10 +449,13 @@ function statCard(label,value){
 
 function filteredAudits(){
   return state.audits.filter(a=>{
-    const matchesSearch = !auditSearch || (a.title+" "+a.area+" "+a.auditor).toLowerCase().includes(auditSearch.toLowerCase());
+    const findingsText = a.findings.map(f=>f.desc+" "+f.clause).join(" ");
+    const haystack = (a.title+" "+a.area+" "+a.auditor+" "+(a.auditNumber||"")+" "+findingsText).toLowerCase();
+    const matchesSearch = !auditSearch || haystack.includes(auditSearch.toLowerCase());
     const matchesStandard = auditStandardFilter==="All" || a.standard===auditStandardFilter;
     const matchesStatus = auditStatusFilter==="All" || a.status===auditStatusFilter;
-    return matchesSearch && matchesStandard && matchesStatus;
+    const matchesRisk = auditRiskFilter==="All" || a.riskLevel===auditRiskFilter;
+    return matchesSearch && matchesStandard && matchesStatus && matchesRisk;
   });
 }
 
@@ -412,16 +465,21 @@ function renderAudits(){
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">Audit Register</h2>
       <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="open-company-modal">⚙ Company</button>
         <button class="btn btn-ghost" data-action="open-backup">⬇ Backup</button>
         <button class="btn btn-ghost" data-action="open-restore">⬆ Restore</button>
+        <button class="btn btn-ghost" data-action="export-excel">⬇ Excel</button>
+        <button class="btn btn-ghost" data-action="export-csv">⬇ CSV</button>
         <input type="file" id="restore-file-input" accept=".json" style="display:none;" />
         <button class="btn btn-primary" data-action="toggle-new-audit">+ New Audit</button>
       </div>
     </div>
+    ${localStorage.getItem('aqms-last-backup') ? `<div class="muted-italic" style="font-size:11px;margin:-10px 0 12px;">Last backup: ${localStorage.getItem('aqms-last-backup')}</div>` : ''}
     <div class="card p4 grid3" style="margin-bottom:16px;">
-      <label class="field">Search<input id="audit-search" placeholder="Title, area, auditor…" value="${esc(auditSearch)}" /></label>
+      <label class="field">Search<input id="audit-search" placeholder="Title, area, auditor, finding text…" value="${esc(auditSearch)}" /></label>
       <label class="field">Standard<select id="audit-filter-standard"><option>All</option>${STANDARDS.map(s=>`<option ${s===auditStandardFilter?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="field">Status<select id="audit-filter-status"><option>All</option>${["Planned","In Progress","Closed"].map(s=>`<option ${s===auditStatusFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Risk Level<select id="audit-filter-risk"><option>All</option>${RISK_LEVELS.map(s=>`<option ${s===auditRiskFilter?'selected':''}>${s}</option>`).join('')}</select></label>
     </div>
     ${showNewAudit ? `
       <div class="card p4 grid3" style="margin-bottom:16px;">
@@ -455,6 +513,7 @@ function renderAuditRow(a){
         </div>
         <div class="flex-wrap">
           ${openFindings>0?`<span class="tag tag-rust">${openFindings} open</span>`:''}
+          <span class="tag tag-${riskTone[a.riskLevel]||'neutral'}">${a.riskLevel||'—'} risk</span>
           <span class="tag tag-${statusTone[a.status]}">${a.status}</span>
         </div>
       </button>
@@ -476,6 +535,7 @@ function renderAuditDetail(a){
         <label class="field">Auditor<input data-audit-field="${a.id}:auditor" value="${esc(a.auditor)}" placeholder="Name" /></label>
         <label class="field">Date<input type="date" data-audit-field="${a.id}:date" value="${a.date}" /></label>
         <label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="field">Risk Level<select data-audit-field="${a.id}:riskLevel">${RISK_LEVELS.map(s=>`<option ${s===a.riskLevel?'selected':''}>${s}</option>`).join('')}</select></label>
       </div>
       <div class="top-border" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         ${score!==null ? `<div style="display:flex;align-items:center;gap:8px;"><span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span><span style="font-size:12px;color:var(--muted);">compliance score</span></div>` : `<span class="muted-italic">Score appears once checklist items are marked</span>`}
@@ -550,6 +610,16 @@ function renderAuditDetail(a){
         <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
       </div>
     </div>
+
+    <div class="card p4" style="margin-top:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Audit History</h3>
+      ${(a.history||[]).slice().reverse().map(h=>`
+        <div style="display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--line2);font-size:12px;">
+          <span style="color:var(--muted);white-space:nowrap;">${new Date(h.date).toLocaleString()}</span>
+          <span>${esc(h.text)}</span>
+        </div>
+      `).join('') || `<p class="muted-italic">No history yet.</p>`}
+    </div>
   `;
 }
 
@@ -584,6 +654,108 @@ function renderCapa(){
   `;
 }
 
+/* ---------- analytics ---------- */
+let chartInstances = {};
+
+function renderAnalytics(){
+  return `
+    <h2 class="serif" style="font-size:18px;margin:0 0 16px;">Analytics</h2>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Open Findings by Severity</h3>
+        <canvas id="chart-severity" height="220"></canvas>
+      </div>
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">CAPA Ageing</h3>
+        <canvas id="chart-ageing" height="220"></canvas>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Compliance Trend</h3>
+        <canvas id="chart-trend" height="220"></canvas>
+      </div>
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Audits by Standard</h3>
+        <canvas id="chart-standards" height="220"></canvas>
+      </div>
+    </div>
+  `;
+}
+
+function destroyChart(key){
+  if(chartInstances[key]){ chartInstances[key].destroy(); delete chartInstances[key]; }
+}
+
+function renderCharts(){
+  if(typeof Chart === 'undefined'){ return; }
+  const gridColor = darkMode ? 'rgba(255,255,255,.08)' : 'rgba(0,0,0,.06)';
+  const textColor = darkMode ? '#d8d3c6' : '#5c5540';
+  Chart.defaults.color = textColor;
+  Chart.defaults.borderColor = gridColor;
+
+  /* Findings by severity (open only) */
+  const openFindings = state.audits.flatMap(a=>a.findings).filter(f=>f.status!=="Closed");
+  const sevCounts = ["Minor","Major","Critical"].map(s=>openFindings.filter(f=>f.severity===s).length);
+  destroyChart('severity');
+  const sevCtx = document.getElementById('chart-severity');
+  if(sevCtx){
+    chartInstances.severity = new Chart(sevCtx, {
+      type: 'doughnut',
+      data: { labels:["Minor","Major","Critical"], datasets:[{ data: sevCounts, backgroundColor:['#8a5a10','#9b3f28','#7a2c1a'] }] },
+      options: { plugins:{ legend:{ position:'bottom' } }, maintainAspectRatio:true }
+    });
+  }
+
+  /* CAPA ageing buckets (open findings with a due date) */
+  const openWithDue = openFindings.filter(f=>f.dueDate);
+  const buckets = { "Not overdue":0, "1–7 days":0, "8–30 days":0, "30+ days":0 };
+  openWithDue.forEach(f=>{
+    const overdueDays = -daysUntil(f.dueDate);
+    if(overdueDays <= 0) buckets["Not overdue"]++;
+    else if(overdueDays <= 7) buckets["1–7 days"]++;
+    else if(overdueDays <= 30) buckets["8–30 days"]++;
+    else buckets["30+ days"]++;
+  });
+  destroyChart('ageing');
+  const ageingCtx = document.getElementById('chart-ageing');
+  if(ageingCtx){
+    chartInstances.ageing = new Chart(ageingCtx, {
+      type: 'bar',
+      data: { labels: Object.keys(buckets), datasets:[{ label:"Open CAPAs", data: Object.values(buckets), backgroundColor:'#9b3f28' }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, ticks:{ precision:0 }, grid:{color:gridColor} }, x:{ grid:{display:false} } } }
+    });
+  }
+
+  /* Compliance trend across audits, ordered by date */
+  const scoredAudits = state.audits
+    .map(a=>({ label: a.auditNumber || a.title, date:a.date, score: scoreOf(a) }))
+    .filter(a=>a.score!==null)
+    .sort((x,y)=>x.date.localeCompare(y.date));
+  destroyChart('trend');
+  const trendCtx = document.getElementById('chart-trend');
+  if(trendCtx){
+    chartInstances.trend = new Chart(trendCtx, {
+      type: 'line',
+      data: { labels: scoredAudits.map(a=>a.label), datasets:[{ label:"Compliance %", data: scoredAudits.map(a=>a.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.15)', fill:true, tension:.25 }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, max:100, grid:{color:gridColor} }, x:{ grid:{display:false} } } }
+    });
+  }
+
+  /* Audits by standard */
+  const byStandard = {};
+  state.audits.forEach(a=>{ byStandard[a.standard] = (byStandard[a.standard]||0)+1; });
+  destroyChart('standards');
+  const stdCtx = document.getElementById('chart-standards');
+  if(stdCtx){
+    chartInstances.standards = new Chart(stdCtx, {
+      type: 'bar',
+      data: { labels: Object.keys(byStandard), datasets:[{ label:"Audits", data: Object.values(byStandard), backgroundColor:'#3f6b2e' }] },
+      options: { indexAxis:'y', plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ precision:0 }, grid:{color:gridColor} }, y:{ grid:{display:false} } } }
+    });
+  }
+}
+
 /* ---------- PDF audit report ---------- */
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
@@ -604,11 +776,19 @@ function buildAuditPrintReport(a){
     </tbody></table>
   ` : `<div class="section-title">Findings & CAPA</div><p>No findings logged.</p>`;
 
+  const c = state.companySettings || {};
+  const logoHtml = c.logoDataUrl
+    ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
+    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>`;
+  const brandName = c.name ? esc(c.name) : "AuditQMS Pro Suite";
+  const brandAddress = c.address ? `<div class="meta">${esc(c.address)}</div>` : '';
+
   document.getElementById('print-report').innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-      <div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>
+      ${logoHtml}
       <div>
-        <h1>AuditQMS Pro Suite</h1>
+        <h1>${brandName}</h1>
+        ${brandAddress}
         <div class="meta">Audit Report — Generated ${new Date().toLocaleString()}</div>
       </div>
     </div>
@@ -626,6 +806,9 @@ function buildAuditPrintReport(a){
     <div class="sig-row">
       <div class="sig-line">Auditor Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
       <div class="sig-line">Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
+    </div>
+    <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
+      ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by AQMS Pro Suite ${APP_VERSION}
     </div>
   `;
 }
@@ -659,7 +842,12 @@ function attachHandlers(){
     el.onchange = () => {
       const [id, field] = el.dataset.auditField.split(':');
       const a = state.audits.find(x=>x.id===id);
-      a[field] = el.value; persist(); render();
+      const oldValue = a[field];
+      a[field] = el.value;
+      if((field==="status" || field==="riskLevel") && oldValue !== el.value){
+        logHistory(a, `${field==="status"?"Status":"Risk level"} changed: ${oldValue} → ${el.value}`);
+      }
+      persist(); render();
     };
   });
 
@@ -737,6 +925,7 @@ function attachHandlers(){
     const [auditId, findingId, status] = el.dataset.setFindingStatus.split(':');
     const a = state.audits.find(x=>x.id===auditId);
     const f = a.findings.find(x=>x.id===findingId);
+    if(f.status !== status) logHistory(a, `Finding "${f.desc.slice(0,50)}${f.desc.length>50?'…':''}" status: ${f.status} → ${status}`);
     f.status = status; persist(); render();
   });
 
@@ -755,6 +944,7 @@ function attachHandlers(){
       actionText: document.getElementById(`nf-action-${auditId}`).value,
       status: "Open"
     });
+    logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"`);
     persist(); render();
   });
 
@@ -776,6 +966,8 @@ function attachHandlers(){
   if(stdFilter) stdFilter.onchange = ()=>{ auditStandardFilter = stdFilter.value; render(); };
   const statusFilter = document.getElementById('audit-filter-status');
   if(statusFilter) statusFilter.onchange = ()=>{ auditStatusFilter = statusFilter.value; render(); };
+  const riskFilter = document.getElementById('audit-filter-risk');
+  if(riskFilter) riskFilter.onchange = ()=>{ auditRiskFilter = riskFilter.value; render(); };
 
   /* pro modal */
   const openProBtn = document.querySelector('[data-action="open-pro-modal"]'); if(openProBtn) openProBtn.onclick=()=>{ showProModal=true; render(); };
@@ -787,7 +979,66 @@ function attachHandlers(){
     else { document.getElementById('pro-error').style.display='block'; }
   };
 
-  /* backup / restore (Pro gated) */
+  /* company settings modal */
+  const openCompanyBtn = document.querySelector('[data-action="open-company-modal"]');
+  if(openCompanyBtn) openCompanyBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    showCompanyModal=true; render();
+  };
+  document.querySelectorAll('[data-action="close-company-modal"]').forEach(el=>el.onclick=()=>{ showCompanyModal=false; render(); });
+  const saveCompanyBtn = document.querySelector('[data-action="save-company-settings"]');
+  if(saveCompanyBtn) saveCompanyBtn.onclick=()=>{
+    state.companySettings.name = document.getElementById('cs-name').value;
+    state.companySettings.address = document.getElementById('cs-address').value;
+    state.companySettings.footerText = document.getElementById('cs-footer').value;
+    const logoFile = document.getElementById('cs-logo').files[0];
+    if(logoFile){
+      const reader = new FileReader();
+      reader.onload = () => { state.companySettings.logoDataUrl = reader.result; persist(); showCompanyModal=false; render(); };
+      reader.readAsDataURL(logoFile);
+    } else {
+      persist(); showCompanyModal=false; render();
+    }
+  };
+
+  /* Excel export (Pro gated) */
+  const excelBtn = document.querySelector('[data-action="export-excel"]');
+  if(excelBtn) excelBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    if(typeof XLSX === 'undefined'){ alert('Excel library failed to load — check your internet connection and try again.'); return; }
+    const auditRows = state.audits.map(a=>({
+      "Audit Number": a.auditNumber||'', "Title": a.title, "Standard": a.standard, "Area": a.area,
+      "Auditor": a.auditor, "Date": a.date, "Status": a.status, "Compliance %": scoreOf(a)
+    }));
+    const findingRows = state.audits.flatMap(a=>a.findings.map(f=>({
+      "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Clause": f.clause, "Description": f.desc,
+      "Severity": f.severity, "Owner": f.owner, "Due Date": f.dueDate, "CAPA": f.actionText, "Status": f.status
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows), "Audits");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(findingRows), "Findings & CAPA");
+    XLSX.writeFile(wb, `aqms-export-${today()}.xlsx`);
+  };
+
+  /* CSV export (Pro gated) — findings/CAPA, most useful for external analysis */
+  const csvBtn = document.querySelector('[data-action="export-csv"]');
+  if(csvBtn) csvBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    const headers = ["Audit Number","Audit Title","Clause","Description","Severity","Owner","Due Date","CAPA","Status"];
+    const rows = state.audits.flatMap(a=>a.findings.map(f=>[
+      a.auditNumber||'', a.title, f.clause, f.desc, f.severity, f.owner||'', f.dueDate||'', f.actionText||'', f.status
+    ]));
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(r=>r.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-findings-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+
   const backupBtn = document.querySelector('[data-action="open-backup"]');
   if(backupBtn) backupBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
@@ -797,6 +1048,8 @@ function attachHandlers(){
     link.href = url; link.download = `aqms-backup-${today()}.json`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    localStorage.setItem('aqms-last-backup', new Date().toLocaleString());
+    render();
   };
   const restoreBtn = document.querySelector('[data-action="open-restore"]');
   const restoreFileInput = document.getElementById('restore-file-input');
