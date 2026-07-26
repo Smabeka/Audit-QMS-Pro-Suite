@@ -499,12 +499,13 @@ function render(){
         ${navBtn("risk","Risk Register")}
         ${navBtn("metrics","KPI Metrics")}
         ${navBtn("capa","CAPA Tracker")}
+        ${navBtn("quality-cycle","Quality Cycle")}
         ${navBtn("analytics","Analytics")}
         ${navBtn("settings","Settings")}
       </div>
     </header>
     <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
     </main>
     ${showProModal ? renderProModal() : ''}
     ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -1061,9 +1062,9 @@ function renderMetrics(){
       </div>
     </div>
     <div class="stats" style="grid-template-columns:repeat(3,1fr);">
-      ${statCard("Metrics Tracked", metrics.length)}
-      ${statCard("On Target", onTarget)}
-      ${statCard("Off Target", offTarget)}
+      ${statCard("📊", "Metrics Tracked", metrics.length)}
+      ${statCard("✅", "On Target", onTarget)}
+      ${statCard("⚠", "Off Target", offTarget)}
     </div>
     ${showNewMetric ? renderNewMetricForm() : ''}
     <div>
@@ -1394,33 +1395,56 @@ function renderCharts(){
   }
 }
 
-/* ---------- settings ---------- */
-const SETTINGS_SECTIONS = [
-  { key:"quality-cycle", label:"Strategic Quality Cycle", content: `
-    <p style="margin-bottom:14px;">How this app's modules connect into a continuous improvement loop:</p>
-    <div style="display:flex;flex-direction:column;gap:2px;">
-      ${[
-        ["📋","Plan","Set up audits, checklists, and risk assessments"],
-        ["🔍","Conduct Audits","Run audits and inspections using the Audit Register"],
-        ["⚠️","Record Findings","Log non-conformances and observations"],
-        ["🛠","CAPA Assignment","Assign corrective/preventive actions with owners and due dates"],
-        ["✔️","Verify Effectiveness","Confirm the CAPA resolved the issue and close it"],
-        ["📊","Automatic KPI & Compliance Score Update","Dashboard recalculates live from your data"],
-        ["👥","Management Review","Review KPIs, trends, risks, and compliance performance"],
-        ["🚀","Improvement Actions","Approve changes, update procedures, allocate resources"],
-        ["📋","Next Audit Plan","Outputs feed into the next planning cycle"]
-      ].map(([icon,title,desc], i, arr) => `
-        <div style="display:flex;gap:10px;align-items:flex-start;">
-          <span style="font-size:18px;">${icon}</span>
-          <div style="flex:1;padding-bottom:${i<arr.length-1?'14px':'0'};">
-            <div style="font-weight:600;font-size:13px;">${title}</div>
-            <div class="muted-italic" style="font-size:12px;">${desc}</div>
-            ${i<arr.length-1?'<div style="color:#c9c0a8;padding-top:4px;">↓</div>':''}
+/* ---------- quality cycle ---------- */
+function renderQualityCycle(){
+  const stages = [
+    {icon:"📋", tag:"PLAN", title:"Plan", items:["Schedule Audits","Create Checklists","Risk Assessments","Compliance Requirements"]},
+    {icon:"🔍", tag:"DO", title:"Conduct Internal Audits & Inspections", items:[]},
+    {icon:"⚠️", tag:"CHECK", title:"Record Findings", items:["Non-Conformances","Observations","Opportunities for Improvement"]},
+    {icon:"🛠", tag:"ACT", title:"CAPA Management", items:["Assign Owner","Due Date","Root Cause","Corrective Action","Preventive Action"]},
+    {icon:"✔", tag:"VERIFY", title:"Verification", items:["Verify Effectiveness","Close CAPA"]},
+    {icon:"📊", tag:"UPDATE", title:"Live Dashboard — Automatic Updates", items:["Overall Compliance Score","Audit Score","CAPA Closure Rate","Open Findings","Risk Level","Supplier Performance*","Training Compliance*","Document Status*"]},
+    {icon:"👥", tag:"REVIEW", title:"Management Review — Executive Decision Making", items:["Review KPIs","Analyze Trends","Review Risks","Allocate Resources","Set Objectives"]},
+    {icon:"🚀", tag:"IMPROVE", title:"Continuous Improvement", items:["Update Procedures","Improve Processes","Train Employees","Reduce Risks"]},
+    {icon:"📋", tag:"PLAN", title:"New Audit Plan — Cycle Starts Again", items:[]}
+  ];
+  return `
+    <h2 class="serif" style="font-size:18px;margin:0 0 6px;">AQMS Pro Suite — Continuous Improvement Cycle</h2>
+    <p class="muted-italic" style="font-size:12px;margin:0 0 16px;">The Plan–Do–Check–Act (PDCA) loop this app is built around.</p>
+    <div>
+      ${stages.map((s,i)=>`
+        <div class="card p4" style="margin-bottom:${i<stages.length-1?'4px':'16px'};">
+          <div style="display:flex;gap:10px;align-items:flex-start;">
+            <span style="font-size:22px;">${s.icon}</span>
+            <div style="flex:1;">
+              <div class="tag tag-navy" style="margin-bottom:6px;">${s.tag}</div>
+              <div style="font-weight:600;font-size:14px;margin-bottom:${s.items.length?'6px':'0'};">${esc(s.title)}</div>
+              ${s.items.length ? `<ul style="margin:0;padding-left:18px;font-size:13px;color:var(--muted);">${s.items.map(it=>`<li>${esc(it)}</li>`).join('')}</ul>` : ''}
+            </div>
           </div>
         </div>
+        ${i<stages.length-1 ? `<div style="text-align:center;color:#c9c0a8;font-size:18px;margin-bottom:4px;">↓</div>` : ''}
       `).join('')}
     </div>
-  `},
+    <div class="card p4" style="margin-bottom:16px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">The Overall Compliance Score updates automatically</h3>
+      <p style="font-size:13px;margin:0 0 8px;">Every significant activity in the app feeds back into your live score:</p>
+      <ul style="margin:0 0 10px;padding-left:18px;font-size:13px;">
+        <li>Audit completed → Audit Compliance recalculated</li>
+        <li>CAPA closed → CAPA Closure Rate updated</li>
+        <li>Risk assessment updated → Risk Management score updated</li>
+        <li>KPI reading logged → KPI Metrics On-Target % updated</li>
+      </ul>
+      <p style="font-size:13px;margin:0;">Those individual scores roll up into a single <strong>Overall Compliance Score (0–100%)</strong>, shown right on your Dashboard.</p>
+    </div>
+    <div class="card p4">
+      <p class="muted-italic" style="font-size:11px;margin:0;">* Supplier Performance, Training Compliance, and Document Status appear in the full vision for this cycle, but aren't built as modules in the app yet — they're not part of today's live Overall Compliance Score. Everything else above is already working and calculating in real time from your data.</p>
+    </div>
+  `;
+}
+
+/* ---------- settings ---------- */
+const SETTINGS_SECTIONS = [
   { key:"about", label:"About", content: `
     <p><strong>AQMS Pro Suite</strong> — Version ${APP_VERSION}</p>
     <p>AQMS Pro Suite is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
