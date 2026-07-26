@@ -141,7 +141,8 @@ const STANDARDS = [
   "Contractor & Visitor Management","Chemical & Waste Management",
   "Emergency Preparedness & Business Continuity","Equipment, Calibration & Maintenance",
   "Legal & Regulatory Compliance","Management Review & KPI Tracking",
-  "Customer Complaints & Change Management","Planned Job Observation (PJO)"
+  "Customer Complaints & Change Management","Planned Job Observation (PJO)",
+  "Security","Material Safety Data (MSDS)","Microbiological Analysis","Transport & Fleet Management"
 ];
 const TEMPLATES = {
   "ISO 9001:2015":[
@@ -252,6 +253,26 @@ const TEMPLATES = {
   "Planned Job Observation (PJO)":[
     {name:"Slips, Trips & Falls", items:["Hazard warning signs displayed where appropriate","External entrances/exits assessed for slip/trip risk","Fire routes and emergency exits clear from obstructions","Work areas adequately lit","Employees issued appropriate footwear guidance","Housekeeping standards acceptable and understood by individuals","Work equipment/tools stored correctly, not left cluttering the work area","Maintenance programmes in place to prevent hazardous conditions developing","Surface conditions in good repair and free from slip/trip hazards, including spills"]},
     {name:"Task & Behaviour Observation", items:["Operator/trainee present and prepared before task start","PPE worn correctly for the task being performed","Task carried out following the agreed safe method","Individual engaged and able to explain the task safely when asked"]}
+  ],
+  "Security":[
+    {name:"Site Access Control", items:["Perimeter fencing/gates intact and secure","Access control system (cards/biometrics) functioning correctly","Visitor sign-in and badge process followed","Restricted areas clearly marked and access-limited to authorized staff"]},
+    {name:"Surveillance & Monitoring", items:["CCTV cameras operational and covering key areas","Recorded footage retained per policy and reviewable","Security incidents logged and investigated"]},
+    {name:"Product & Asset Security", items:["Warehouse/storage areas locked when unattended","Stock/asset counts reconciled against records","Deliveries and dispatches verified against documentation to prevent theft/diversion"]}
+  ],
+  "Material Safety Data (MSDS)":[
+    {name:"SDS Availability & Currency", items:["SDS available for every hazardous chemical/material on site","SDS versions current (within supplier's revision date)","SDS accessible to all shifts, including in local language where needed"]},
+    {name:"Labelling & Classification", items:["Containers labelled per SDS/GHS classification","Secondary/decanted containers labelled correctly","Hazard pictograms and precautionary statements visible"]},
+    {name:"Handler Training & Storage", items:["Staff handling hazardous materials trained on SDS content","Storage segregation followed per SDS incompatibility guidance","Spill kits and PPE specified in SDS available at point of use"]}
+  ],
+  "Microbiological Analysis":[
+    {name:"Sample Handling & Preparation", items:["Samples collected aseptically and correctly labelled","Sample transport/storage temperature maintained until testing","Sample received within required testing timeframe"]},
+    {name:"Testing & Incubation", items:["Correct media and test method used per specification","Incubation temperature and time logged and within range","Positive/negative controls run alongside test samples"]},
+    {name:"Results & Reporting", items:["Plate counts/results read and recorded accurately","Out-of-specification results investigated and escalated","Results recorded and traceable to batch/lot number"]}
+  ],
+  "Transport & Fleet Management":[
+    {name:"Vehicle Condition & Compliance", items:["Vehicle roadworthy with valid licence/registration","Pre-trip vehicle inspection completed and recorded","Refrigeration/temperature-control units functioning correctly (if applicable)"]},
+    {name:"Driver & Trip Safety", items:["Driver holds valid licence and required permits","Driver hours/rest periods compliant with regulations","Load secured correctly before departure"]},
+    {name:"Delivery & Cold Chain", items:["Product temperature checked and recorded at loading and delivery","Delivery documentation matches dispatched goods","Delivery times within agreed service levels"]}
   ]
 };
 const SEVERITIES = ["Minor","Major","Critical"];
@@ -345,6 +366,8 @@ if(!state.companySettings){
 if(!state.riskAssessments){ state.riskAssessments = []; }
 if(!state.metrics){ state.metrics = []; }
 if(!state.checklists){ state.checklists = []; }
+let checklistSeq = state.checklists.length;
+if(!state.checklists){ state.checklists = []; }
 
 function riskLevelFromScore(score){
   if(score===null || score===undefined || score==="") return null;
@@ -363,6 +386,45 @@ const AUTO_METRIC_OPTIONS = [
   {id:"audit_findings_closed_count", label:"Audit Findings Closed (count)", direction:"higher", unit:"count"},
   {id:"open_high_critical_risks", label:"Open High/Critical Risks (count)", direction:"lower", unit:"count"}
 ];
+
+/* ---------- KPI metrics ---------- */
+const SAMPLE_KPI_METRICS = [
+  {name:"NCR Closure Rate", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:91},
+  {name:"CAPA On-Time Closure", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:85},
+  {name:"Internal Audit Findings Closed", category:"Process", unit:"count", target:10, direction:"lower", critical:false, value:12},
+  {name:"Customer Complaint Rate", category:"Customer", unit:"per 10k units", target:2, direction:"lower", critical:false, value:2.2},
+  {name:"Customer Returns Rate", category:"Customer", unit:"%", target:0.5, direction:"lower", critical:false, value:0.8},
+  {name:"CCP Deviation Count", category:"Food Safety", unit:"deviations/wk", target:0, direction:"lower", critical:true, value:1},
+  {name:"Microbiological Test Failures", category:"Food Safety", unit:"count", target:0, direction:"lower", critical:true, value:0},
+  {name:"Foreign Object Complaints", category:"Food Safety", unit:"count", target:1, direction:"lower", critical:false, value:2},
+  {name:"First Pass Yield", category:"Manufacturing", unit:"%", target:98, direction:"higher", critical:false, value:96.5},
+  {name:"Defect Rate PPM", category:"Manufacturing", unit:"ppm", target:500, direction:"lower", critical:false, value:650},
+  {name:"Rework Rate", category:"Manufacturing", unit:"%", target:2, direction:"lower", critical:false, value:2.8},
+  {name:"Supplier On-Time Delivery", category:"Supply Chain", unit:"%", target:95, direction:"higher", critical:false, value:93},
+  {name:"Incoming Material Rejection", category:"Supply Chain", unit:"%", target:1, direction:"lower", critical:false, value:1.2},
+  {name:"LTIFR - Lost Time Injuries", category:"Safety", unit:"rate", target:0, direction:"lower", critical:false, value:0},
+  {name:"PPE Compliance", category:"Safety", unit:"%", target:100, direction:"higher", critical:false, value:98},
+  {name:"Mean Time To Repair (MTTR)", category:"Engineering", unit:"hrs", target:2, direction:"lower", critical:false, value:2.6},
+  {name:"Breakdown Turnaround Time", category:"Engineering", unit:"hrs", target:1.5, direction:"lower", critical:false, value:1.8},
+  {name:"Unplanned Downtime", category:"Engineering", unit:"%", target:3, direction:"lower", critical:false, value:4.5},
+  {name:"Maintenance Schedule Compliance", category:"Engineering", unit:"%", target:95, direction:"higher", critical:false, value:89},
+  {name:"Recall / Withdrawal Rate", category:"Recall & Traceability", unit:"count/yr", target:0, direction:"lower", critical:true, value:0},
+  {name:"Recall Response Time", category:"Recall & Traceability", unit:"hrs", target:4, direction:"lower", critical:true, value:5.5},
+  {name:"Mock Recall Effectiveness", category:"Recall & Traceability", unit:"%", target:95, direction:"higher", critical:true, value:92},
+  {name:"Traceability Exercise Frequency", category:"Recall & Traceability", unit:"count/yr", target:4, direction:"higher", critical:false, value:3}
+];
+
+function seedSampleMetrics(){
+  const existingNames = new Set(state.metrics.map(m=>m.name));
+  SAMPLE_KPI_METRICS.forEach(sm=>{
+    if(existingNames.has(sm.name)) return;
+    state.metrics.push({
+      id: uid(), name: sm.name, category: sm.category, unit: sm.unit, target: sm.target,
+      direction: sm.direction, critical: sm.critical, source: "manual", autoType: null,
+      history: [{ id: uid(), date: today(), value: sm.value }]
+    });
+  });
+}
 
 function computeAutoMetricValue(autoType){
   const allFindings = state.audits.flatMap(a=>a.findings);
@@ -449,6 +511,7 @@ function render(){
   `;
   attachHandlers();
   if(tab==="analytics") renderCharts();
+  if(tab==="metrics") renderMetricCharts();
 }
 
 function renderCompanyModal(){
@@ -910,7 +973,9 @@ function renderMetrics(){
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">KPI Metrics</h2>
       <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>
         <button class="btn btn-ghost" data-action="export-metrics-csv">⬇ CSV</button>
+        <button class="btn btn-ghost" data-action="export-metrics-pdf">📄 Export Report</button>
         <button class="btn btn-primary" data-action="toggle-new-metric">+ New Metric</button>
       </div>
     </div>
@@ -1005,6 +1070,7 @@ function renderMetricDetail(m, value){
           <label class="field">Value<input type="number" step="any" id="reading-value-${m.id}" /></label>
           <button class="btn btn-primary" style="align-self:end;" data-action="add-reading" data-metric="${m.id}">+ Add Reading</button>
         </div>
+        ${m.history && m.history.length>=2 ? `<div class="top-border"><canvas id="metric-chart-${m.id}" height="120"></canvas></div>` : ''}
         <div class="top-border">${historyRows}</div>
       </div>
     ` : `
@@ -1022,6 +1088,29 @@ function renderMetricDetail(m, value){
 let showNewChecklist = false;
 let openChecklistId = null;
 let checklistTemplateFilter = "All";
+
+let metricChartInstances = {};
+function renderMetricCharts(){
+  if(typeof Chart === 'undefined') return;
+  state.metrics.forEach(m=>{
+    if(metricChartInstances[m.id]){ metricChartInstances[m.id].destroy(); delete metricChartInstances[m.id]; }
+    const canvas = document.getElementById(`metric-chart-${m.id}`);
+    if(!canvas) return;
+    const sorted = [...(m.history||[])].sort((a,b)=>a.date.localeCompare(b.date));
+    const onTargetColor = "#3f6b2e";
+    metricChartInstances[m.id] = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: sorted.map(h=>h.date),
+        datasets: [
+          { label: m.name, data: sorted.map(h=>h.value), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25 },
+          { label: 'Target', data: sorted.map(()=>m.target), borderColor: onTargetColor, borderDash:[6,4], pointRadius:0, fill:false }
+        ]
+      },
+      options: { plugins:{ legend:{ display:true, labels:{ boxWidth:12, font:{size:10} } } }, scales:{ y:{ beginAtZero:false }, x:{ grid:{display:false} } } }
+    });
+  });
+}
 
 function checklistScore(c){
   const items = c.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
@@ -1310,6 +1399,59 @@ function renderSettings(){
 }
 
 /* ---------- PDF audit report ---------- */
+function buildMetricsPrintReport(){
+  const CATEGORY_ORDER = ["Process","Customer","Food Safety","Manufacturing","Supply Chain","Safety","Engineering","Recall & Traceability"];
+  const metrics = state.metrics;
+  const withValues = metrics.map(m => ({ m, value: metricCurrentValue(m), status: metricStatus(m, metricCurrentValue(m)), prev: metricPreviousValue(m) }));
+  const onTarget = withValues.filter(x=>x.status==="On Target").length;
+  const offTarget = withValues.filter(x=>x.status==="Off Target").length;
+
+  const categories = [...new Set(metrics.map(m=>m.category||"Other"))]
+    .sort((a,b)=> CATEGORY_ORDER.indexOf(a) - CATEGORY_ORDER.indexOf(b) || a.localeCompare(b));
+
+  const sectionsHtml = categories.map(cat=>{
+    const rows = withValues.filter(x=>(x.m.category||"Other")===cat).map(x=>{
+      const trend = (x.value!==null && x.prev!==null) ? (Math.round((x.value-x.prev)*100)/100) : null;
+      const statusColor = x.status==="On Target" ? "#3f6b2e" : (x.status==="Off Target" ? "#9b3f28" : "#8a8168");
+      return `<tr>
+        <td>${esc(x.m.name)}${x.m.critical?' <span style="color:#9b3f28;">⚠</span>':''}</td>
+        <td>${x.value===null?'—':x.value+' '+esc(x.m.unit||'')}</td>
+        <td>${x.m.target} ${esc(x.m.unit||'')}</td>
+        <td style="color:${statusColor};font-weight:600;">${x.status||'No data'}</td>
+        <td>${trend===null?'—':(trend>=0?'+':'')+trend}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="section-title">${esc(cat).toUpperCase()}</div>
+      <table><thead><tr><th>Metric</th><th>Current</th><th>Target</th><th>Status</th><th>Trend</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    `;
+  }).join('');
+
+  const c = state.companySettings || {};
+  const logoHtml = c.logoDataUrl
+    ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
+    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>`;
+  const brandName = c.name ? esc(c.name) : "AuditQMS Pro Suite";
+
+  document.getElementById('print-report').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      ${logoHtml}
+      <div>
+        <h1>Quality Tracking Report</h1>
+        <div class="meta">${brandName} — Generated ${new Date().toLocaleString()}</div>
+      </div>
+    </div>
+    <div class="meta" style="font-size:13px;margin-bottom:14px;">
+      <strong>${metrics.length}</strong> metrics tracked &nbsp;·&nbsp; <strong style="color:#3f6b2e;">${onTarget}</strong> on target &nbsp;·&nbsp; <strong style="color:#9b3f28;">${offTarget}</strong> off target
+    </div>
+    ${sectionsHtml}
+    <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
+      Generated by AQMS Pro Suite ${APP_VERSION}
+    </div>
+  `;
+}
+
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
@@ -1656,6 +1798,14 @@ function attachHandlers(){
     state.metrics = state.metrics.filter(m=>m.id!==el.dataset.metric);
     openMetricId = null; persist(); render();
   });
+  const seedMetricsBtn = document.querySelector('[data-action="seed-sample-metrics"]');
+  if(seedMetricsBtn) seedMetricsBtn.onclick=()=>{ seedSampleMetrics(); persist(); render(); };
+  const metricsPdfBtn = document.querySelector('[data-action="export-metrics-pdf"]');
+  if(metricsPdfBtn) metricsPdfBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    buildMetricsPrintReport();
+    window.print();
+  };
   const metricsCsvBtn = document.querySelector('[data-action="export-metrics-csv"]');
   if(metricsCsvBtn) metricsCsvBtn.onclick=()=>{
     const headers = ["Name","Category","Source","Unit","Target","Direction","Critical","Current Value","Status"];
