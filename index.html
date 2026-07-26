@@ -38,8 +38,9 @@
   .brand h1{font-size:21px;font-weight:600;margin:0;color:var(--navy);}
   .brand p{font-size:11px;color:var(--muted);margin:2px 0 0;text-transform:uppercase;letter-spacing:.12em;}
   nav{display:flex;gap:4px;}
-  nav button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit;}
-  nav button.active{color:var(--rust);border-color:var(--rust);}
+  .tabnav button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;}
+  .tabnav button.active{color:var(--rust);border-color:var(--rust);}
+  .tabnav::-webkit-scrollbar{display:none;}
   main{padding:24px 0 60px;}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(30,25,15,.04);}
   .p4{padding:16px;}
@@ -366,8 +367,8 @@ if(!state.companySettings){
 if(!state.riskAssessments){ state.riskAssessments = []; }
 if(!state.metrics){ state.metrics = []; }
 if(!state.checklists){ state.checklists = []; }
+if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
 let checklistSeq = state.checklists.length;
-if(!state.checklists){ state.checklists = []; }
 
 function riskLevelFromScore(score){
   if(score===null || score===undefined || score==="") return null;
@@ -483,7 +484,7 @@ function render(){
       <div class="wrap headrow">
         <div class="brand">
           <div class="logo">AQ</div>
-          <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>Food · Safety · Environment · Lab</p></div>
+          <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>SHEQ Management Platform</p></div>
         </div>
         <div style="display:flex;align-items:center;gap:10px;">
           <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
@@ -491,7 +492,7 @@ function render(){
           <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
         </div>
       </div>
-      <div class="wrap" style="display:flex;gap:4px;flex-wrap:wrap;">
+      <div class="wrap tabnav" style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
         ${navBtn("dashboard","Dashboard")}
         ${navBtn("audits","Audit Register")}
         ${navBtn("checklists","Checklists")}
@@ -512,6 +513,7 @@ function render(){
   attachHandlers();
   if(tab==="analytics") renderCharts();
   if(tab==="metrics") renderMetricCharts();
+  if(tab==="dashboard") renderComplianceChart();
 }
 
 function renderCompanyModal(){
@@ -584,6 +586,35 @@ function scoreOf(audit){
   return score;
 }
 
+function complianceGrade(score){
+  if(score===null) return {label:"No data yet", tone:"neutral"};
+  if(score>=95) return {label:"Excellent", tone:"green"};
+  if(score>=90) return {label:"Compliant", tone:"green"};
+  if(score>=80) return {label:"Needs Improvement", tone:"amber"};
+  if(score>=70) return {label:"At Risk", tone:"amber"};
+  return {label:"Critical", tone:"rust"};
+}
+
+const GRADE_EMOJI = {green:"🟢", amber:"🟡", rust:"🔴", neutral:"⚪"};
+
+function recordComplianceSnapshot(score){
+  if(score===null) return;
+  const t = today();
+  const existing = state.complianceScoreHistory.find(h=>h.date===t);
+  if(existing){ existing.score = score; } else { state.complianceScoreHistory.push({date:t, score}); }
+  saveStore(state);
+}
+function complianceTrend(){
+  const sorted = [...state.complianceScoreHistory].sort((a,b)=>a.date.localeCompare(b.date));
+  if(sorted.length<2) return null;
+  const t = today();
+  const priorEntries = sorted.filter(h=>h.date!==t);
+  if(priorEntries.length===0) return null;
+  const prev = priorEntries[priorEntries.length-1];
+  const curr = sorted[sorted.length-1];
+  return Math.round((curr.score - prev.score)*10)/10;
+}
+
 function renderDashboard(){
   const audits = state.audits;
   const allFindings = audits.flatMap(a=>a.findings.map(f=>({...f, auditTitle:a.title, auditId:a.id})));
@@ -594,12 +625,51 @@ function renderDashboard(){
   const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
   const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed");
 
+  /* Overall Compliance Score — built only from modules that actually exist in this app today
+     (Audit Register, CAPA, Risk Register, KPI Metrics). Document Control, Training, and Supplier
+     Management aren't separate modules yet, so they're intentionally left out rather than faked. */
+  const capaScore = computeAutoMetricValue("capa_closure_rate");
+  const totalRisks = state.riskAssessments.length;
+  const riskScore = totalRisks>0 ? Math.round(((totalRisks-highRisks.length)/totalRisks)*1000)/10 : null;
+  const metricsWithData = state.metrics.map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
+  const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
+  const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
+  const moduleScores = [
+    {label:"Audit Compliance", score:avgScore},
+    {label:"CAPA Management", score:capaScore},
+    {label:"Risk Management", score:riskScore},
+    {label:"KPI Metrics On-Target", score:metricsScore}
+  ];
+  const availableScores = moduleScores.filter(x=>x.score!==null);
+  const overallScore = availableScores.length ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
+  const overallGrade = complianceGrade(overallScore);
+  recordComplianceSnapshot(overallScore);
+  const trend = complianceTrend();
+
   return `
+    <div class="card p4" style="margin-bottom:16px;background:var(--navy);border:none;">
+      <h2 class="serif" style="font-size:17px;margin:0;color:#fff;">Manage Compliance. Monitor Performance. Drive Continuous Improvement.</h2>
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <h3 class="serif" style="font-size:16px;margin:0;">${GRADE_EMOJI[overallGrade.tone]} Overall Compliance Score</h3>
+        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'No data yet':overallScore+'% — '+overallGrade.label}${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}</span>
+      </div>
+      ${moduleScores.map(m=>{
+        const g = complianceGrade(m.score);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+          <span>${m.label}</span>
+          <span class="tag tag-${g.tone}">${m.score===null?'no data':m.score+'% — '+g.label}</span>
+        </div>`;
+      }).join('')}
+      ${state.complianceScoreHistory.length>=2 ? `<div class="top-border"><canvas id="compliance-trend-chart" height="100"></canvas></div>` : ''}
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Document Control, Training, and Supplier Management aren't separate modules yet, so they're not included in this score.</p>
+    </div>
     <div class="stats">
-      ${statCard("Total Audits", audits.length)}
-      ${statCard("Open Findings", openFindings.length)}
-      ${statCard("Overdue CAPAs", overdue.length)}
-      ${statCard("High/Critical Risks", highRisks.length)}
+      ${statCard("📋", "Total Audits", audits.length)}
+      ${statCard("⚠", "Open Findings", openFindings.length)}
+      ${statCard("⏳", "Overdue CAPAs", overdue.length)}
+      ${statCard("🚨", "High/Critical Risks", highRisks.length)}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -633,8 +703,22 @@ function renderDashboard(){
     </div>
   `;
 }
-function statCard(label,value){
-  return `<div class="card p4"><div class="stat-label">${label}</div><div class="stat-value">${value}</div></div>`;
+let complianceChartInstance = null;
+function renderComplianceChart(){
+  if(typeof Chart === 'undefined') return;
+  if(complianceChartInstance){ complianceChartInstance.destroy(); complianceChartInstance = null; }
+  const canvas = document.getElementById('compliance-trend-chart');
+  if(!canvas) return;
+  const sorted = [...state.complianceScoreHistory].sort((a,b)=>a.date.localeCompare(b.date));
+  complianceChartInstance = new Chart(canvas, {
+    type: 'line',
+    data: { labels: sorted.map(h=>h.date), datasets: [{ label:'Overall Compliance %', data: sorted.map(h=>h.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3 }] },
+    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:false, max:100 }, x:{ grid:{display:false} } } }
+  });
+}
+
+function statCard(icon,label,value){
+  return `<div class="card p4"><div class="stat-label">${icon} ${label}</div><div class="stat-value">${value}</div></div>`;
 }
 
 function filteredAudits(){
@@ -1315,6 +1399,31 @@ function renderCharts(){
 
 /* ---------- settings ---------- */
 const SETTINGS_SECTIONS = [
+  { key:"quality-cycle", label:"Strategic Quality Cycle", content: `
+    <p style="margin-bottom:14px;">How this app's modules connect into a continuous improvement loop:</p>
+    <div style="display:flex;flex-direction:column;gap:2px;">
+      ${[
+        ["📋","Plan","Set up audits, checklists, and risk assessments"],
+        ["🔍","Conduct Audits","Run audits and inspections using the Audit Register"],
+        ["⚠️","Record Findings","Log non-conformances and observations"],
+        ["🛠","CAPA Assignment","Assign corrective/preventive actions with owners and due dates"],
+        ["✔️","Verify Effectiveness","Confirm the CAPA resolved the issue and close it"],
+        ["📊","Automatic KPI & Compliance Score Update","Dashboard recalculates live from your data"],
+        ["👥","Management Review","Review KPIs, trends, risks, and compliance performance"],
+        ["🚀","Improvement Actions","Approve changes, update procedures, allocate resources"],
+        ["📋","Next Audit Plan","Outputs feed into the next planning cycle"]
+      ].map(([icon,title,desc], i, arr) => `
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          <span style="font-size:18px;">${icon}</span>
+          <div style="flex:1;padding-bottom:${i<arr.length-1?'14px':'0'};">
+            <div style="font-weight:600;font-size:13px;">${title}</div>
+            <div class="muted-italic" style="font-size:12px;">${desc}</div>
+            ${i<arr.length-1?'<div style="color:#c9c0a8;padding-top:4px;">↓</div>':''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `},
   { key:"about", label:"About", content: `
     <p><strong>AQMS Pro Suite</strong> — Version ${APP_VERSION}</p>
     <p>AQMS Pro Suite is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
