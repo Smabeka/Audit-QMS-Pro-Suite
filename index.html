@@ -343,6 +343,8 @@ if(!state.companySettings){
   };
 }
 if(!state.riskAssessments){ state.riskAssessments = []; }
+if(!state.metrics){ state.metrics = []; }
+if(!state.checklists){ state.checklists = []; }
 
 function riskLevelFromScore(score){
   if(score===null || score===undefined || score==="") return null;
@@ -352,6 +354,54 @@ function riskLevelFromScore(score){
   return "Low";
 }
 const riskLevelColor = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
+
+/* ---------- KPI metrics ---------- */
+const AUTO_METRIC_OPTIONS = [
+  {id:"capa_closure_rate", label:"CAPA Closure Rate (%)", direction:"higher", unit:"%"},
+  {id:"overdue_capas", label:"Overdue CAPAs (count)", direction:"lower", unit:"count"},
+  {id:"avg_audit_compliance", label:"Average Audit Compliance (%)", direction:"higher", unit:"%"},
+  {id:"audit_findings_closed_count", label:"Audit Findings Closed (count)", direction:"higher", unit:"count"},
+  {id:"open_high_critical_risks", label:"Open High/Critical Risks (count)", direction:"lower", unit:"count"}
+];
+
+function computeAutoMetricValue(autoType){
+  const allFindings = state.audits.flatMap(a=>a.findings);
+  switch(autoType){
+    case "capa_closure_rate":
+      if(allFindings.length===0) return null;
+      return Math.round((allFindings.filter(f=>f.status==="Closed").length/allFindings.length)*1000)/10;
+    case "overdue_capas":
+      return allFindings.filter(f=>f.status!=="Closed" && f.dueDate && daysUntil(f.dueDate)<0).length;
+    case "avg_audit_compliance": {
+      const scores = state.audits.map(scoreOf).filter(s=>s!==null);
+      if(scores.length===0) return null;
+      return Math.round(scores.reduce((a,b)=>a+b,0)/scores.length);
+    }
+    case "audit_findings_closed_count":
+      return allFindings.filter(f=>f.status==="Closed").length;
+    case "open_high_critical_risks":
+      return state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed").length;
+    default:
+      return null;
+  }
+}
+
+function metricCurrentValue(m){
+  if(m.source==="auto") return computeAutoMetricValue(m.autoType);
+  if(!m.history || m.history.length===0) return null;
+  const sorted = [...m.history].sort((a,b)=>a.date.localeCompare(b.date));
+  return sorted[sorted.length-1].value;
+}
+function metricPreviousValue(m){
+  if(m.source==="auto" || !m.history || m.history.length<2) return null;
+  const sorted = [...m.history].sort((a,b)=>a.date.localeCompare(b.date));
+  return sorted[sorted.length-2].value;
+}
+function metricStatus(m, value){
+  if(value===null || value===undefined) return null;
+  const onTarget = m.direction==="lower" ? value<=m.target : value>=m.target;
+  return onTarget ? "On Target" : "Off Target";
+}
 
 function persist(){
   saveStore(state);
@@ -382,14 +432,16 @@ function render(){
       <div class="wrap" style="display:flex;gap:4px;flex-wrap:wrap;">
         ${navBtn("dashboard","Dashboard")}
         ${navBtn("audits","Audit Register")}
+        ${navBtn("checklists","Checklists")}
         ${navBtn("risk","Risk Register")}
+        ${navBtn("metrics","KPI Metrics")}
         ${navBtn("capa","CAPA Tracker")}
         ${navBtn("analytics","Analytics")}
         ${navBtn("settings","Settings")}
       </div>
     </header>
     <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="risk" ? renderRiskRegister() : tab==="capa" ? renderCapa() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="analytics" ? renderAnalytics() : renderSettings()}
     </main>
     ${showProModal ? renderProModal() : ''}
     ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -840,6 +892,232 @@ function renderRiskDetail(r){
     </div>
     <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" data-action="delete-risk" data-risk="${r.id}">Delete Risk Assessment</button>
+    </div>
+  `;
+}
+
+/* ---------- KPI metrics render ---------- */
+let showNewMetric = false;
+let openMetricId = null;
+let metricSourceChoice = "manual";
+
+function renderMetrics(){
+  const metrics = state.metrics;
+  const withValues = metrics.map(m => ({ m, value: metricCurrentValue(m), status: metricStatus(m, metricCurrentValue(m)) }));
+  const onTarget = withValues.filter(x=>x.status==="On Target").length;
+  const offTarget = withValues.filter(x=>x.status==="Off Target").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">KPI Metrics</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-metrics-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-metric">+ New Metric</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);">
+      ${statCard("Metrics Tracked", metrics.length)}
+      ${statCard("On Target", onTarget)}
+      ${statCard("Off Target", offTarget)}
+    </div>
+    ${showNewMetric ? renderNewMetricForm() : ''}
+    <div>
+      ${metrics.length===0 ? `<p class="muted-italic">No metrics tracked yet.</p>` : withValues.map(x=>renderMetricRow(x.m, x.value, x.status)).join('')}
+    </div>
+  `;
+}
+
+function renderNewMetricForm(){
+  return `
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap" style="margin-bottom:12px;">
+        <button class="status-pill ${metricSourceChoice==='manual'?'active':''}" data-metric-source="manual">Manual Entry</button>
+        <button class="status-pill ${metricSourceChoice==='auto'?'active':''}" data-metric-source="auto">Auto-Calculated from App Data</button>
+      </div>
+      <div class="grid2">
+        ${metricSourceChoice==='auto' ? `
+          <label class="field" style="grid-column:1/-1;">Auto Metric Source<select id="nm-auto-type">${AUTO_METRIC_OPTIONS.map(o=>`<option value="${o.id}">${o.label}</option>`).join('')}</select></label>
+        ` : `
+          <label class="field" style="grid-column:1/-1;">Metric Name<input id="nm-name" placeholder="e.g. PPE Compliance" /></label>
+        `}
+        <label class="field">Category<input id="nm-category" placeholder="e.g. Safety" /></label>
+        <label class="field">Unit<input id="nm-unit" placeholder="e.g. %, count, hrs" /></label>
+        <label class="field">Target<input type="number" id="nm-target" step="any" /></label>
+        <label class="field">Direction<select id="nm-direction"><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></label>
+        <label class="field" style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="nm-critical" style="width:auto;" /> Critical Metric</label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+        <button class="btn btn-ghost" data-action="cancel-new-metric">Cancel</button>
+        <button class="btn btn-primary" data-action="create-metric">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderMetricRow(m, value, status){
+  const open = openMetricId === m.id;
+  const delta = (value!==null && m.target!==undefined) ? Math.round((value - m.target)*100)/100 : null;
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-metric="${m.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-sub" style="text-transform:uppercase;">${esc(m.category)||'—'}${m.critical?' · CRITICAL':''}</div>
+            <div class="audit-title">${esc(m.name)}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <div style="text-align:right;">
+            <div class="serif" style="font-size:18px;color:var(--navy);">${value===null?'—':value}<span style="font-size:11px;color:var(--muted);"> ${esc(m.unit)}</span></div>
+            <div style="font-size:11px;color:var(--muted);">target ${m.target} ${esc(m.unit)}${delta!==null?` · ${delta>=0?'+':''}${delta}`:''}</div>
+          </div>
+          ${status ? `<span class="tag tag-${status==='On Target'?'green':'rust'}">${status==='On Target'?'on target':'off target'}</span>` : `<span class="tag tag-neutral">no data</span>`}
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderMetricDetail(m, value)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderMetricDetail(m, value){
+  const historyRows = (m.source==="manual" && m.history && m.history.length) ?
+    [...m.history].sort((a,b)=>b.date.localeCompare(a.date)).map(h=>`
+      <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+        <span>${h.date}</span><span>${h.value} ${esc(m.unit)}</span>
+        <button class="x-btn" data-action="delete-reading" data-metric="${m.id}" data-reading="${h.id}">✕</button>
+      </div>
+    `).join('') : `<p class="muted-italic">No readings logged yet.</p>`;
+
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      ${m.source==="manual" ? `<label class="field" style="grid-column:1/-1;">Metric Name<input data-metric-field="${m.id}:name" value="${esc(m.name)}" /></label>` :
+        `<div class="field" style="grid-column:1/-1;"><span>Metric Name</span><span style="font-size:14px;">${esc(m.name)} <span class="muted-italic" style="font-size:11px;">(auto-calculated from ${AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType)?.label || m.autoType})</span></span></div>`}
+      <label class="field">Category<input data-metric-field="${m.id}:category" value="${esc(m.category)}" /></label>
+      <label class="field">Unit<input data-metric-field="${m.id}:unit" value="${esc(m.unit)}" /></label>
+      <label class="field">Target<input type="number" step="any" data-metric-field="${m.id}:target" value="${m.target}" /></label>
+      <label class="field">Direction<select data-metric-field="${m.id}:direction"><option value="higher" ${m.direction==='higher'?'selected':''}>Higher is better</option><option value="lower" ${m.direction==='lower'?'selected':''}>Lower is better</option></select></label>
+    </div>
+    ${m.source==="manual" ? `
+      <div class="card p4 top-border" style="margin-bottom:12px;">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Log a Reading</h3>
+        <div class="grid3">
+          <label class="field">Date<input type="date" id="reading-date-${m.id}" value="${today()}" /></label>
+          <label class="field">Value<input type="number" step="any" id="reading-value-${m.id}" /></label>
+          <button class="btn btn-primary" style="align-self:end;" data-action="add-reading" data-metric="${m.id}">+ Add Reading</button>
+        </div>
+        <div class="top-border">${historyRows}</div>
+      </div>
+    ` : `
+      <div class="card p4 top-border" style="margin-bottom:12px;">
+        <p class="muted-italic" style="font-size:13px;">Current value: <strong style="color:var(--ink);">${value===null?'no data yet':value+' '+esc(m.unit)}</strong> — recalculated live from your Audit Register / CAPA / Risk Register data.</p>
+      </div>
+    `}
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-metric" data-metric="${m.id}">Delete Metric</button>
+    </div>
+  `;
+}
+
+/* ---------- standalone checklists ---------- */
+let showNewChecklist = false;
+let openChecklistId = null;
+let checklistTemplateFilter = "All";
+
+function checklistScore(c){
+  const items = c.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
+  return items.length===0 ? null : Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100);
+}
+
+function renderChecklists(){
+  const filtered = state.checklists.filter(c => checklistTemplateFilter==="All" || c.template===checklistTemplateFilter);
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">Checklists</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-checklists-overview-csv">⬇ Overview CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-checklist">+ New Checklist</button>
+      </div>
+    </div>
+    <p class="muted-italic" style="font-size:12px;margin:-10px 0 16px;">Standalone checklists — no audit record, no audit number. Pick a template, fill it in, export it. Use the Audit Register instead when you need a formal tracked audit with findings and CAPA.</p>
+    <div class="card p4" style="margin-bottom:16px;">
+      <label class="field">Filter by Template<select id="checklist-filter-template"><option>All</option>${STANDARDS.map(s=>`<option ${s===checklistTemplateFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+    </div>
+    ${showNewChecklist ? renderNewChecklistForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No checklists filled in yet.</p>` : filtered.map(c=>renderChecklistRow(c)).join('')}
+    </div>
+  `;
+}
+
+function renderNewChecklistForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field" style="grid-column:1/-1;">Checklist Template<select id="nc-template">${STANDARDS.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <label class="field">Location / Area<input id="nc-location" placeholder="e.g. Warehouse Bay 2" /></label>
+      <label class="field">Inspector<input id="nc-inspector" placeholder="e.g. S. Mabeka" /></label>
+      <label class="field">Date<input type="date" id="nc-date" value="${today()}" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-checklist">Cancel</button>
+        <button class="btn btn-primary" data-action="create-checklist">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderChecklistRow(c){
+  const open = openChecklistId === c.id;
+  const score = checklistScore(c);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-checklist="${c.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(c.template)}</div>
+            <div class="audit-sub">${esc(c.location)||'—'} · ${esc(c.inspector)||'—'} · ${c.date}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          ${score!==null ? `<span style="font-size:12px;color:var(--muted);">${score}%</span>` : `<span class="muted-italic" style="font-size:11px;">not scored</span>`}
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderChecklistDetail(c)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderChecklistDetail(c){
+  const score = checklistScore(c);
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Location / Area<input data-checklist-field="${c.id}:location" value="${esc(c.location)}" /></label>
+      <label class="field">Inspector<input data-checklist-field="${c.id}:inspector" value="${esc(c.inspector)}" /></label>
+      <label class="field">Date<input type="date" data-checklist-field="${c.id}:date" value="${c.date}" /></label>
+      <div class="field"><span>Score</span>${score!==null?`<span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span>`:'<span class="muted-italic">not yet scored</span>'}</div>
+    </div>
+    <div class="card p4" style="margin-bottom:12px;">
+      ${c.sections.map(sec => `
+        <div class="section-box">
+          <strong style="font-size:14px;">${esc(sec.name)}</strong>
+          ${sec.items.map(it => `
+            <div class="item-row">
+              <div class="result-toggle">
+                <button data-toggle-checklist-result="${c.id}:${sec.id}:${it.id}:Pass" class="${it.result==='Pass'?'active':''}" style="color:#3f6b2e;">✓</button>
+                <button data-toggle-checklist-result="${c.id}:${sec.id}:${it.id}:Fail" class="${it.result==='Fail'?'active':''}" style="color:#9b3f28;">✕</button>
+                <button data-toggle-checklist-result="${c.id}:${sec.id}:${it.id}:NA" class="${it.result==='NA'?'active':''}" style="color:#a39a86;">–</button>
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:14px;">${esc(it.text)}</div>
+                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-checklist-item-note="${c.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;">
+      <button class="btn btn-ghost" data-action="export-checklist-csv" data-checklist="${c.id}">⬇ Export CSV</button>
+      <button class="btn btn-danger" data-action="delete-checklist" data-checklist="${c.id}">Delete Checklist</button>
     </div>
   `;
 }
@@ -1319,165 +1597,14 @@ function attachHandlers(){
     URL.revokeObjectURL(url);
   };
 
-  /* search & filter */
-  const searchInput = document.getElementById('audit-search');
-  if(searchInput){
-    searchInput.oninput = () => {
-      auditSearch = searchInput.value;
-      render();
-      const newInput = document.getElementById('audit-search');
-      if(newInput){ newInput.focus(); newInput.setSelectionRange(auditSearch.length, auditSearch.length); }
-    };
-  }
-  const stdFilter = document.getElementById('audit-filter-standard');
-  if(stdFilter) stdFilter.onchange = ()=>{ auditStandardFilter = stdFilter.value; render(); };
-  const statusFilter = document.getElementById('audit-filter-status');
-  if(statusFilter) statusFilter.onchange = ()=>{ auditStatusFilter = statusFilter.value; render(); };
-  const riskFilter = document.getElementById('audit-filter-risk');
-  if(riskFilter) riskFilter.onchange = ()=>{ auditRiskFilter = riskFilter.value; render(); };
-
-  /* pro modal */
-  const openProBtn = document.querySelector('[data-action="open-pro-modal"]'); if(openProBtn) openProBtn.onclick=()=>{ showProModal=true; render(); };
-  document.querySelectorAll('[data-action="close-pro-modal"]').forEach(el=>el.onclick=()=>{ showProModal=false; render(); });
-  const submitProBtn = document.querySelector('[data-action="submit-pro-code"]');
-  if(submitProBtn) submitProBtn.onclick=()=>{
-    const code = document.getElementById('pro-code-input').value;
-    if(unlockPro(code)){ showProModal=false; render(); }
-    else { document.getElementById('pro-error').style.display='block'; }
-  };
-
-  /* company settings modal */
-  const openCompanyBtn = document.querySelector('[data-action="open-company-modal"]');
-  if(openCompanyBtn) openCompanyBtn.onclick=()=>{
-    if(!isPro()){ showProModal=true; render(); return; }
-    showCompanyModal=true; render();
-  };
-  document.querySelectorAll('[data-action="close-company-modal"]').forEach(el=>el.onclick=()=>{ showCompanyModal=false; render(); });
-  const saveCompanyBtn = document.querySelector('[data-action="save-company-settings"]');
-  if(saveCompanyBtn) saveCompanyBtn.onclick=()=>{
-    state.companySettings.name = document.getElementById('cs-name').value;
-    state.companySettings.address = document.getElementById('cs-address').value;
-    state.companySettings.footerText = document.getElementById('cs-footer').value;
-    const logoFile = document.getElementById('cs-logo').files[0];
-    if(logoFile){
-      const reader = new FileReader();
-      reader.onload = () => { state.companySettings.logoDataUrl = reader.result; persist(); showCompanyModal=false; render(); };
-      reader.readAsDataURL(logoFile);
-    } else {
-      persist(); showCompanyModal=false; render();
-    }
-  };
-
-  /* Excel export (Pro gated) */
-  const excelBtn = document.querySelector('[data-action="export-excel"]');
-  if(excelBtn) excelBtn.onclick=()=>{
-    if(!isPro()){ showProModal=true; render(); return; }
-    if(typeof XLSX === 'undefined'){ alert('Excel library failed to load — check your internet connection and try again.'); return; }
-    const auditRows = state.audits.map(a=>({
-      "Audit Number": a.auditNumber||'', "Title": a.title, "Standard": a.standard, "Area": a.area,
-      "Auditor": a.auditor, "Auditee": a.auditee, "Date": a.date, "Status": a.status, "Compliance %": scoreOf(a)
-    }));
-    const findingRows = state.audits.flatMap(a=>a.findings.map(f=>({
-      "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Department": f.clause, "Description": f.desc,
-      "Severity": f.severity, "Owner": f.owner, "Due Date": f.dueDate, "CAPA": f.actionText, "Status": f.status
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows), "Audits");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(findingRows), "Findings & CAPA");
-    XLSX.writeFile(wb, `aqms-export-${today()}.xlsx`);
-  };
-
-  /* CSV export (Pro gated) — findings/CAPA, most useful for external analysis */
-  const csvBtn = document.querySelector('[data-action="export-csv"]');
-  if(csvBtn) csvBtn.onclick=()=>{
-    if(!isPro()){ showProModal=true; render(); return; }
-    const headers = ["Audit Number","Audit Title","Department","Description","Severity","Owner","Due Date","CAPA","Status"];
-    const rows = state.audits.flatMap(a=>a.findings.map(f=>[
-      a.auditNumber||'', a.title, f.clause, f.desc, f.severity, f.owner||'', f.dueDate||'', f.actionText||'', f.status
-    ]));
-    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
-    const csv = [headers.map(csvEscape).join(','), ...rows.map(r=>r.map(csvEscape).join(','))].join('\n');
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url; link.download = `aqms-findings-${today()}.csv`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-
-  const backupBtn = document.querySelector('[data-action="open-backup"]');
-  if(backupBtn) backupBtn.onclick=()=>{
-    if(!isPro()){ showProModal=true; render(); return; }
-    const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url; link.download = `aqms-backup-${today()}.json`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    localStorage.setItem('aqms-last-backup', new Date().toLocaleString());
-    render();
-  };
-  const restoreBtn = document.querySelector('[data-action="open-restore"]');
-  const restoreFileInput = document.getElementById('restore-file-input');
-  if(restoreBtn) restoreBtn.onclick=()=>{
-    if(!isPro()){ showProModal=true; render(); return; }
-    restoreFileInput.click();
-  };
-  if(restoreFileInput) restoreFileInput.onchange=()=>{
-    const file = restoreFileInput.files[0]; if(!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try{
-        const data = JSON.parse(reader.result);
-        if(!data.audits) throw new Error("Invalid backup file");
-        if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) { restoreFileInput.value = ""; return; }
-        state = data; openAuditId=null; persist(); render();
-      }catch(e){ alert("Could not read this file — please check it's a valid AQMS backup."); }
-      restoreFileInput.value = "";
-    };
-    reader.readAsText(file);
-  };
-
-  /* PDF export (Pro gated) */
-  document.querySelectorAll('[data-action="export-audit-pdf"]').forEach(el=>el.onclick=()=>{
-    if(!isPro()){ showProModal=true; render(); return; }
-    const a = state.audits.find(x=>x.id===el.dataset.audit);
-    buildAuditPrintReport(a);
-    window.print();
-  });
-}
-
-render();
-
-/* auto-save safety net — quietly persists every 5s in case a change slipped through */
-setInterval(() => { saveStore(state); }, 5000);
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', function() {
-    navigator.serviceWorker.register('./sw.js').then(function(reg){
-      reg.addEventListener('updatefound', function(){
-        const newWorker = reg.installing;
-        if(!newWorker) return;
-        newWorker.addEventListener('statechange', function(){
-          if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
-            showUpdateBanner();
-          }
-        });
-      });
-    });
-  });
-}
-
-function showUpdateBanner(){
-  if(document.getElementById('update-banner')) return;
-  const banner = document.createElement('div');
-  banner.id = 'update-banner';
-  banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1c2b4a;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:200;font-family:sans-serif;font-size:13px;gap:10px;';
-  banner.innerHTML = '<span>A new version of AuditQMS Pro Suite is available.</span><button id="reload-app-btn" style="background:#fff;color:#1c2b4a;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Reload</button>';
-  document.body.appendChild(banner);
-  document.getElementById('reload-app-btn').onclick = () => window.location.reload();
-}
-</script>
-</body>
-</html>
+  /* KPI metrics */
+  const toggleNewMetric = document.querySelector('[data-action="toggle-new-metric"]'); if(toggleNewMetric) toggleNewMetric.onclick=()=>{ showNewMetric=!showNewMetric; metricSourceChoice="manual"; render(); };
+  const cancelNewMetric = document.querySelector('[data-action="cancel-new-metric"]'); if(cancelNewMetric) cancelNewMetric.onclick=()=>{ showNewMetric=false; render(); };
+  document.querySelectorAll('[data-metric-source]').forEach(el=>el.onclick=()=>{ metricSourceChoice = el.dataset.metricSource; render(); });
+  const createMetric = document.querySelector('[data-action="create-metric"]');
+  if(createMetric) createMetric.onclick=()=>{
+    const target = Number(document.getElementById('nm-target').value);
+    if(Number.isNaN(target)) return;
+    let name, autoType = null, source = metricSourceChoice;
+    if(source==="auto"){
+      aut
