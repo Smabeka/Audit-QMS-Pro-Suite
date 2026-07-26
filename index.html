@@ -1607,4 +1607,316 @@ function attachHandlers(){
     if(Number.isNaN(target)) return;
     let name, autoType = null, source = metricSourceChoice;
     if(source==="auto"){
-      aut
+      autoType = document.getElementById('nm-auto-type').value;
+      name = AUTO_METRIC_OPTIONS.find(o=>o.id===autoType)?.label || autoType;
+    } else {
+      name = document.getElementById('nm-name').value.trim();
+      if(!name) return;
+    }
+    const metric = {
+      id: uid(), name, category: document.getElementById('nm-category').value,
+      unit: document.getElementById('nm-unit').value, target,
+      direction: document.getElementById('nm-direction').value,
+      critical: document.getElementById('nm-critical').checked,
+      source, autoType, history: []
+    };
+    state.metrics.unshift(metric);
+    openMetricId = metric.id; showNewMetric=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-metric]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleMetric; openMetricId = openMetricId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-metric-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.metricField.split(':');
+      const m = state.metrics.find(x=>x.id===id);
+      if(!m) return;
+      m[field] = field==="target" ? Number(el.value) : el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="add-reading"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.metric;
+    const m = state.metrics.find(x=>x.id===id);
+    if(!m) return;
+    const date = document.getElementById(`reading-date-${id}`).value || today();
+    const value = Number(document.getElementById(`reading-value-${id}`).value);
+    if(Number.isNaN(value)) return;
+    m.history.push({ id: uid(), date, value });
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-reading"]').forEach(el=>el.onclick=()=>{
+    const m = state.metrics.find(x=>x.id===el.dataset.metric);
+    if(!m) return;
+    m.history = m.history.filter(h=>h.id!==el.dataset.reading);
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-metric"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this metric? This cannot be undone.")) return;
+    state.metrics = state.metrics.filter(m=>m.id!==el.dataset.metric);
+    openMetricId = null; persist(); render();
+  });
+  const metricsCsvBtn = document.querySelector('[data-action="export-metrics-csv"]');
+  if(metricsCsvBtn) metricsCsvBtn.onclick=()=>{
+    const headers = ["Name","Category","Source","Unit","Target","Direction","Critical","Current Value","Status"];
+    const rows = state.metrics.map(m=>{
+      const value = metricCurrentValue(m);
+      return [m.name, m.category||'', m.source, m.unit||'', m.target, m.direction, m.critical?"Yes":"No", value===null?'':value, metricStatus(m,value)||''];
+    });
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-kpi-metrics-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  /* standalone checklists */
+  const toggleNewChecklist = document.querySelector('[data-action="toggle-new-checklist"]'); if(toggleNewChecklist) toggleNewChecklist.onclick=()=>{ showNewChecklist=!showNewChecklist; render(); };
+  const cancelNewChecklist = document.querySelector('[data-action="cancel-new-checklist"]'); if(cancelNewChecklist) cancelNewChecklist.onclick=()=>{ showNewChecklist=false; render(); };
+  const createChecklist = document.querySelector('[data-action="create-checklist"]');
+  if(createChecklist) createChecklist.onclick=()=>{
+    const template = document.getElementById('nc-template').value;
+    const tmpl = TEMPLATES[template];
+    const sections = (tmpl || [{name:"General", items:[]}]).map(s=>({ id: uid(), name: s.name, items: s.items.map(text=>({id:uid(), text, result:null, note:""})) }));
+    const c = {
+      id: uid(), template,
+      location: document.getElementById('nc-location').value,
+      inspector: document.getElementById('nc-inspector').value,
+      date: document.getElementById('nc-date').value || today(),
+      sections
+    };
+    state.checklists.unshift(c);
+    openChecklistId = c.id; showNewChecklist=false; persist(); render();
+  };
+  const checklistTemplateFilterEl = document.getElementById('checklist-filter-template');
+  if(checklistTemplateFilterEl) checklistTemplateFilterEl.onchange = ()=>{ checklistTemplateFilter = checklistTemplateFilterEl.value; render(); };
+  document.querySelectorAll('[data-toggle-checklist]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleChecklist; openChecklistId = openChecklistId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-checklist-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.checklistField.split(':');
+      const c = state.checklists.find(x=>x.id===id);
+      if(!c) return;
+      c[field] = el.value; persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-toggle-checklist-result]').forEach(el=>el.onclick=()=>{
+    const [checklistId, secId, itemId, val] = el.dataset.toggleChecklistResult.split(':');
+    const c = state.checklists.find(x=>x.id===checklistId);
+    const sec = c.sections.find(s=>s.id===secId);
+    const item = sec.items.find(i=>i.id===itemId);
+    item.result = item.result===val ? null : val;
+    persist(); render();
+  });
+  document.querySelectorAll('[data-checklist-item-note]').forEach(el=>el.onchange=()=>{
+    const [checklistId, secId, itemId] = el.dataset.checklistItemNote.split(':');
+    const c = state.checklists.find(x=>x.id===checklistId);
+    const sec = c.sections.find(s=>s.id===secId);
+    const item = sec.items.find(i=>i.id===itemId);
+    item.note = el.value; persist();
+  });
+  document.querySelectorAll('[data-action="delete-checklist"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this checklist? This cannot be undone.")) return;
+    state.checklists = state.checklists.filter(c=>c.id!==el.dataset.checklist);
+    openChecklistId = null; persist(); render();
+  });
+  document.querySelectorAll('[data-action="export-checklist-csv"]').forEach(el=>el.onclick=()=>{
+    const c = state.checklists.find(x=>x.id===el.dataset.checklist);
+    if(!c) return;
+    const headers = ["Section","Item","Result","Note"];
+    const rows = c.sections.flatMap(sec => sec.items.map(it => [sec.name, it.text, it.result||'', it.note||'']));
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const metaLines = [
+      `"Checklist Template","${String(c.template).replace(/"/g,'""')}"`,
+      `"Location","${String(c.location||'').replace(/"/g,'""')}"`,
+      `"Inspector","${String(c.inspector||'').replace(/"/g,'""')}"`,
+      `"Date","${c.date}"`, ""
+    ];
+    const csv = [...metaLines, headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `checklist-${c.template.replace(/[^a-z0-9]+/gi,'-')}-${c.date}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  });
+  const checklistsOverviewCsvBtn = document.querySelector('[data-action="export-checklists-overview-csv"]');
+  if(checklistsOverviewCsvBtn) checklistsOverviewCsvBtn.onclick=()=>{
+    const headers = ["Template","Location","Inspector","Date","Score %"];
+    const rows = state.checklists.map(c=>[c.template, c.location||'', c.inspector||'', c.date, checklistScore(c)===null?'':checklistScore(c)]);
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-checklists-overview-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  /* search & filter */
+  const searchInput = document.getElementById('audit-search');
+  if(searchInput){
+    searchInput.oninput = () => {
+      auditSearch = searchInput.value;
+      render();
+      const newInput = document.getElementById('audit-search');
+      if(newInput){ newInput.focus(); newInput.setSelectionRange(auditSearch.length, auditSearch.length); }
+    };
+  }
+  const stdFilter = document.getElementById('audit-filter-standard');
+  if(stdFilter) stdFilter.onchange = ()=>{ auditStandardFilter = stdFilter.value; render(); };
+  const statusFilter = document.getElementById('audit-filter-status');
+  if(statusFilter) statusFilter.onchange = ()=>{ auditStatusFilter = statusFilter.value; render(); };
+  const riskFilter = document.getElementById('audit-filter-risk');
+  if(riskFilter) riskFilter.onchange = ()=>{ auditRiskFilter = riskFilter.value; render(); };
+
+  /* pro modal */
+  const openProBtn = document.querySelector('[data-action="open-pro-modal"]'); if(openProBtn) openProBtn.onclick=()=>{ showProModal=true; render(); };
+  document.querySelectorAll('[data-action="close-pro-modal"]').forEach(el=>el.onclick=()=>{ showProModal=false; render(); });
+  const submitProBtn = document.querySelector('[data-action="submit-pro-code"]');
+  if(submitProBtn) submitProBtn.onclick=()=>{
+    const code = document.getElementById('pro-code-input').value;
+    if(unlockPro(code)){ showProModal=false; render(); }
+    else { document.getElementById('pro-error').style.display='block'; }
+  };
+
+  /* company settings modal */
+  const openCompanyBtn = document.querySelector('[data-action="open-company-modal"]');
+  if(openCompanyBtn) openCompanyBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    showCompanyModal=true; render();
+  };
+  document.querySelectorAll('[data-action="close-company-modal"]').forEach(el=>el.onclick=()=>{ showCompanyModal=false; render(); });
+  const saveCompanyBtn = document.querySelector('[data-action="save-company-settings"]');
+  if(saveCompanyBtn) saveCompanyBtn.onclick=()=>{
+    state.companySettings.name = document.getElementById('cs-name').value;
+    state.companySettings.address = document.getElementById('cs-address').value;
+    state.companySettings.footerText = document.getElementById('cs-footer').value;
+    const logoFile = document.getElementById('cs-logo').files[0];
+    if(logoFile){
+      const reader = new FileReader();
+      reader.onload = () => { state.companySettings.logoDataUrl = reader.result; persist(); showCompanyModal=false; render(); };
+      reader.readAsDataURL(logoFile);
+    } else {
+      persist(); showCompanyModal=false; render();
+    }
+  };
+
+  /* Excel export (Pro gated) */
+  const excelBtn = document.querySelector('[data-action="export-excel"]');
+  if(excelBtn) excelBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    if(typeof XLSX === 'undefined'){ alert('Excel library failed to load — check your internet connection and try again.'); return; }
+    const auditRows = state.audits.map(a=>({
+      "Audit Number": a.auditNumber||'', "Title": a.title, "Standard": a.standard, "Area": a.area,
+      "Auditor": a.auditor, "Auditee": a.auditee, "Date": a.date, "Status": a.status, "Compliance %": scoreOf(a)
+    }));
+    const findingRows = state.audits.flatMap(a=>a.findings.map(f=>({
+      "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Department": f.clause, "Description": f.desc,
+      "Severity": f.severity, "Owner": f.owner, "Due Date": f.dueDate, "CAPA": f.actionText, "Status": f.status
+    })));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(auditRows), "Audits");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(findingRows), "Findings & CAPA");
+    XLSX.writeFile(wb, `aqms-export-${today()}.xlsx`);
+  };
+
+  /* CSV export (Pro gated) — findings/CAPA, most useful for external analysis */
+  const csvBtn = document.querySelector('[data-action="export-csv"]');
+  if(csvBtn) csvBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    const headers = ["Audit Number","Audit Title","Department","Description","Severity","Owner","Due Date","CAPA","Status"];
+    const rows = state.audits.flatMap(a=>a.findings.map(f=>[
+      a.auditNumber||'', a.title, f.clause, f.desc, f.severity, f.owner||'', f.dueDate||'', f.actionText||'', f.status
+    ]));
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(r=>r.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-findings-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+
+  const backupBtn = document.querySelector('[data-action="open-backup"]');
+  if(backupBtn) backupBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    const blob = new Blob([JSON.stringify(state, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-backup-${today()}.json`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    localStorage.setItem('aqms-last-backup', new Date().toLocaleString());
+    render();
+  };
+  const restoreBtn = document.querySelector('[data-action="open-restore"]');
+  const restoreFileInput = document.getElementById('restore-file-input');
+  if(restoreBtn) restoreBtn.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    restoreFileInput.click();
+  };
+  if(restoreFileInput) restoreFileInput.onchange=()=>{
+    const file = restoreFileInput.files[0]; if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try{
+        const data = JSON.parse(reader.result);
+        if(!data.audits) throw new Error("Invalid backup file");
+        if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) { restoreFileInput.value = ""; return; }
+        state = data; openAuditId=null; persist(); render();
+      }catch(e){ alert("Could not read this file — please check it's a valid AQMS backup."); }
+      restoreFileInput.value = "";
+    };
+    reader.readAsText(file);
+  };
+
+  /* PDF export (Pro gated) */
+  document.querySelectorAll('[data-action="export-audit-pdf"]').forEach(el=>el.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    buildAuditPrintReport(a);
+    window.print();
+  });
+}
+
+render();
+
+/* auto-save safety net — quietly persists every 5s in case a change slipped through */
+setInterval(() => { saveStore(state); }, 5000);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
+    navigator.serviceWorker.register('./sw.js').then(function(reg){
+      reg.addEventListener('updatefound', function(){
+        const newWorker = reg.installing;
+        if(!newWorker) return;
+        newWorker.addEventListener('statechange', function(){
+          if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+            showUpdateBanner();
+          }
+        });
+      });
+    });
+  });
+}
+
+function showUpdateBanner(){
+  if(document.getElementById('update-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'update-banner';
+  banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1c2b4a;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:200;font-family:sans-serif;font-size:13px;gap:10px;';
+  banner.innerHTML = '<span>A new version of AuditQMS Pro Suite is available.</span><button id="reload-app-btn" style="background:#fff;color:#1c2b4a;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Reload</button>';
+  document.body.appendChild(banner);
+  document.getElementById('reload-app-btn').onclick = () => window.location.reload();
+}
+</script>
+</body>
+</html>
