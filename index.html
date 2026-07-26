@@ -134,10 +134,14 @@ function formatAuditNumber(n, year){ return `AUD-${year}-${String(n).padStart(4,
 
 const STANDARDS = [
   "ISO 9001:2015","ISO 22000","FSSC 22000","BRCGS","HACCP","Internal GMP",
-  "Pharma GMP","ISO 45001 (Steel/Mining OHS)","ISO 14001 (Petroleum/Environmental)",
+  "Pharma GMP","ISO 45001 (OHS)","ISO 14001 (Environmental)",
   "ISO 50001 (Energy)","WIPHA (Wine)","TPN (Tobacco)","Cosmetics GMP",
-  "SMETA/AQL (Clothing)","ISO/ESD (Tech)","IOSA (Airlines)","ISM Code (Maritime)",
-  "Minerals Processing"
+  "SMETA/AQL (Clothing)","ISO/ESD (Tech)",
+  "Risk Management (HIRA)","Incident & Near-Miss Management","PPE & Permit to Work",
+  "Contractor & Visitor Management","Chemical & Waste Management",
+  "Emergency Preparedness & Business Continuity","Equipment, Calibration & Maintenance",
+  "Legal & Regulatory Compliance","Management Review & KPI Tracking",
+  "Customer Complaints & Change Management","Planned Job Observation (PJO)"
 ];
 const TEMPLATES = {
   "ISO 9001:2015":[
@@ -148,6 +152,12 @@ const TEMPLATES = {
   "ISO 22000":[
     {name:"Food Safety Management System", items:["Food safety policy communicated and understood","Hazard analysis reviewed and current","PRPs (prerequisite programmes) implemented and verified"]},
     {name:"Operational Controls", items:["CCP/OPRP monitoring records complete","Emergency preparedness and recall procedure tested"]}
+  ],
+  "BRCGS":[
+    {name:"Senior Management Commitment", items:["Food safety and quality policy signed and communicated","Management review meetings conducted and documented","Objectives and KPIs tracked against targets"]},
+    {name:"Product Control", items:["Product design and development records complete","Allergen management controls verified","Product testing and label verification current"]},
+    {name:"Process Control", items:["CCP and quality control points monitored per plan","Calibration of monitoring equipment up to date","Traceability test conducted successfully (mock recall)"]},
+    {name:"Site & Personnel Standards", items:["Site security and visitor procedures followed","Personnel hygiene and protective clothing compliant","Training records current for all relevant staff"]}
   ],
   "FSSC 22000":[
     {name:"Food Defense & Fraud", items:["Food defense (TACCP) plan current and site-assessed","Food fraud (VACCP) vulnerability assessment on file"]},
@@ -165,11 +175,11 @@ const TEMPLATES = {
     {name:"Batch Records & Documentation", items:["Batch manufacturing records complete and signed","Deviations documented with impact assessment","Line clearance verified before batch start"]},
     {name:"Cleanroom & Environmental Monitoring", items:["Environmental monitoring within alert/action limits","Gowning procedure followed correctly","Equipment cleaning validation current"]}
   ],
-  "ISO 45001 (Steel/Mining OHS)":[
+  "ISO 45001 (OHS)":[
     {name:"Hazard Identification & Risk", items:["Risk assessments current for high-risk tasks","PPE availability and correct usage confirmed","Permit-to-work system followed for hot/confined work"]},
     {name:"Incident Management", items:["Incidents and near-misses logged and investigated","Emergency response drills conducted per schedule"]}
   ],
-  "ISO 14001 (Petroleum/Environmental)":[
+  "ISO 14001 (Environmental)":[
     {name:"Environmental Controls", items:["Spill containment and secondary containment intact","Waste segregation and disposal records current","Emissions monitoring within permitted limits"]},
     {name:"Compliance & Emergency Preparedness", items:["Environmental legal register up to date","Spill/emergency response equipment accessible and tested"]}
   ],
@@ -197,17 +207,51 @@ const TEMPLATES = {
     {name:"ESD Control Programme", items:["Wrist strap and grounding checks logged at workstations","ESD flooring/matting resistance tested per schedule"]},
     {name:"Product Quality", items:["Functional test records complete for finished units","Firmware/software version traceability maintained"]}
   ],
-  "IOSA (Airlines)":[
-    {name:"Flight Operations & Safety", items:["Crew training and currency records up to date","Safety management system (SMS) reports reviewed"]},
-    {name:"Ground & Catering Operations", items:["Ground handling procedures followed per manual","Catering food safety and cold chain records verified"]}
+  "Risk Management (HIRA)":[
+    {name:"Hazard Identification", items:["Hazards identified for each task, area, or process","High-risk activities (working at height, confined space, hot work) flagged","Employee input gathered during hazard identification"]},
+    {name:"Risk Assessment", items:["Likelihood and severity rated for each identified hazard","Risk rating (Low/Medium/High/Critical) assigned and recorded","Risk assessments signed off by a competent person"]},
+    {name:"Risk Controls & Review", items:["Hierarchy of controls applied (elimination, substitution, engineering, admin, PPE)","Control effectiveness reviewed after implementation","Risk register reviewed annually or after an incident/process change"]}
   ],
-  "ISM Code (Maritime)":[
-    {name:"Safety Management System", items:["Shipboard SMS documentation current and accessible","Non-conformities from prior audit closed out"]},
-    {name:"Crew & Emergency Preparedness", items:["Crew drills (fire, abandon ship, pollution) conducted per schedule","Certificates of competency current for all crew"]}
+  "Incident & Near-Miss Management":[
+    {name:"Incident Reporting", items:["Incidents reported within the required timeframe","Incident investigation completed with root cause analysis","Corrective actions from incidents tracked to closure"]},
+    {name:"Near-Miss Reporting", items:["Near misses logged and reviewed for trends","Near-miss corrective actions assigned and tracked","Near-miss statistics reported to management"]}
   ],
-  "Minerals Processing":[
-    {name:"Process Controls", items:["Process parameters within specification ranges","Sampling and assay records complete and traceable"]},
-    {name:"Safety & Environmental", items:["Tailings/waste management controls verified","Dust and emissions monitoring records current"]}
+  "PPE & Permit to Work":[
+    {name:"PPE Management", items:["PPE issued matches the risk assessment requirements","PPE inspected and replaced per schedule","PPE register up to date with issue/return records"]},
+    {name:"Permit to Work", items:["Permits issued for hot work, confined space, or work at height","Permit conditions verified before work commences","Permit closed out and signed by an authorized person"]}
+  ],
+  "Contractor & Visitor Management":[
+    {name:"Contractor Management", items:["Contractor inductions completed before site access","Contractor competency and certifications verified","Contractor performance and safety records reviewed"]},
+    {name:"Visitor Management", items:["Visitors signed in/out and issued PPE or safety briefing","Visitor access restricted to authorized areas","Visitor log retained per company policy"]}
+  ],
+  "Chemical & Waste Management":[
+    {name:"Chemical Register", items:["SDS/MSDS available and current for all chemicals on site","Chemical storage compliant with segregation and labelling requirements","Spill response equipment available near chemical storage areas"]},
+    {name:"Waste Management", items:["Waste segregated and disposed of per legal requirements","Waste transporter/disposal certificates on file","Waste volumes and types recorded and reviewed"]}
+  ],
+  "Emergency Preparedness & Business Continuity":[
+    {name:"Emergency Preparedness", items:["Emergency response plan current and accessible to staff","Evacuation drills conducted per schedule with records kept","Emergency equipment (extinguishers, first aid, alarms) inspected regularly"]},
+    {name:"Business Continuity", items:["Business continuity plan reviewed and tested","Critical suppliers and backup arrangements identified","Recovery time objectives defined for key processes"]}
+  ],
+  "Equipment, Calibration & Maintenance":[
+    {name:"Equipment & Asset Inspections", items:["Equipment inspection records current and complete","Damaged or faulty equipment tagged out of service","Asset register up to date"]},
+    {name:"Preventive Maintenance", items:["Preventive maintenance schedule followed per plan","Maintenance records complete and signed off","Breakdown/downtime trends reviewed"]},
+    {name:"Calibration Management", items:["Calibration certificates current for all measuring equipment","Out-of-tolerance instruments investigated and impact assessed","Calibration schedule tracked and up to date"]}
+  ],
+  "Legal & Regulatory Compliance":[
+    {name:"Legal & Regulatory Register", items:["Legal and regulatory register up to date","Compliance obligations assigned to responsible owners","Legal register reviewed after regulatory changes"]},
+    {name:"Internal & External Audits", items:["Internal audit schedule maintained and followed","External audit and regulatory findings tracked to closure","Audit evidence retained per retention policy"]}
+  ],
+  "Management Review & KPI Tracking":[
+    {name:"Management Review", items:["Management review meetings held per schedule","Required inputs (audit results, KPIs, incidents, CAPA) presented at review","Action items from management review tracked to closure"]},
+    {name:"Objectives & KPI Tracking", items:["Quality/safety objectives set and measurable","KPI performance reviewed against targets regularly","Underperforming KPIs have an improvement plan"]}
+  ],
+  "Customer Complaints & Change Management":[
+    {name:"Customer Complaints", items:["Complaints logged and root cause investigated","Corrective action communicated back to the customer where required","Complaint trends reviewed for recurring issues"]},
+    {name:"Change Management", items:["Changes assessed for risk before implementation","Change approval and sign-off documented","Post-change review completed to confirm effectiveness"]}
+  ],
+  "Planned Job Observation (PJO)":[
+    {name:"Slips, Trips & Falls", items:["Hazard warning signs displayed where appropriate","External entrances/exits assessed for slip/trip risk","Fire routes and emergency exits clear from obstructions","Work areas adequately lit","Employees issued appropriate footwear guidance","Housekeeping standards acceptable and understood by individuals","Work equipment/tools stored correctly, not left cluttering the work area","Maintenance programmes in place to prevent hazardous conditions developing","Surface conditions in good repair and free from slip/trip hazards, including spills"]},
+    {name:"Task & Behaviour Observation", items:["Operator/trainee present and prepared before task start","PPE worn correctly for the task being performed","Task carried out following the agreed safe method","Individual engaged and able to explain the task safely when asked"]}
   ]
 };
 const SEVERITIES = ["Minor","Major","Critical"];
@@ -298,6 +342,16 @@ if(!state.companySettings){
     logoDataUrl: ""
   };
 }
+if(!state.riskAssessments){ state.riskAssessments = []; }
+
+function riskLevelFromScore(score){
+  if(score===null || score===undefined || score==="") return null;
+  if(score>=15) return "Critical";
+  if(score>=8) return "High";
+  if(score>=4) return "Medium";
+  return "Low";
+}
+const riskLevelColor = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
 
 function persist(){
   saveStore(state);
@@ -328,13 +382,14 @@ function render(){
       <div class="wrap" style="display:flex;gap:4px;flex-wrap:wrap;">
         ${navBtn("dashboard","Dashboard")}
         ${navBtn("audits","Audit Register")}
+        ${navBtn("risk","Risk Register")}
         ${navBtn("capa","CAPA Tracker")}
         ${navBtn("analytics","Analytics")}
         ${navBtn("settings","Settings")}
       </div>
     </header>
     <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="capa" ? renderCapa() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="risk" ? renderRiskRegister() : tab==="capa" ? renderCapa() : tab==="analytics" ? renderAnalytics() : renderSettings()}
     </main>
     ${showProModal ? renderProModal() : ''}
     ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -422,13 +477,14 @@ function renderDashboard(){
   const critical = openFindings.filter(f=>f.severity==="Critical"||f.severity==="Major");
   const scored = audits.map(scoreOf).filter(s=>s!==null);
   const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
+  const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed");
 
   return `
     <div class="stats">
       ${statCard("Total Audits", audits.length)}
       ${statCard("Open Findings", openFindings.length)}
       ${statCard("Overdue CAPAs", overdue.length)}
-      ${statCard("Avg. Compliance", avgScore!==null?avgScore+"%":"—")}
+      ${statCard("High/Critical Risks", highRisks.length)}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -675,6 +731,119 @@ function renderCapa(){
   `;
 }
 
+/* ---------- risk register ---------- */
+let showNewRisk = false;
+let openRiskId = null;
+let riskLevelFilter = "All";
+
+function renderRiskRegister(){
+  const all = state.riskAssessments;
+  const filtered = all.filter(r => riskLevelFilter==="All" || r.riskLevel===riskLevelFilter);
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">Risk Register (HIRA)</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-risk-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-risk">+ New Risk Assessment</button>
+      </div>
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Risk Level:</span>
+        ${["All","Low","Medium","High","Critical"].map(f=>`<button class="status-pill ${riskLevelFilter===f?'active':''}" data-risk-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewRisk ? renderNewRiskForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No risk assessments logged yet.</p>` : filtered.map(r=>renderRiskRow(r)).join('')}
+    </div>
+  `;
+}
+
+function renderNewRiskForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Ref No.<input id="nr-ref" placeholder="e.g. HIRA-004" /></label>
+      <label class="field">Date<input type="date" id="nr-date" value="${today()}" /></label>
+      <label class="field" style="grid-column:1/-1;">Area / Task<input id="nr-area" placeholder="e.g. Loading Bay" /></label>
+      <label class="field" style="grid-column:1/-1;">Hazard Description<input id="nr-hazard" placeholder="What could cause harm and how…" /></label>
+      <label class="field" style="grid-column:1/-1;">Who/What at Risk<input id="nr-risk-to" placeholder="e.g. Warehouse staff, visitors" /></label>
+      <label class="field" style="grid-column:1/-1;">Existing Controls<input id="nr-controls" placeholder="Controls currently in place…" /></label>
+      <label class="field">Likelihood (1–5)<select id="nr-likelihood">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>
+      <label class="field">Severity (1–5)<select id="nr-severity">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Action Required<input id="nr-action" placeholder="Additional controls needed…" /></label>
+      <label class="field">Responsible Person<input id="nr-owner" /></label>
+      <label class="field">Target Date<input type="date" id="nr-due" /></label>
+      <div class="muted-italic" style="grid-column:1/-1;font-size:12px;">Risk Level is calculated automatically from Likelihood × Severity (1–3 Low, 4–7 Medium, 8–14 High, 15–25 Critical).</div>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-risk">Cancel</button>
+        <button class="btn btn-primary" data-action="create-risk">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderRiskRow(r){
+  const open = openRiskId === r.id;
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-risk="${r.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(r.hazard)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(r.refNo)||'—'}</span></div>
+            <div class="audit-sub">${esc(r.area)||'—'} · ${r.date}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${riskLevelColor[r.riskLevel]||'neutral'}">${r.riskLevel} risk</span>
+          ${r.residualRiskLevel ? `<span class="tag tag-neutral">residual: ${r.residualRiskLevel}</span>` : ''}
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderRiskDetail(r)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderRiskDetail(r){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Ref No.<input data-risk-field="${r.id}:refNo" value="${esc(r.refNo)}" /></label>
+      <label class="field">Date<input type="date" data-risk-field="${r.id}:date" value="${r.date}" /></label>
+      <label class="field" style="grid-column:1/-1;">Area / Task<input data-risk-field="${r.id}:area" value="${esc(r.area)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Hazard Description<input data-risk-field="${r.id}:hazard" value="${esc(r.hazard)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Who/What at Risk<input data-risk-field="${r.id}:riskTo" value="${esc(r.riskTo)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Existing Controls<input data-risk-field="${r.id}:controls" value="${esc(r.controls)}" /></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Existing Risk</h3>
+      <div class="grid3">
+        <label class="field">Likelihood (1–5)<select data-risk-field="${r.id}:likelihood">${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==r.likelihood?'selected':''}>${n}</option>`).join('')}</select></label>
+        <label class="field">Severity (1–5)<select data-risk-field="${r.id}:severity">${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==r.severity?'selected':''}>${n}</option>`).join('')}</select></label>
+        <div class="field"><span>Risk Level</span><span class="tag tag-${riskLevelColor[r.riskLevel]||'neutral'}" style="margin-top:4px;">${r.riskScore} — ${r.riskLevel}</span></div>
+      </div>
+    </div>
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field" style="grid-column:1/-1;">Action Required<input data-risk-field="${r.id}:action" value="${esc(r.action)}" /></label>
+      <label class="field">Responsible Person<input data-risk-field="${r.id}:owner" value="${esc(r.owner)}" /></label>
+      <label class="field">Target Date<input type="date" data-risk-field="${r.id}:dueDate" value="${r.dueDate||''}" /></label>
+      <label class="field">Date Completed<input type="date" data-risk-field="${r.id}:completedDate" value="${r.completedDate||''}" /></label>
+      <label class="field">Status<select data-risk-field="${r.id}:status">${["Open","In Progress","Closed"].map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}</select></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Residual Risk (After Action Taken)</h3>
+      <div class="grid3">
+        <label class="field">Residual Likelihood (1–5)<select data-risk-field="${r.id}:residualLikelihood"><option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==r.residualLikelihood?'selected':''}>${n}</option>`).join('')}</select></label>
+        <label class="field">Residual Severity (1–5)<select data-risk-field="${r.id}:residualSeverity"><option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==r.residualSeverity?'selected':''}>${n}</option>`).join('')}</select></label>
+        <div class="field"><span>Residual Risk Level</span>${r.residualRiskLevel ? `<span class="tag tag-${riskLevelColor[r.residualRiskLevel]||'neutral'}" style="margin-top:4px;">${r.residualRiskScore} — ${r.residualRiskLevel}</span>` : `<span class="muted-italic" style="margin-top:4px;">Not yet set</span>`}</div>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-risk" data-risk="${r.id}">Delete Risk Assessment</button>
+    </div>
+  `;
+}
+
 /* ---------- analytics ---------- */
 let chartInstances = {};
 
@@ -782,13 +951,18 @@ const SETTINGS_SECTIONS = [
   { key:"about", label:"About", content: `
     <p><strong>AQMS Pro Suite</strong> — Version ${APP_VERSION}</p>
     <p>AQMS Pro Suite is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
-    <p>Built as a Progressive Web App (PWA), AQMS Pro Suite provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food manufacturing, catering, laboratories, warehousing, pharmaceuticals, mining, manufacturing, logistics, and other compliance-driven environments.</p>
+    <p>Built as a Progressive Web App (PWA), AQMS Pro Suite provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food & beverage, pharmaceutical, cosmetics, manufacturing, warehousing & logistics, laboratories, healthcare, and other compliance-driven environments.</p>
     <p><strong>Key Features</strong></p>
     <ul>
       <li>Audit Management</li><li>Dynamic Audit Templates</li><li>CAPA Management</li>
       <li>Compliance Scoring</li><li>Dashboard & Analytics</li><li>Search and Advanced Filtering</li>
       <li>PDF Audit Reports</li><li>Excel & CSV Export</li><li>Backup & Restore</li>
       <li>Offline Progressive Web App (PWA)</li><li>Multi-Standard Audit Support</li>
+      <li>Risk Management (HIRA)</li><li>Incident & Near-Miss Management</li>
+      <li>PPE & Permit to Work</li><li>Contractor & Visitor Management</li>
+      <li>Chemical & Waste Management</li><li>Emergency Preparedness & Business Continuity</li>
+      <li>Equipment, Calibration & Preventive Maintenance</li><li>Legal & Regulatory Compliance Register</li>
+      <li>Management Review & KPI Tracking</li><li>Customer Complaints & Change Management</li>
     </ul>
   `},
   { key:"release", label:"Release Notes", content: `
@@ -825,13 +999,13 @@ const SETTINGS_SECTIONS = [
   `},
   { key:"contact", label:"Contact", content: `
     <p>For support, questions, or feedback:</p>
-    <p><a href="mailto:support@sydamabeka.co.za">support@sydamabeka.co.za</a></p>
+    <p><a href="mailto:support@sydamabeka.com">support@sydamabeka.com</a></p>
   `},
   { key:"privacy", label:"Privacy Policy", content: `
     <p>AQMS Pro Suite runs entirely offline. All audit data, findings, CAPA records, and company settings are stored locally on your device using browser storage — nothing is sent to, or stored on, any server operated by SYDA MABEKA (PTY) LTD.</p>
     <p>The app loads a small number of third-party resources over the internet (Google Fonts, and the Chart.js and SheetJS libraries used for analytics charts and Excel export) — these providers do not receive any of your audit data, only a standard request for the resource file itself.</p>
     <p>Because data is stored locally, you are responsible for backing it up (via the Backup feature) and for the security of the device you use the app on. Uninstalling the app or clearing browser site data will permanently delete locally stored audits unless you've exported a backup first.</p>
-    <p>Questions about this policy can be sent to <a href="mailto:support@sydamabeka.co.za">support@sydamabeka.co.za</a>.</p>
+    <p>Questions about this policy can be sent to <a href="mailto:support@sydamabeka.com">support@sydamabeka.com</a>.</p>
   `},
   { key:"version", label:"App Version", content: `
     <p><strong>AQMS Pro Suite — Version ${APP_VERSION}</strong></p>
@@ -1065,6 +1239,86 @@ function attachHandlers(){
     capaFilter = el.dataset.capaFilter; render();
   });
 
+  /* risk register */
+  const toggleNewRisk = document.querySelector('[data-action="toggle-new-risk"]'); if(toggleNewRisk) toggleNewRisk.onclick=()=>{ showNewRisk=!showNewRisk; render(); };
+  const cancelNewRisk = document.querySelector('[data-action="cancel-new-risk"]'); if(cancelNewRisk) cancelNewRisk.onclick=()=>{ showNewRisk=false; render(); };
+  const createRisk = document.querySelector('[data-action="create-risk"]');
+  if(createRisk) createRisk.onclick=()=>{
+    const hazard = document.getElementById('nr-hazard').value.trim();
+    if(!hazard) return;
+    const likelihood = Number(document.getElementById('nr-likelihood').value);
+    const severity = Number(document.getElementById('nr-severity').value);
+    const riskScore = likelihood * severity;
+    const risk = {
+      id: uid(),
+      refNo: document.getElementById('nr-ref').value,
+      date: document.getElementById('nr-date').value || today(),
+      area: document.getElementById('nr-area').value,
+      hazard,
+      riskTo: document.getElementById('nr-risk-to').value,
+      controls: document.getElementById('nr-controls').value,
+      likelihood, severity, riskScore, riskLevel: riskLevelFromScore(riskScore),
+      action: document.getElementById('nr-action').value,
+      owner: document.getElementById('nr-owner').value,
+      dueDate: document.getElementById('nr-due').value,
+      completedDate: "",
+      status: "Open",
+      residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null
+    };
+    state.riskAssessments.unshift(risk);
+    openRiskId = risk.id; showNewRisk=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-risk]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleRisk; openRiskId = openRiskId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-risk-filter]').forEach(el=>el.onclick=()=>{
+    riskLevelFilter = el.dataset.riskFilter; render();
+  });
+  document.querySelectorAll('[data-risk-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.riskField.split(':');
+      const r = state.riskAssessments.find(x=>x.id===id);
+      if(!r) return;
+      if(field==="likelihood" || field==="severity"){
+        r[field] = Number(el.value);
+        r.riskScore = r.likelihood * r.severity;
+        r.riskLevel = riskLevelFromScore(r.riskScore);
+      } else if(field==="residualLikelihood" || field==="residualSeverity"){
+        r[field] = el.value === "" ? "" : Number(el.value);
+        if(r.residualLikelihood && r.residualSeverity){
+          r.residualRiskScore = r.residualLikelihood * r.residualSeverity;
+          r.residualRiskLevel = riskLevelFromScore(r.residualRiskScore);
+        } else {
+          r.residualRiskScore = null; r.residualRiskLevel = null;
+        }
+      } else {
+        r[field] = el.value;
+      }
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-risk"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this risk assessment? This cannot be undone.")) return;
+    state.riskAssessments = state.riskAssessments.filter(r=>r.id!==el.dataset.risk);
+    openRiskId = null; persist(); render();
+  });
+  const riskCsvBtn = document.querySelector('[data-action="export-risk-csv"]');
+  if(riskCsvBtn) riskCsvBtn.onclick=()=>{
+    const headers = ["Ref No","Date","Area/Task","Hazard","Who/What at Risk","Existing Controls","Likelihood","Severity","Risk Score","Risk Level","Action Required","Responsible","Target Date","Status","Residual Risk Level"];
+    const rows = state.riskAssessments.map(r=>[
+      r.refNo||'', r.date, r.area||'', r.hazard, r.riskTo||'', r.controls||'', r.likelihood, r.severity, r.riskScore, r.riskLevel,
+      r.action||'', r.owner||'', r.dueDate||'', r.status, r.residualRiskLevel||''
+    ]);
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-risk-register-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   /* search & filter */
   const searchInput = document.getElementById('audit-search');
   if(searchInput){
@@ -1177,9 +1431,10 @@ function attachHandlers(){
       try{
         const data = JSON.parse(reader.result);
         if(!data.audits) throw new Error("Invalid backup file");
-        if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) return;
+        if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) { restoreFileInput.value = ""; return; }
         state = data; openAuditId=null; persist(); render();
       }catch(e){ alert("Could not read this file — please check it's a valid AQMS backup."); }
+      restoreFileInput.value = "";
     };
     reader.readAsText(file);
   };
