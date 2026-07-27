@@ -314,6 +314,20 @@ const DOCUMENT_CATEGORIES = ["Policy","Procedure (SOP)","Work Instruction","Form
 
 const trainingStatusTone = {Valid:"green","Expiring Soon":"amber",Overdue:"rust","No Expiry":"green"};
 
+const HAZARD_TYPES = ["Biological","Chemical","Physical","Allergen"];
+const haccpStatusTone = {Compliant:"green",Deviation:"rust","No Readings":"amber",Inactive:"neutral"};
+
+const RECALL_REASONS = ["Microbiological Contamination","Allergen Mislabelling","Foreign Object Contamination","Incorrect Packaging Information","Chemical Contamination","Temperature Abuse","Supplier Issue","Other"];
+const RECALL_CLASSES = ["Class I – Serious Health Risk","Class II – Temporary/Reversible Risk","Class III – Low Risk / Regulatory"];
+const RECALL_STATUSES = ["Open","Investigating","Recall In Progress","Closed"];
+const recallStatusTone = {Open:"rust",Investigating:"amber","Recall In Progress":"amber",Closed:"green"};
+const recallClassTone = {"Class I – Serious Health Risk":"rust","Class II – Temporary/Reversible Risk":"amber","Class III – Low Risk / Regulatory":"navy"};
+const RECALL_ACTION_STEPS = [
+  "Stop production","Place stock on hold","Identify affected batches","Notify customers",
+  "Notify authorities (if required)","Retrieve products","Dispose or rework product",
+  "Complete investigation","Verify effectiveness"
+];
+
 function logHistory(a, text){
   if(!a.history) a.history = [];
   a.history.push({ id: uid(), date: new Date().toISOString(), text });
@@ -394,6 +408,8 @@ if(!state.metrics){ state.metrics = []; }
 if(!state.checklists){ state.checklists = []; }
 if(!state.documents){ state.documents = []; }
 if(!state.trainingRecords){ state.trainingRecords = []; }
+if(!state.haccpPoints){ state.haccpPoints = []; }
+if(!state.productRecalls){ state.productRecalls = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
 let checklistSeq = state.checklists.length;
 
@@ -514,6 +530,54 @@ function persist(){
 
 function esc(str){ const d=document.createElement("div"); d.textContent = str==null? "": str; return d.innerHTML; }
 
+function compressImageToDataURL(file, maxWidth, quality, cb){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if(w > maxWidth){ h = Math.round(h * (maxWidth/w)); w = maxWidth; }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL("image/jpeg", quality));
+    };
+    img.onerror = () => { alert("Could not read this image — please try a different photo."); };
+    img.src = e.target.result;
+  };
+  reader.onerror = () => { alert("Could not read this file — please try a different photo."); };
+  reader.readAsDataURL(file);
+}
+
+/* Compresses/resizes a photo client-side before storing as base64, to stay well within
+   localStorage limits. Caps the longest edge at maxDim px and re-encodes as JPEG at `quality`. */
+function compressImageFile(file, maxDim=1000, quality=0.7){
+  return new Promise((resolve, reject)=>{
+    if(!file.type || !file.type.startsWith("image/")){ reject(new Error("Not an image file")); return; }
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width, h = img.height;
+        if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
+        else if(h>=w && h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = () => reject(new Error("Could not read image"));
+      img.src = e.target.result;
+    };
+    reader.onerror = () => reject(new Error("Could not read file"));
+    reader.readAsDataURL(file);
+  });
+}
+function photoAttachControl(dataAttrName, idPath, hasPhoto){
+  return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:6px;">📷 ${hasPhoto?'Replace':'Add'} Photo<input type="file" accept="image/*" capture="environment" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
+}
+
 /* ---------- render ---------- */
 function render(){
   scoreCache.clear();
@@ -542,13 +606,15 @@ function render(){
           ${navBtn("capa","CAPA Tracker")}
           ${navBtn("documents","Document Control")}
           ${navBtn("training","Training Matrix")}
+          ${navBtn("haccp","HACCP")}
+          ${navBtn("recalls","Product Recall")}
           ${navBtn("quality-cycle","Quality Cycle")}
           ${navBtn("analytics","Analytics")}
           ${navBtn("settings","Settings")}
         </div>
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -733,6 +799,7 @@ function renderDashboard(){
       ${statCard("🚨", "High/Critical Risks", highRisks.length)}
       ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length)}
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length)}
+      ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length)}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -901,7 +968,11 @@ function renderAuditDetail(a){
               </div>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:14px;">${esc(it.text)}</div>
-                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />` : ''}
+                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
+                ${it.photo
+                  ? `<div style="margin-top:6px;"><img src="${it.photo}" style="max-width:90px;max-height:90px;border-radius:6px;display:block;object-fit:cover;" /><button class="x-btn" data-action="remove-item-photo" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}" style="font-size:11px;margin-top:4px;">✕ Remove Photo</button></div>`
+                  : `<input type="file" accept="image/*" capture="environment" data-item-photo="${a.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
+                ` : ''}
               </div>
               <button class="x-btn" data-action="remove-item" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}">🗑</button>
             </div>
@@ -933,6 +1004,8 @@ function renderAuditDetail(a){
             ${f.dueDate?`<span style="${daysUntil(f.dueDate)<0 && f.status!=='Closed' ? 'color:var(--rust);font-weight:600;':''}">📅 ${f.dueDate}${daysUntil(f.dueDate)<0 && f.status!=='Closed'?' (overdue)':''}</span>`:''}
           </div>
           ${f.actionText?`<div class="muted-italic" style="font-size:12px;">CAPA: ${esc(f.actionText)}</div>`:''}
+          ${f.photo ? `<div style="margin-top:8px;"><img src="${f.photo}" style="max-width:140px;border-radius:6px;display:block;border:1px solid var(--line2);" /><button class="x-btn" data-action="remove-finding-photo" data-audit="${a.id}" data-finding="${f.id}" style="margin-top:4px;">✕ Remove Photo</button></div>` : ''}
+          ${photoAttachControl('data-finding-photo', `${a.id}:${f.id}`, !!f.photo)}
           <div class="flex-wrap" style="margin-top:8px;">
             ${["Open","In Progress","Closed"].map(s=>`<button class="status-pill ${f.status===s?'active':''}" data-set-finding-status="${a.id}:${f.id}:${s}">${s}</button>`).join('')}
           </div>
@@ -1003,6 +1076,12 @@ let documentStatusFilter = "All";
 let showNewTraining = false;
 let openTrainingId = null;
 let trainingStatusFilter = "All";
+let showNewHaccp = false;
+let openHaccpId = null;
+let haccpStatusFilter = "All";
+let showNewRecall = false;
+let openRecallId = null;
+let recallStatusFilter = "All";
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
@@ -1311,6 +1390,269 @@ function renderTrainingDetail(t){
   `;
 }
 
+/* ---------- HACCP ---------- */
+function haccpStatus(p){
+  if(p.status==="Inactive") return "Inactive";
+  if(!p.readings || p.readings.length===0) return "No Readings";
+  const latest = [...p.readings].sort((a,b)=>b.date.localeCompare(a.date))[0];
+  return latest.result==="Deviation" ? "Deviation" : "Compliant";
+}
+
+function renderHaccp(){
+  const all = state.haccpPoints;
+  const filtered = all.filter(p => haccpStatusFilter==="All" || haccpStatus(p)===haccpStatusFilter);
+  const deviationCount = all.filter(p=>haccpStatus(p)==="Deviation").length;
+  const compliantCount = all.filter(p=>haccpStatus(p)==="Compliant").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">HACCP — Critical Control Points</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-haccp-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-haccp">+ New CCP</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("🧪", "Total CCPs", all.length)}
+      ${statCard("✅", "Compliant", compliantCount)}
+      ${statCard("🚨", "Deviations", deviationCount)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
+        ${["All","Compliant","Deviation","No Readings","Inactive"].map(f=>`<button class="status-pill ${haccpStatusFilter===f?'active':''}" data-haccp-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewHaccp ? renderNewHaccpForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No critical control points defined yet.</p>` : filtered.map(p=>renderHaccpRow(p)).join('')}
+    </div>
+  `;
+}
+
+function renderNewHaccpForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">CCP Number<input id="nh-number" placeholder="e.g. CCP-1" /></label>
+      <label class="field">Process Step<input id="nh-step" placeholder="e.g. Cooking, Metal Detection" /></label>
+      <label class="field">Hazard Type<select id="nh-hazard">${HAZARD_TYPES.map(h=>`<option>${h}</option>`).join('')}</select></label>
+      <label class="field">Monitoring Frequency<input id="nh-frequency" placeholder="e.g. Every 2 hours" /></label>
+      <label class="field" style="grid-column:1/-1;">Critical Limit<input id="nh-limit" placeholder="e.g. Core temp ≥75°C for 30 sec" /></label>
+      <label class="field" style="grid-column:1/-1;">Monitoring Method<input id="nh-method" placeholder="e.g. Probe thermometer, visual check" /></label>
+      <label class="field" style="grid-column:1/-1;">Corrective Action (if deviation)<input id="nh-corrective" placeholder="e.g. Reject/rework product, recalibrate" /></label>
+      <label class="field">Responsible Person<input id="nh-responsible" placeholder="e.g. Line Supervisor" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-haccp">Cancel</button>
+        <button class="btn btn-primary" data-action="create-haccp">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderHaccpRow(p){
+  const open = openHaccpId === p.id;
+  const status = haccpStatus(p);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-haccp="${p.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(p.ccpNumber)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(p.processStep)}</span></div>
+            <div class="audit-sub">${esc(p.hazardType)||'—'} · Limit: ${esc(p.criticalLimit)||'—'}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${haccpStatusTone[status]||'neutral'}">${status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderHaccpDetail(p)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderHaccpDetail(p){
+  const readingRows = (p.readings && p.readings.length) ?
+    [...p.readings].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;gap:8px;">
+        <span style="flex:1;min-width:0;">${r.date} — ${esc(r.value)} ${r.note?`<span class="muted-italic">(${esc(r.note)})</span>`:''}</span>
+        <span class="tag tag-${r.result==='Deviation'?'rust':'green'}">${r.result}</span>
+        <button class="x-btn" data-action="delete-haccp-reading" data-haccp="${p.id}" data-reading="${r.id}">✕</button>
+      </div>
+    `).join('') : `<p class="muted-italic">No readings logged yet.</p>`;
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">CCP Number<input data-haccp-field="${p.id}:ccpNumber" value="${esc(p.ccpNumber)}" /></label>
+      <label class="field">Process Step<input data-haccp-field="${p.id}:processStep" value="${esc(p.processStep)}" /></label>
+      <label class="field">Hazard Type<select data-haccp-field="${p.id}:hazardType">${HAZARD_TYPES.map(h=>`<option ${h===p.hazardType?'selected':''}>${h}</option>`).join('')}</select></label>
+      <label class="field">Monitoring Frequency<input data-haccp-field="${p.id}:monitoringFrequency" value="${esc(p.monitoringFrequency)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Critical Limit<input data-haccp-field="${p.id}:criticalLimit" value="${esc(p.criticalLimit)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Monitoring Method<input data-haccp-field="${p.id}:monitoringMethod" value="${esc(p.monitoringMethod)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Corrective Action<input data-haccp-field="${p.id}:correctiveAction" value="${esc(p.correctiveAction)}" /></label>
+      <label class="field">Responsible Person<input data-haccp-field="${p.id}:responsible" value="${esc(p.responsible)}" /></label>
+      <label class="field">Status<select data-haccp-field="${p.id}:status"><option ${p.status==='Active'?'selected':''}>Active</option><option ${p.status==='Inactive'?'selected':''}>Inactive</option></select></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Log a Monitoring Reading</h3>
+      <div class="grid2">
+        <label class="field">Date<input type="date" id="haccp-reading-date-${p.id}" value="${today()}" /></label>
+        <label class="field">Reading / Observation<input id="haccp-reading-value-${p.id}" placeholder="e.g. 78°C" /></label>
+        <label class="field">Result<select id="haccp-reading-result-${p.id}"><option>Compliant</option><option>Deviation</option></select></label>
+        <label class="field">Note (optional)<input id="haccp-reading-note-${p.id}" placeholder="e.g. corrective action taken" /></label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" data-action="add-haccp-reading" data-haccp="${p.id}">+ Log Reading</button>
+      </div>
+      <div class="top-border">${readingRows}</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-haccp" data-haccp="${p.id}">Delete CCP</button>
+    </div>
+  `;
+}
+
+/* ---------- Product Recall ---------- */
+function recallCompletionPct(r){
+  const steps = r.actionSteps || [];
+  if(steps.length===0) return 0;
+  return Math.round((steps.filter(s=>s.done).length/steps.length)*100);
+}
+
+function nextRecallNumber(){
+  return `REC-${new Date().getFullYear()}-${String(state.productRecalls.length+1).padStart(3,'0')}`;
+}
+
+function renderRecalls(){
+  const all = state.productRecalls;
+  const filtered = all.filter(r => recallStatusFilter==="All" || r.status===recallStatusFilter);
+  const activeCount = all.filter(r=>r.status!=="Closed").length;
+  const classICount = all.filter(r=>r.riskClass && r.riskClass.startsWith("Class I –")).length;
+  const avgCompletion = all.length ? Math.round(all.reduce((sum,r)=>sum+recallCompletionPct(r),0)/all.length) : 0;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🚨 Product Recall Management</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-recalls-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-recall">+ New Recall</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("🚨", "Active Recalls", activeCount)}
+      ${statCard("🔴", "Class I Recalls", classICount)}
+      ${statCard("📊", "Avg Completion", avgCompletion+"%")}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
+        ${["All",...RECALL_STATUSES].map(f=>`<button class="status-pill ${recallStatusFilter===f?'active':''}" data-recall-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewRecall ? renderNewRecallForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No recalls logged. Hopefully it stays that way.</p>` : filtered.map(r=>renderRecallRow(r)).join('')}
+    </div>
+  `;
+}
+
+function renderNewRecallForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Recall Number<input id="nr-number" value="${nextRecallNumber()}" /></label>
+      <label class="field">Product Name<input id="nr-product" placeholder="e.g. Sponge Cake 500g" /></label>
+      <label class="field">Product Code / SKU<input id="nr-code" placeholder="e.g. SC500-1907A" /></label>
+      <label class="field">Batch / Lot Number<input id="nr-batch" placeholder="e.g. WWF-2607" /></label>
+      <label class="field">Manufacturing Date<input type="date" id="nr-mfg-date" /></label>
+      <label class="field">Expiry Date<input type="date" id="nr-expiry-date" /></label>
+      <label class="field">Quantity Produced<input type="number" id="nr-qty-produced" /></label>
+      <label class="field">Quantity Released<input type="number" id="nr-qty-released" /></label>
+      <label class="field">Quantity Recalled<input type="number" id="nr-qty-recalled" /></label>
+      <label class="field" style="grid-column:1/-1;">Reason for Recall<select id="nr-reason">${RECALL_REASONS.map(r=>`<option>${r}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Risk Classification<select id="nr-class">${RECALL_CLASSES.map(c=>`<option>${c}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input id="nr-notes" placeholder="Optional notes…" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-recall">Cancel</button>
+        <button class="btn btn-primary" data-action="create-recall">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderRecallRow(r){
+  const open = openRecallId === r.id;
+  const pct = recallCompletionPct(r);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-recall="${r.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(r.recallNumber)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(r.productName)}</span></div>
+            <div class="audit-sub">Batch: ${esc(r.batchLot)||'—'} · ${pct}% actions complete</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${recallClassTone[r.riskClass]||'neutral'}">${(r.riskClass||'').split(' –')[0]}</span>
+          <span class="tag tag-${recallStatusTone[r.status]||'neutral'}">${r.status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderRecallDetail(r)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderRecallDetail(r){
+  const pct = recallCompletionPct(r);
+  const commsRows = (r.commsLog && r.commsLog.length) ?
+    [...r.commsLog].sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`
+      <div style="padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+        <div style="display:flex;justify-content:space-between;"><strong>${esc(c.contact)}</strong><span class="muted-italic">${c.date}</span></div>
+        <div>${esc(c.method)}${c.response?` — Response: ${esc(c.response)}`:''}${c.followUp?` — Follow-up: ${esc(c.followUp)}`:''}</div>
+        <button class="x-btn" data-action="delete-recall-comm" data-recall="${r.id}" data-comm="${c.id}" style="margin-top:4px;">✕ Remove</button>
+      </div>
+    `).join('') : `<p class="muted-italic">No communications logged yet.</p>`;
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Recall Number<input data-recall-field="${r.id}:recallNumber" value="${esc(r.recallNumber)}" /></label>
+      <label class="field">Product Name<input data-recall-field="${r.id}:productName" value="${esc(r.productName)}" /></label>
+      <label class="field">Product Code / SKU<input data-recall-field="${r.id}:productCode" value="${esc(r.productCode)}" /></label>
+      <label class="field">Batch / Lot Number<input data-recall-field="${r.id}:batchLot" value="${esc(r.batchLot)}" /></label>
+      <label class="field">Manufacturing Date<input type="date" data-recall-field="${r.id}:mfgDate" value="${r.mfgDate||''}" /></label>
+      <label class="field">Expiry Date<input type="date" data-recall-field="${r.id}:expiryDate" value="${r.expiryDate||''}" /></label>
+      <label class="field">Quantity Produced<input type="number" data-recall-field="${r.id}:qtyProduced" value="${r.qtyProduced??''}" /></label>
+      <label class="field">Quantity Released<input type="number" data-recall-field="${r.id}:qtyReleased" value="${r.qtyReleased??''}" /></label>
+      <label class="field">Quantity Recalled<input type="number" data-recall-field="${r.id}:qtyRecalled" value="${r.qtyRecalled??''}" /></label>
+      <label class="field" style="grid-column:1/-1;">Reason for Recall<select data-recall-field="${r.id}:reason">${RECALL_REASONS.map(x=>`<option ${x===r.reason?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Risk Classification<select data-recall-field="${r.id}:riskClass">${RECALL_CLASSES.map(x=>`<option ${x===r.riskClass?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Status<select data-recall-field="${r.id}:status">${RECALL_STATUSES.map(x=>`<option ${x===r.status?'selected':''}>${x}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input data-recall-field="${r.id}:notes" value="${esc(r.notes)}" /></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✅ Recall Actions — ${pct}% Complete</h3>
+      ${(r.actionSteps||[]).map((s,i)=>`
+        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;">
+          <input type="checkbox" data-recall-step="${r.id}:${i}" ${s.done?'checked':''} style="width:auto;" /> ${esc(s.label)}
+        </label>
+      `).join('')}
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📞 Communication Log</h3>
+      <div class="grid2">
+        <label class="field">Contact / Party<input id="rc-contact-${r.id}" placeholder="e.g. Customer, Regulator, Supplier" /></label>
+        <label class="field">Date<input type="date" id="rc-date-${r.id}" value="${today()}" /></label>
+        <label class="field">Method<input id="rc-method-${r.id}" placeholder="e.g. Phone, Email, Letter" /></label>
+        <label class="field">Response Received<input id="rc-response-${r.id}" placeholder="Optional" /></label>
+        <label class="field" style="grid-column:1/-1;">Follow-up Action<input id="rc-followup-${r.id}" placeholder="Optional" /></label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" data-action="add-recall-comm" data-recall="${r.id}">+ Log Communication</button>
+      </div>
+      <div class="top-border">${commsRows}</div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-recall" data-recall="${r.id}">Delete Recall Record</button>
+    </div>
+  `;
+}
+
 /* ---------- KPI metrics render ---------- */
 let showNewMetric = false;
 let openMetricId = null;
@@ -1329,7 +1671,8 @@ function renderMetrics(){
       <h2 class="serif" style="font-size:18px;margin:0;">KPI Metrics</h2>
       <div class="flex-wrap">
         ${allSamplesLoaded
-          ? `<button class="btn btn-ghost" data-action="seed-sample-metrics" disabled style="opacity:.55;cursor:default;">✓ Sample Metrics Loaded</button>`
+          ? `<button class="btn btn-ghost" data-action="seed-sample-metrics" disabled style="opacity:.55;cursor:default;">✓ Sample Metrics Loaded</button>
+             <button class="btn btn-ghost" data-action="reset-sample-metrics" title="Delete and reload all sample metrics fresh">↺ Reset Samples</button>`
           : `<button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>`}
         <button class="btn btn-ghost" data-action="export-metrics-csv">⬇ CSV</button>
         <button class="btn btn-ghost" data-action="export-metrics-pdf">📄 Export Report</button>
@@ -1560,7 +1903,11 @@ function renderChecklistDetail(c){
               </div>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:14px;">${esc(it.text)}</div>
-                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-checklist-item-note="${c.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />` : ''}
+                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-checklist-item-note="${c.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
+                ${it.photo
+                  ? `<div style="margin-top:6px;"><img src="${it.photo}" style="max-width:90px;max-height:90px;border-radius:6px;display:block;object-fit:cover;" /><button class="x-btn" data-action="remove-checklist-item-photo" data-checklist="${c.id}" data-section="${sec.id}" data-item="${it.id}" style="font-size:11px;margin-top:4px;">✕ Remove Photo</button></div>`
+                  : `<input type="file" accept="image/*" capture="environment" data-checklist-item-photo="${c.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
+                ` : ''}
               </div>
             </div>
           `).join('')}
@@ -2002,6 +2349,23 @@ function attachHandlers(){
     item.note = el.value; persist();
   });
 
+  document.querySelectorAll('[data-item-photo]').forEach(el=>el.onchange=()=>{
+    const file = el.files[0]; if(!file) return;
+    const [auditId, secId, itemId] = el.dataset.itemPhoto.split(':');
+    compressImageToDataURL(file, 1000, 0.7, (dataUrl) => {
+      const a = state.audits.find(x=>x.id===auditId);
+      const sec = a.sections.find(s=>s.id===secId);
+      const item = sec.items.find(i=>i.id===itemId);
+      item.photo = dataUrl; persist(); render();
+    });
+  });
+  document.querySelectorAll('[data-action="remove-item-photo"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const sec = a.sections.find(s=>s.id===el.dataset.section);
+    const item = sec.items.find(i=>i.id===el.dataset.item);
+    item.photo = null; persist(); render();
+  });
+
   document.querySelectorAll('[data-action="remove-item"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const sec = a.sections.find(s=>s.id===el.dataset.section);
@@ -2261,6 +2625,179 @@ function attachHandlers(){
     URL.revokeObjectURL(url);
   };
 
+  /* HACCP */
+  const toggleNewHaccp = document.querySelector('[data-action="toggle-new-haccp"]'); if(toggleNewHaccp) toggleNewHaccp.onclick=()=>{ showNewHaccp=!showNewHaccp; render(); };
+  const cancelNewHaccp = document.querySelector('[data-action="cancel-new-haccp"]'); if(cancelNewHaccp) cancelNewHaccp.onclick=()=>{ showNewHaccp=false; render(); };
+  const createHaccp = document.querySelector('[data-action="create-haccp"]');
+  if(createHaccp) createHaccp.onclick=()=>{
+    const ccpNumber = document.getElementById('nh-number').value.trim();
+    const processStep = document.getElementById('nh-step').value.trim();
+    if(!ccpNumber || !processStep) return;
+    const point = {
+      id: uid(), ccpNumber, processStep,
+      hazardType: document.getElementById('nh-hazard').value,
+      monitoringFrequency: document.getElementById('nh-frequency').value,
+      criticalLimit: document.getElementById('nh-limit').value,
+      monitoringMethod: document.getElementById('nh-method').value,
+      correctiveAction: document.getElementById('nh-corrective').value,
+      responsible: document.getElementById('nh-responsible').value,
+      status: "Active", readings: []
+    };
+    state.haccpPoints.unshift(point);
+    openHaccpId = point.id; showNewHaccp=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-haccp]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleHaccp; openHaccpId = openHaccpId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-haccp-filter]').forEach(el=>el.onclick=()=>{
+    haccpStatusFilter = el.dataset.haccpFilter; render();
+  });
+  document.querySelectorAll('[data-haccp-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.haccpField.split(':');
+      const p = state.haccpPoints.find(x=>x.id===id);
+      if(!p) return;
+      p[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="add-haccp-reading"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.haccp;
+    const p = state.haccpPoints.find(x=>x.id===id);
+    if(!p) return;
+    const date = document.getElementById(`haccp-reading-date-${id}`).value || today();
+    const value = document.getElementById(`haccp-reading-value-${id}`).value.trim();
+    const result = document.getElementById(`haccp-reading-result-${id}`).value;
+    const note = document.getElementById(`haccp-reading-note-${id}`).value;
+    if(!value) return;
+    if(!p.readings) p.readings = [];
+    p.readings.unshift({ id: uid(), date, value, result, note });
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-haccp-reading"]').forEach(el=>el.onclick=()=>{
+    const p = state.haccpPoints.find(x=>x.id===el.dataset.haccp);
+    if(!p) return;
+    p.readings = p.readings.filter(r=>r.id!==el.dataset.reading);
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-haccp"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this CCP and all its monitoring readings? This cannot be undone.")) return;
+    state.haccpPoints = state.haccpPoints.filter(p=>p.id!==el.dataset.haccp);
+    openHaccpId = null; persist(); render();
+  });
+  const haccpCsvBtn = document.querySelector('[data-action="export-haccp-csv"]');
+  if(haccpCsvBtn) haccpCsvBtn.onclick=()=>{
+    const headers = ["CCP Number","Process Step","Hazard Type","Critical Limit","Monitoring Frequency","Monitoring Method","Corrective Action","Responsible","Status","Latest Reading Date","Latest Reading Value","Latest Result"];
+    const rows = state.haccpPoints.map(p=>{
+      const latest = (p.readings&&p.readings.length) ? [...p.readings].sort((a,b)=>b.date.localeCompare(a.date))[0] : null;
+      return [p.ccpNumber, p.processStep, p.hazardType||'', p.criticalLimit||'', p.monitoringFrequency||'', p.monitoringMethod||'', p.correctiveAction||'', p.responsible||'', p.status, latest?latest.date:'', latest?latest.value:'', latest?latest.result:''];
+    });
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-haccp-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  /* Product Recall */
+  const toggleNewRecall = document.querySelector('[data-action="toggle-new-recall"]'); if(toggleNewRecall) toggleNewRecall.onclick=()=>{ showNewRecall=!showNewRecall; render(); };
+  const cancelNewRecall = document.querySelector('[data-action="cancel-new-recall"]'); if(cancelNewRecall) cancelNewRecall.onclick=()=>{ showNewRecall=false; render(); };
+  const createRecall = document.querySelector('[data-action="create-recall"]');
+  if(createRecall) createRecall.onclick=()=>{
+    const productName = document.getElementById('nr-product').value.trim();
+    if(!productName) return;
+    const toNum = (v) => v===''||v==null ? null : Number(v);
+    const record = {
+      id: uid(),
+      recallNumber: document.getElementById('nr-number').value || nextRecallNumber(),
+      productName,
+      productCode: document.getElementById('nr-code').value,
+      batchLot: document.getElementById('nr-batch').value,
+      mfgDate: document.getElementById('nr-mfg-date').value,
+      expiryDate: document.getElementById('nr-expiry-date').value,
+      qtyProduced: toNum(document.getElementById('nr-qty-produced').value),
+      qtyReleased: toNum(document.getElementById('nr-qty-released').value),
+      qtyRecalled: toNum(document.getElementById('nr-qty-recalled').value),
+      reason: document.getElementById('nr-reason').value,
+      riskClass: document.getElementById('nr-class').value,
+      status: "Open",
+      notes: document.getElementById('nr-notes').value,
+      actionSteps: RECALL_ACTION_STEPS.map(label=>({label, done:false})),
+      commsLog: []
+    };
+    state.productRecalls.unshift(record);
+    openRecallId = record.id; showNewRecall=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-recall]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleRecall; openRecallId = openRecallId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-recall-filter]').forEach(el=>el.onclick=()=>{
+    recallStatusFilter = el.dataset.recallFilter; render();
+  });
+  document.querySelectorAll('[data-recall-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.recallField.split(':');
+      const r = state.productRecalls.find(x=>x.id===id);
+      if(!r) return;
+      r[field] = el.type==="number" ? (el.value===''?null:Number(el.value)) : el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-recall-step]').forEach(el=>{
+    el.onchange = () => {
+      const [id, idx] = el.dataset.recallStep.split(':');
+      const r = state.productRecalls.find(x=>x.id===id);
+      if(!r || !r.actionSteps[idx]) return;
+      r.actionSteps[idx].done = el.checked;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="add-recall-comm"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.recall;
+    const r = state.productRecalls.find(x=>x.id===id);
+    if(!r) return;
+    const contact = document.getElementById(`rc-contact-${id}`).value.trim();
+    if(!contact) return;
+    const entry = {
+      id: uid(),
+      contact,
+      date: document.getElementById(`rc-date-${id}`).value || today(),
+      method: document.getElementById(`rc-method-${id}`).value,
+      response: document.getElementById(`rc-response-${id}`).value,
+      followUp: document.getElementById(`rc-followup-${id}`).value
+    };
+    if(!r.commsLog) r.commsLog = [];
+    r.commsLog.unshift(entry);
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-recall-comm"]').forEach(el=>el.onclick=()=>{
+    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
+    if(!r) return;
+    r.commsLog = r.commsLog.filter(c=>c.id!==el.dataset.comm);
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-recall"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this recall record? This cannot be undone.")) return;
+    state.productRecalls = state.productRecalls.filter(r=>r.id!==el.dataset.recall);
+    openRecallId = null; persist(); render();
+  });
+  const recallsCsvBtn = document.querySelector('[data-action="export-recalls-csv"]');
+  if(recallsCsvBtn) recallsCsvBtn.onclick=()=>{
+    const headers = ["Recall Number","Product Name","Product Code","Batch/Lot","Mfg Date","Expiry Date","Qty Produced","Qty Released","Qty Recalled","Reason","Risk Class","Status","% Actions Complete","Notes"];
+    const rows = state.productRecalls.map(r=>[r.recallNumber, r.productName, r.productCode||'', r.batchLot||'', r.mfgDate||'', r.expiryDate||'', r.qtyProduced??'', r.qtyReleased??'', r.qtyRecalled??'', r.reason||'', r.riskClass||'', r.status, recallCompletionPct(r)+'%', r.notes||'']);
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-product-recalls-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   /* KPI metrics */
   const toggleNewMetric = document.querySelector('[data-action="toggle-new-metric"]'); if(toggleNewMetric) toggleNewMetric.onclick=()=>{ showNewMetric=!showNewMetric; metricSourceChoice="manual"; metricAutoTypeChoice=AUTO_METRIC_OPTIONS[0].id; render(); };
   const cancelNewMetric = document.querySelector('[data-action="cancel-new-metric"]'); if(cancelNewMetric) cancelNewMetric.onclick=()=>{ showNewMetric=false; render(); };
@@ -2335,6 +2872,15 @@ function attachHandlers(){
     persist(); render();
     alert(added>0 ? `${added} new sample metric${added===1?'':'s'} added.` : `All sample metrics are already loaded — nothing new to add. Use "+ New Metric" to add a custom one.`);
   };
+  const resetMetricsBtn = document.querySelector('[data-action="reset-sample-metrics"]');
+  if(resetMetricsBtn) resetMetricsBtn.onclick=()=>{
+    if(!confirm("This will delete all sample metrics and reload them fresh with default values. Any custom edits or logged readings on sample metrics will be lost. Continue?")) return;
+    const sampleNames = new Set(SAMPLE_KPI_METRICS.map(sm=>sm.name));
+    state.metrics = state.metrics.filter(m=>!sampleNames.has(m.name));
+    seedSampleMetrics();
+    persist(); render();
+    alert("Sample metrics reset to defaults.");
+  };
   const metricsPdfBtn = document.querySelector('[data-action="export-metrics-pdf"]');
   if(metricsPdfBtn) metricsPdfBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
@@ -2403,6 +2949,22 @@ function attachHandlers(){
     const sec = c.sections.find(s=>s.id===secId);
     const item = sec.items.find(i=>i.id===itemId);
     item.note = el.value; persist();
+  });
+  document.querySelectorAll('[data-checklist-item-photo]').forEach(el=>el.onchange=()=>{
+    const file = el.files[0]; if(!file) return;
+    const [checklistId, secId, itemId] = el.dataset.checklistItemPhoto.split(':');
+    compressImageToDataURL(file, 1000, 0.7, (dataUrl) => {
+      const c = state.checklists.find(x=>x.id===checklistId);
+      const sec = c.sections.find(s=>s.id===secId);
+      const item = sec.items.find(i=>i.id===itemId);
+      item.photo = dataUrl; persist(); render();
+    });
+  });
+  document.querySelectorAll('[data-action="remove-checklist-item-photo"]').forEach(el=>el.onclick=()=>{
+    const c = state.checklists.find(x=>x.id===el.dataset.checklist);
+    const sec = c.sections.find(s=>s.id===el.dataset.section);
+    const item = sec.items.find(i=>i.id===el.dataset.item);
+    item.photo = null; persist(); render();
   });
   document.querySelectorAll('[data-action="delete-checklist"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this checklist? This cannot be undone.")) return;
