@@ -801,7 +801,7 @@ function renderAuditDetail(a){
     <div class="card p4" style="margin-bottom:12px;">
       <div class="grid2">
         <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
-        <label class="field">Audit Title<input data-audit-field="${a.id}:title" value="${esc(a.title)}" /></label>
+        <label class="field">Audit Scope<input data-audit-field="${a.id}:title" value="${esc(a.title)}" /></label>
         <label class="field">Standard<select data-audit-field="${a.id}:standard">${STANDARDS.map(s=>`<option ${s===a.standard?'selected':''}>${s}</option>`).join('')}</select></label>
         <label class="field">Department / Area<input data-audit-field="${a.id}:area" value="${esc(a.area)}" /></label>
         <label class="field">Auditor<input data-audit-field="${a.id}:auditor" value="${esc(a.auditor)}" placeholder="e.g. Sandiso" /></label>
