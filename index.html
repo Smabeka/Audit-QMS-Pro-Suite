@@ -417,6 +417,7 @@ const SAMPLE_KPI_METRICS = [
 
 function seedSampleMetrics(){
   const existingNames = new Set(state.metrics.map(m=>m.name));
+  let added = 0;
   SAMPLE_KPI_METRICS.forEach(sm=>{
     if(existingNames.has(sm.name)) return;
     state.metrics.push({
@@ -424,7 +425,9 @@ function seedSampleMetrics(){
       direction: sm.direction, critical: sm.critical, source: "manual", autoType: null,
       history: [{ id: uid(), date: today(), value: sm.value }]
     });
+    added++;
   });
+  return added;
 }
 
 function computeAutoMetricValue(autoType){
@@ -479,38 +482,51 @@ function render(){
   scoreCache.clear();
   document.body.classList.toggle('dark', darkMode);
   const root = document.getElementById("app");
-  root.innerHTML = `
-    <header>
-      <div class="wrap headrow">
-        <div class="brand">
-          <div class="logo">AQ</div>
-          <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>SHEQ Management Platform</p></div>
+  try {
+    root.innerHTML = `
+      <header>
+        <div class="wrap headrow">
+          <div class="brand">
+            <div class="logo">AQ</div>
+            <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>SHEQ Management Platform</p></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
+            ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
+            <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:10px;">
-          <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
-          ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
-          <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
+        <div class="wrap tabnav" style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
+          ${navBtn("dashboard","Dashboard")}
+          ${navBtn("audits","Audit Register")}
+          ${navBtn("checklists","Checklists")}
+          ${navBtn("risk","Risk Register")}
+          ${navBtn("metrics","KPI Metrics")}
+          ${navBtn("capa","CAPA Tracker")}
+          ${navBtn("quality-cycle","Quality Cycle")}
+          ${navBtn("analytics","Analytics")}
+          ${navBtn("settings","Settings")}
         </div>
+      </header>
+      <main class="wrap">
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+      </main>
+      ${showProModal ? renderProModal() : ''}
+      ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
+      ${showCompanyModal ? renderCompanyModal() : ''}
+    `;
+  } catch(err){
+    console.error("Render error:", err);
+    root.innerHTML = `
+      <div style="max-width:600px;margin:60px auto;padding:20px;text-align:center;">
+        <h2 class="serif" style="color:var(--rust);">Something went wrong showing this screen</h2>
+        <p class="muted-italic" style="font-size:13px;">${esc(err.message)}</p>
+        <p style="font-size:13px;">This is usually caused by one saved record with unexpected data. Your other data is safe.</p>
+        <button class="btn btn-primary" onclick="tab='dashboard';render();">Go to Dashboard</button>
       </div>
-      <div class="wrap tabnav" style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-        ${navBtn("dashboard","Dashboard")}
-        ${navBtn("audits","Audit Register")}
-        ${navBtn("checklists","Checklists")}
-        ${navBtn("risk","Risk Register")}
-        ${navBtn("metrics","KPI Metrics")}
-        ${navBtn("capa","CAPA Tracker")}
-        ${navBtn("quality-cycle","Quality Cycle")}
-        ${navBtn("analytics","Analytics")}
-        ${navBtn("settings","Settings")}
-      </div>
-    </header>
-    <main class="wrap">
-      ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
-    </main>
-    ${showProModal ? renderProModal() : ''}
-    ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
-    ${showCompanyModal ? renderCompanyModal() : ''}
-  `;
+    `;
+    return;
+  }
   attachHandlers();
   if(tab==="analytics") renderCharts();
   if(tab==="metrics") renderMetricCharts();
@@ -1195,7 +1211,7 @@ function renderMetricCharts(){
 }
 
 function checklistScore(c){
-  const items = c.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
+  const items = (c.sections||[]).flatMap(s => s.items||[]).filter(i=>i.result==="Pass"||i.result==="Fail");
   return items.length===0 ? null : Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100);
 }
 
@@ -1259,18 +1275,19 @@ function renderChecklistRow(c){
 
 function renderChecklistDetail(c){
   const score = checklistScore(c);
+  const sections = c.sections || [];
   return `
     <div class="grid2" style="margin-bottom:12px;">
       <label class="field">Location / Area<input data-checklist-field="${c.id}:location" value="${esc(c.location)}" /></label>
       <label class="field">Inspector<input data-checklist-field="${c.id}:inspector" value="${esc(c.inspector)}" /></label>
-      <label class="field">Date<input type="date" data-checklist-field="${c.id}:date" value="${c.date}" /></label>
+      <label class="field">Date<input type="date" data-checklist-field="${c.id}:date" value="${esc(c.date)}" /></label>
       <div class="field"><span>Score</span>${score!==null?`<span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span>`:'<span class="muted-italic">not yet scored</span>'}</div>
     </div>
     <div class="card p4" style="margin-bottom:12px;">
-      ${c.sections.map(sec => `
+      ${sections.length===0 ? `<p class="muted-italic">This checklist has no sections/items on record.</p>` : sections.map(sec => `
         <div class="section-box">
           <strong style="font-size:14px;">${esc(sec.name)}</strong>
-          ${sec.items.map(it => `
+          ${(sec.items||[]).map(it => `
             <div class="item-row">
               <div class="result-toggle">
                 <button data-toggle-checklist-result="${c.id}:${sec.id}:${it.id}:Pass" class="${it.result==='Pass'?'active':''}" style="color:#3f6b2e;">✓</button>
@@ -1929,7 +1946,11 @@ function attachHandlers(){
     openMetricId = null; persist(); render();
   });
   const seedMetricsBtn = document.querySelector('[data-action="seed-sample-metrics"]');
-  if(seedMetricsBtn) seedMetricsBtn.onclick=()=>{ seedSampleMetrics(); persist(); render(); };
+  if(seedMetricsBtn) seedMetricsBtn.onclick=()=>{
+    const added = seedSampleMetrics();
+    persist(); render();
+    alert(added>0 ? `${added} new sample metric${added===1?'':'s'} added.` : `All sample metrics are already loaded — nothing new to add. Use "+ New Metric" to add a custom one.`);
+  };
   const metricsPdfBtn = document.querySelector('[data-action="export-metrics-pdf"]');
   if(metricsPdfBtn) metricsPdfBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
