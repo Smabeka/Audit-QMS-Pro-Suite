@@ -147,13 +147,22 @@ const STANDARDS = [
 ];
 const TEMPLATES = {
   "ISO 9001:2015":[
-    {name:"Document Control", items:["Controlled documents current, no obsolete versions in use","Document approval and revision history maintained","Records retained per defined retention schedule"]},
-    {name:"Management Review & Internal Audit", items:["Management review inputs/outputs documented","Internal audit programme up to date and scheduled","Prior audit findings closed out with evidence"]},
-    {name:"Nonconformity & Corrective Action", items:["Nonconformities logged with root cause analysis","Corrective actions verified for effectiveness"]}
+    {name:"4. Context of the Organization", items:["Internal/external issues relevant to the QMS identified and reviewed","Needs and expectations of interested parties documented"]},
+    {name:"5. Leadership", items:["Quality policy communicated and understood at all levels","Top management demonstrates commitment through resource allocation"]},
+    {name:"6. Planning", items:["Risks and opportunities identified with planned actions","Quality objectives established and measurable at relevant functions"]},
+    {name:"7. Support", items:["Competence and training records maintained for relevant roles","Documented information controlled per procedure"]},
+    {name:"8. Operation", items:["Operational planning and control of processes implemented","Product/service requirements reviewed before commitment"]},
+    {name:"9. Performance Evaluation", items:["Customer satisfaction monitored and reviewed","Internal audit programme up to date and scheduled"]},
+    {name:"10. Improvement", items:["Nonconformities addressed with corrective action","Continual improvement opportunities identified and acted on"]}
   ],
   "ISO 22000":[
-    {name:"Food Safety Management System", items:["Food safety policy communicated and understood","Hazard analysis reviewed and current","PRPs (prerequisite programmes) implemented and verified"]},
-    {name:"Operational Controls", items:["CCP/OPRP monitoring records complete","Emergency preparedness and recall procedure tested"]}
+    {name:"4. Context of the Organization", items:["Food safety-related internal/external issues identified","Interested party requirements (customers, regulators) documented"]},
+    {name:"5. Leadership", items:["Food safety policy communicated and understood","Roles and responsibilities for food safety defined"]},
+    {name:"6. Planning", items:["Food safety risks and opportunities addressed","Food safety objectives established and monitored"]},
+    {name:"7. Support", items:["Competence/training records current for food handlers","PRPs (prerequisite programmes) resourced and maintained"]},
+    {name:"8. Operation (including HACCP)", items:["Hazard analysis reviewed and current","CCP/OPRP monitoring records complete","Emergency preparedness and recall procedure tested"]},
+    {name:"9. Performance Evaluation", items:["Verification activities (e.g. mock recalls) conducted and reviewed","Internal audits scheduled and findings closed out"]},
+    {name:"10. Improvement", items:["Corrective actions verified for effectiveness","FSMS updated following process or hazard changes"]}
   ],
   "BRCGS":[
     {name:"Senior Management Commitment", items:["Food safety and quality policy signed and communicated","Management review meetings conducted and documented","Objectives and KPIs tracked against targets"]},
@@ -178,12 +187,22 @@ const TEMPLATES = {
     {name:"Cleanroom & Environmental Monitoring", items:["Environmental monitoring within alert/action limits","Gowning procedure followed correctly","Equipment cleaning validation current"]}
   ],
   "ISO 45001 (OHS)":[
-    {name:"Hazard Identification & Risk", items:["Risk assessments current for high-risk tasks","PPE availability and correct usage confirmed","Permit-to-work system followed for hot/confined work"]},
-    {name:"Incident Management", items:["Incidents and near-misses logged and investigated","Emergency response drills conducted per schedule"]}
+    {name:"4. Context of the Organization", items:["OHS-related internal/external issues identified","Needs of workers and other interested parties determined"]},
+    {name:"5. Leadership & Worker Participation", items:["OHS policy communicated and understood","Worker consultation and participation mechanisms in place"]},
+    {name:"6. Planning", items:["Hazard identification and risk assessment current","Legal and other OHS requirements identified"]},
+    {name:"7. Support", items:["OHS training records current for all relevant staff","PPE availability and correct usage confirmed"]},
+    {name:"8. Operation", items:["Permit-to-work system followed for high-risk tasks","Emergency preparedness and response arrangements tested"]},
+    {name:"9. Performance Evaluation", items:["Incidents and near-misses logged and investigated","Internal OHS audits conducted per schedule"]},
+    {name:"10. Improvement", items:["Corrective actions from incidents verified for effectiveness","OHS objectives reviewed and updated"]}
   ],
   "ISO 14001 (Environmental)":[
-    {name:"Environmental Controls", items:["Spill containment and secondary containment intact","Waste segregation and disposal records current","Emissions monitoring within permitted limits"]},
-    {name:"Compliance & Emergency Preparedness", items:["Environmental legal register up to date","Spill/emergency response equipment accessible and tested"]}
+    {name:"4. Context of the Organization", items:["Environmental aspects and impacts identified","Interested party environmental expectations documented"]},
+    {name:"5. Leadership", items:["Environmental policy communicated and understood","Management commitment to environmental performance demonstrated"]},
+    {name:"6. Planning", items:["Significant environmental aspects and legal requirements identified","Environmental objectives established and measurable"]},
+    {name:"7. Support", items:["Environmental training records current for relevant roles","Environmental legal register up to date"]},
+    {name:"8. Operation", items:["Operational controls for significant aspects implemented","Emergency preparedness and spill response tested"]},
+    {name:"9. Performance Evaluation", items:["Environmental monitoring and measurement conducted per plan","Internal audits scheduled and findings closed out"]},
+    {name:"10. Improvement", items:["Corrective actions verified for effectiveness","Continual improvement of environmental performance demonstrated"]}
   ],
   "ISO 50001 (Energy)":[
     {name:"Energy Performance", items:["Energy baseline and KPIs reviewed and current","Significant energy uses identified and monitored"]},
@@ -289,6 +308,12 @@ const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"na
 const RISK_LEVELS = ["Low","Medium","High","Critical"];
 const riskTone = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
 
+const DOCUMENT_STATUSES = ["Draft","Under Review","Approved","Obsolete"];
+const docStatusTone = {Draft:"amber","Under Review":"navy",Approved:"green",Obsolete:"rust"};
+const DOCUMENT_CATEGORIES = ["Policy","Procedure (SOP)","Work Instruction","Form/Record","HACCP Plan","Specification","External Standard","Other"];
+
+const trainingStatusTone = {Valid:"green","Expiring Soon":"amber",Overdue:"rust","No Expiry":"green"};
+
 function logHistory(a, text){
   if(!a.history) a.history = [];
   a.history.push({ id: uid(), date: new Date().toISOString(), text });
@@ -367,6 +392,8 @@ if(!state.companySettings){
 if(!state.riskAssessments){ state.riskAssessments = []; }
 if(!state.metrics){ state.metrics = []; }
 if(!state.checklists){ state.checklists = []; }
+if(!state.documents){ state.documents = []; }
+if(!state.trainingRecords){ state.trainingRecords = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
 let checklistSeq = state.checklists.length;
 
@@ -387,6 +414,16 @@ const AUTO_METRIC_OPTIONS = [
   {id:"audit_findings_closed_count", label:"Audit Findings Closed (count)", direction:"higher", unit:"count"},
   {id:"open_high_critical_risks", label:"Open High/Critical Risks (count)", direction:"lower", unit:"count"}
 ];
+if(state.metrics){
+  let healedAny = false;
+  state.metrics.forEach(m=>{
+    if(m.source==="auto" && m.autoType){
+      const def = AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType);
+      if(def && (m.unit!==def.unit || m.direction!==def.direction)){ m.unit = def.unit; m.direction = def.direction; healedAny = true; }
+    }
+  });
+  if(healedAny) saveStore(state);
+}
 
 /* ---------- KPI metrics ---------- */
 const SAMPLE_KPI_METRICS = [
@@ -503,13 +540,15 @@ function render(){
           ${navBtn("risk","Risk Register")}
           ${navBtn("metrics","KPI Metrics")}
           ${navBtn("capa","CAPA Tracker")}
+          ${navBtn("documents","Document Control")}
+          ${navBtn("training","Training Matrix")}
           ${navBtn("quality-cycle","Quality Cycle")}
           ${navBtn("analytics","Analytics")}
           ${navBtn("settings","Settings")}
         </div>
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -643,7 +682,7 @@ function renderDashboard(){
   const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed");
 
   /* Overall Compliance Score — built only from modules that actually exist in this app today
-     (Audit Register, CAPA, Risk Register, KPI Metrics). Document Control, Training, and Supplier
+     (Audit Register, CAPA, Risk Register, KPI Metrics, Document Control). Training and Supplier
      Management aren't separate modules yet, so they're intentionally left out rather than faked. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
   const totalRisks = state.riskAssessments.length;
@@ -651,11 +690,19 @@ function renderDashboard(){
   const metricsWithData = state.metrics.map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
   const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
   const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
+  const totalDocs = state.documents.length;
+  const docsInGoodStanding = state.documents.filter(d=>d.status==="Approved" && documentReviewStatus(d)!=="Overdue").length;
+  const documentScore = totalDocs>0 ? Math.round((docsInGoodStanding/totalDocs)*1000)/10 : null;
+  const totalTraining = state.trainingRecords.length;
+  const trainingInGoodStanding = state.trainingRecords.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
+  const trainingScore = totalTraining>0 ? Math.round((trainingInGoodStanding/totalTraining)*1000)/10 : null;
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
     {label:"CAPA Management", score:capaScore},
     {label:"Risk Management", score:riskScore},
-    {label:"KPI Metrics On-Target", score:metricsScore}
+    {label:"KPI Metrics On-Target", score:metricsScore},
+    {label:"Document Control", score:documentScore},
+    {label:"Training Compliance", score:trainingScore}
   ];
   const availableScores = moduleScores.filter(x=>x.score!==null);
   const overallScore = availableScores.length ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
@@ -677,13 +724,15 @@ function renderDashboard(){
         </div>`;
       }).join('')}
       ${state.complianceScoreHistory.length>=2 ? `<div class="top-border"><canvas id="compliance-trend-chart" height="100"></canvas></div>` : ''}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Document Control, Training, and Supplier Management aren't separate modules yet, so they're not included in this score.</p>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Supplier Management isn't a separate module yet, so it's not included in this score.</p>
     </div>
     <div class="stats">
       ${statCard("📋", "Total Audits", audits.length)}
       ${statCard("⚠", "Open Findings", openFindings.length)}
       ${statCard("⏳", "Overdue CAPAs", overdue.length)}
       ${statCard("🚨", "High/Critical Risks", highRisks.length)}
+      ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length)}
+      ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length)}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -948,6 +997,12 @@ function renderCapa(){
 let showNewRisk = false;
 let openRiskId = null;
 let riskLevelFilter = "All";
+let showNewDocument = false;
+let openDocumentId = null;
+let documentStatusFilter = "All";
+let showNewTraining = false;
+let openTrainingId = null;
+let trainingStatusFilter = "All";
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
@@ -1057,21 +1112,225 @@ function renderRiskDetail(r){
   `;
 }
 
+/* ---------- Document Control ---------- */
+function documentReviewStatus(d){
+  if(d.status==="Obsolete") return null;
+  if(!d.reviewDate) return null;
+  const days = daysUntil(d.reviewDate);
+  if(days<0) return "Overdue";
+  if(days<=30) return "Due Soon";
+  return null;
+}
+
+function renderDocuments(){
+  const all = state.documents;
+  const filtered = all.filter(d => documentStatusFilter==="All" || d.status===documentStatusFilter);
+  const overdueCount = all.filter(d=>documentReviewStatus(d)==="Overdue").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">Document Control</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-documents-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-document">+ New Document</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("📄", "Total Documents", all.length)}
+      ${statCard("✅", "Approved", all.filter(d=>d.status==="Approved").length)}
+      ${statCard("⏰", "Review Overdue", overdueCount)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
+        ${["All",...DOCUMENT_STATUSES].map(f=>`<button class="status-pill ${documentStatusFilter===f?'active':''}" data-document-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewDocument ? renderNewDocumentForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No documents logged yet.</p>` : filtered.map(d=>renderDocumentRow(d)).join('')}
+    </div>
+  `;
+}
+
+function renderNewDocumentForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field" style="grid-column:1/-1;">Document Title<input id="nd-title" placeholder="e.g. Allergen Control Procedure" /></label>
+      <label class="field">Document Number<input id="nd-number" placeholder="e.g. SOP-QA-014" /></label>
+      <label class="field">Category<select id="nd-category">${DOCUMENT_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
+      <label class="field">Version<input id="nd-version" placeholder="e.g. 3" /></label>
+      <label class="field">Status<select id="nd-status">${DOCUMENT_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <label class="field">Owner<input id="nd-owner" placeholder="e.g. QA Manager" /></label>
+      <label class="field">Issue Date<input type="date" id="nd-issue-date" value="${today()}" /></label>
+      <label class="field">Next Review Date<input type="date" id="nd-review-date" /></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input id="nd-notes" placeholder="Optional notes…" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-document">Cancel</button>
+        <button class="btn btn-primary" data-action="create-document">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderDocumentRow(d){
+  const open = openDocumentId === d.id;
+  const reviewFlag = documentReviewStatus(d);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-document="${d.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(d.title)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(d.docNumber)||'—'}</span></div>
+            <div class="audit-sub">${esc(d.category)||'—'} · v${esc(d.version)||'1'} · Owner: ${esc(d.owner)||'—'}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          ${reviewFlag ? `<span class="tag tag-${reviewFlag==='Overdue'?'rust':'amber'}">${reviewFlag} review</span>` : ''}
+          <span class="tag tag-${docStatusTone[d.status]||'neutral'}">${d.status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderDocumentDetail(d)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderDocumentDetail(d){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field" style="grid-column:1/-1;">Document Title<input data-document-field="${d.id}:title" value="${esc(d.title)}" /></label>
+      <label class="field">Document Number<input data-document-field="${d.id}:docNumber" value="${esc(d.docNumber)}" /></label>
+      <label class="field">Category<select data-document-field="${d.id}:category">${DOCUMENT_CATEGORIES.map(c=>`<option ${c===d.category?'selected':''}>${c}</option>`).join('')}</select></label>
+      <label class="field">Version<input data-document-field="${d.id}:version" value="${esc(d.version)}" /></label>
+      <label class="field">Status<select data-document-field="${d.id}:status">${DOCUMENT_STATUSES.map(s=>`<option ${s===d.status?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Owner<input data-document-field="${d.id}:owner" value="${esc(d.owner)}" /></label>
+      <label class="field">Issue Date<input type="date" data-document-field="${d.id}:issueDate" value="${d.issueDate||''}" /></label>
+      <label class="field">Next Review Date<input type="date" data-document-field="${d.id}:reviewDate" value="${d.reviewDate||''}" /></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input data-document-field="${d.id}:notes" value="${esc(d.notes)}" /></label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-document" data-document="${d.id}">Delete Document</button>
+    </div>
+  `;
+}
+
+/* ---------- Training Matrix ---------- */
+function trainingStatus(t){
+  if(!t.expiryDate) return "No Expiry";
+  const days = daysUntil(t.expiryDate);
+  if(days<0) return "Overdue";
+  if(days<=30) return "Expiring Soon";
+  return "Valid";
+}
+
+function renderTraining(){
+  const all = state.trainingRecords;
+  const filtered = all.filter(t => trainingStatusFilter==="All" || trainingStatus(t)===trainingStatusFilter);
+  const overdueCount = all.filter(t=>trainingStatus(t)==="Overdue").length;
+  const validCount = all.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">Training Matrix</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-training-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-training">+ New Training Record</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("🎓", "Total Records", all.length)}
+      ${statCard("✅", "Valid / Current", validCount)}
+      ${statCard("⏰", "Overdue", overdueCount)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
+        ${["All","Valid","Expiring Soon","Overdue","No Expiry"].map(f=>`<button class="status-pill ${trainingStatusFilter===f?'active':''}" data-training-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewTraining ? renderNewTrainingForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No training records logged yet.</p>` : filtered.map(t=>renderTrainingRow(t)).join('')}
+    </div>
+  `;
+}
+
+function renderNewTrainingForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Employee Name<input id="nt-employee" placeholder="e.g. T. Nkosi" /></label>
+      <label class="field">Role / Department<select id="nt-role">${DEPARTMENTS.map(d=>`<option>${d}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Competency / Training<input id="nt-competency" placeholder="e.g. HACCP Awareness, Forklift Operation" /></label>
+      <label class="field">Trained Date<input type="date" id="nt-trained-date" value="${today()}" /></label>
+      <label class="field">Expiry Date<input type="date" id="nt-expiry-date" placeholder="Leave blank if non-expiring" /></label>
+      <label class="field">Certificate Ref<input id="nt-cert-ref" placeholder="e.g. CERT-2026-014" /></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input id="nt-notes" placeholder="Optional notes…" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-training">Cancel</button>
+        <button class="btn btn-primary" data-action="create-training">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderTrainingRow(t){
+  const open = openTrainingId === t.id;
+  const status = trainingStatus(t);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-training="${t.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(t.employeeName)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(t.competency)}</span></div>
+            <div class="audit-sub">${esc(t.role)||'—'} · Trained: ${t.trainedDate||'—'}${t.expiryDate ? ` · Expires: ${t.expiryDate}` : ''}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${trainingStatusTone[status]||'neutral'}">${status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderTrainingDetail(t)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderTrainingDetail(t){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Employee Name<input data-training-field="${t.id}:employeeName" value="${esc(t.employeeName)}" /></label>
+      <label class="field">Role / Department<select data-training-field="${t.id}:role">${DEPARTMENTS.map(d=>`<option ${d===t.role?'selected':''}>${d}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Competency / Training<input data-training-field="${t.id}:competency" value="${esc(t.competency)}" /></label>
+      <label class="field">Trained Date<input type="date" data-training-field="${t.id}:trainedDate" value="${t.trainedDate||''}" /></label>
+      <label class="field">Expiry Date<input type="date" data-training-field="${t.id}:expiryDate" value="${t.expiryDate||''}" /></label>
+      <label class="field">Certificate Ref<input data-training-field="${t.id}:certRef" value="${esc(t.certRef)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input data-training-field="${t.id}:notes" value="${esc(t.notes)}" /></label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-training" data-training="${t.id}">Delete Training Record</button>
+    </div>
+  `;
+}
+
 /* ---------- KPI metrics render ---------- */
 let showNewMetric = false;
 let openMetricId = null;
 let metricSourceChoice = "manual";
+let metricAutoTypeChoice = AUTO_METRIC_OPTIONS[0].id;
 
 function renderMetrics(){
   const metrics = state.metrics;
   const withValues = metrics.map(m => ({ m, value: metricCurrentValue(m), status: metricStatus(m, metricCurrentValue(m)) }));
   const onTarget = withValues.filter(x=>x.status==="On Target").length;
   const offTarget = withValues.filter(x=>x.status==="Off Target").length;
+  const existingNames = new Set(metrics.map(m=>m.name));
+  const allSamplesLoaded = SAMPLE_KPI_METRICS.every(sm=>existingNames.has(sm.name));
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">KPI Metrics</h2>
       <div class="flex-wrap">
-        <button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>
+        ${allSamplesLoaded
+          ? `<button class="btn btn-ghost" data-action="seed-sample-metrics" disabled style="opacity:.55;cursor:default;">✓ Sample Metrics Loaded</button>`
+          : `<button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>`}
         <button class="btn btn-ghost" data-action="export-metrics-csv">⬇ CSV</button>
         <button class="btn btn-ghost" data-action="export-metrics-pdf">📄 Export Report</button>
         <button class="btn btn-primary" data-action="toggle-new-metric">+ New Metric</button>
@@ -1090,6 +1349,7 @@ function renderMetrics(){
 }
 
 function renderNewMetricForm(){
+  const selectedAuto = AUTO_METRIC_OPTIONS.find(o=>o.id===metricAutoTypeChoice) || AUTO_METRIC_OPTIONS[0];
   return `
     <div class="card p4" style="margin-bottom:16px;">
       <div class="flex-wrap" style="margin-bottom:12px;">
@@ -1098,14 +1358,18 @@ function renderNewMetricForm(){
       </div>
       <div class="grid2">
         ${metricSourceChoice==='auto' ? `
-          <label class="field" style="grid-column:1/-1;">Auto Metric Source<select id="nm-auto-type">${AUTO_METRIC_OPTIONS.map(o=>`<option value="${o.id}">${o.label}</option>`).join('')}</select></label>
+          <label class="field" style="grid-column:1/-1;">Auto Metric Source<select id="nm-auto-type">${AUTO_METRIC_OPTIONS.map(o=>`<option value="${o.id}" ${o.id===metricAutoTypeChoice?'selected':''}>${o.label}</option>`).join('')}</select></label>
         ` : `
           <label class="field" style="grid-column:1/-1;">Metric Name<input id="nm-name" placeholder="e.g. PPE Compliance" /></label>
         `}
         <label class="field">Category<input id="nm-category" placeholder="e.g. Safety" /></label>
-        <label class="field">Unit<input id="nm-unit" placeholder="e.g. %, count, hrs" /></label>
+        ${metricSourceChoice==='auto'
+          ? `<label class="field">Unit<input id="nm-unit" value="${esc(selectedAuto.unit)}" disabled style="opacity:.65;" /></label>`
+          : `<label class="field">Unit<input id="nm-unit" placeholder="e.g. %, count, hrs" /></label>`}
         <label class="field">Target<input type="number" id="nm-target" step="any" /></label>
-        <label class="field">Direction<select id="nm-direction"><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></label>
+        ${metricSourceChoice==='auto'
+          ? `<label class="field">Direction<input id="nm-direction-display" value="${selectedAuto.direction==='higher'?'Higher is better':'Lower is better'}" disabled style="opacity:.65;" /></label>`
+          : `<label class="field">Direction<select id="nm-direction"><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></label>`}
         <label class="field" style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="nm-critical" style="width:auto;" /> Critical Metric</label>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
@@ -1886,26 +2150,146 @@ function attachHandlers(){
     URL.revokeObjectURL(url);
   };
 
+  /* Document Control */
+  const toggleNewDocument = document.querySelector('[data-action="toggle-new-document"]'); if(toggleNewDocument) toggleNewDocument.onclick=()=>{ showNewDocument=!showNewDocument; render(); };
+  const cancelNewDocument = document.querySelector('[data-action="cancel-new-document"]'); if(cancelNewDocument) cancelNewDocument.onclick=()=>{ showNewDocument=false; render(); };
+  const createDocument = document.querySelector('[data-action="create-document"]');
+  if(createDocument) createDocument.onclick=()=>{
+    const title = document.getElementById('nd-title').value.trim();
+    if(!title) return;
+    const doc = {
+      id: uid(),
+      title,
+      docNumber: document.getElementById('nd-number').value,
+      category: document.getElementById('nd-category').value,
+      version: document.getElementById('nd-version').value || "1",
+      status: document.getElementById('nd-status').value,
+      owner: document.getElementById('nd-owner').value,
+      issueDate: document.getElementById('nd-issue-date').value || today(),
+      reviewDate: document.getElementById('nd-review-date').value,
+      notes: document.getElementById('nd-notes').value
+    };
+    state.documents.unshift(doc);
+    openDocumentId = doc.id; showNewDocument=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleDocument; openDocumentId = openDocumentId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-document-filter]').forEach(el=>el.onclick=()=>{
+    documentStatusFilter = el.dataset.documentFilter; render();
+  });
+  document.querySelectorAll('[data-document-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.documentField.split(':');
+      const d = state.documents.find(x=>x.id===id);
+      if(!d) return;
+      d[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-document"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this document record? This cannot be undone.")) return;
+    state.documents = state.documents.filter(d=>d.id!==el.dataset.document);
+    openDocumentId = null; persist(); render();
+  });
+  const documentsCsvBtn = document.querySelector('[data-action="export-documents-csv"]');
+  if(documentsCsvBtn) documentsCsvBtn.onclick=()=>{
+    const headers = ["Title","Document Number","Category","Version","Status","Owner","Issue Date","Next Review Date","Notes"];
+    const rows = state.documents.map(d=>[d.title, d.docNumber||'', d.category||'', d.version||'', d.status, d.owner||'', d.issueDate||'', d.reviewDate||'', d.notes||'']);
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-document-control-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  /* Training Matrix */
+  const toggleNewTraining = document.querySelector('[data-action="toggle-new-training"]'); if(toggleNewTraining) toggleNewTraining.onclick=()=>{ showNewTraining=!showNewTraining; render(); };
+  const cancelNewTraining = document.querySelector('[data-action="cancel-new-training"]'); if(cancelNewTraining) cancelNewTraining.onclick=()=>{ showNewTraining=false; render(); };
+  const createTraining = document.querySelector('[data-action="create-training"]');
+  if(createTraining) createTraining.onclick=()=>{
+    const employeeName = document.getElementById('nt-employee').value.trim();
+    const competency = document.getElementById('nt-competency').value.trim();
+    if(!employeeName || !competency) return;
+    const record = {
+      id: uid(),
+      employeeName,
+      role: document.getElementById('nt-role').value,
+      competency,
+      trainedDate: document.getElementById('nt-trained-date').value || today(),
+      expiryDate: document.getElementById('nt-expiry-date').value,
+      certRef: document.getElementById('nt-cert-ref').value,
+      notes: document.getElementById('nt-notes').value
+    };
+    state.trainingRecords.unshift(record);
+    openTrainingId = record.id; showNewTraining=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-training]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleTraining; openTrainingId = openTrainingId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-training-filter]').forEach(el=>el.onclick=()=>{
+    trainingStatusFilter = el.dataset.trainingFilter; render();
+  });
+  document.querySelectorAll('[data-training-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.trainingField.split(':');
+      const t = state.trainingRecords.find(x=>x.id===id);
+      if(!t) return;
+      t[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-training"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this training record? This cannot be undone.")) return;
+    state.trainingRecords = state.trainingRecords.filter(t=>t.id!==el.dataset.training);
+    openTrainingId = null; persist(); render();
+  });
+  const trainingCsvBtn = document.querySelector('[data-action="export-training-csv"]');
+  if(trainingCsvBtn) trainingCsvBtn.onclick=()=>{
+    const headers = ["Employee Name","Role/Department","Competency","Trained Date","Expiry Date","Certificate Ref","Status","Notes"];
+    const rows = state.trainingRecords.map(t=>[t.employeeName, t.role||'', t.competency, t.trainedDate||'', t.expiryDate||'', t.certRef||'', trainingStatus(t), t.notes||'']);
+    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
+    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+    const blob = new Blob([csv], {type:"text/csv"});
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = `aqms-training-matrix-${today()}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   /* KPI metrics */
-  const toggleNewMetric = document.querySelector('[data-action="toggle-new-metric"]'); if(toggleNewMetric) toggleNewMetric.onclick=()=>{ showNewMetric=!showNewMetric; metricSourceChoice="manual"; render(); };
+  const toggleNewMetric = document.querySelector('[data-action="toggle-new-metric"]'); if(toggleNewMetric) toggleNewMetric.onclick=()=>{ showNewMetric=!showNewMetric; metricSourceChoice="manual"; metricAutoTypeChoice=AUTO_METRIC_OPTIONS[0].id; render(); };
   const cancelNewMetric = document.querySelector('[data-action="cancel-new-metric"]'); if(cancelNewMetric) cancelNewMetric.onclick=()=>{ showNewMetric=false; render(); };
   document.querySelectorAll('[data-metric-source]').forEach(el=>el.onclick=()=>{ metricSourceChoice = el.dataset.metricSource; render(); });
+  const autoTypeSelect = document.getElementById('nm-auto-type');
+  if(autoTypeSelect) autoTypeSelect.onchange = () => { metricAutoTypeChoice = autoTypeSelect.value; render(); };
   const createMetric = document.querySelector('[data-action="create-metric"]');
   if(createMetric) createMetric.onclick=()=>{
     const target = Number(document.getElementById('nm-target').value);
     if(Number.isNaN(target)) return;
-    let name, autoType = null, source = metricSourceChoice;
+    let name, autoType = null, source = metricSourceChoice, unit, direction;
     if(source==="auto"){
-      autoType = document.getElementById('nm-auto-type').value;
-      name = AUTO_METRIC_OPTIONS.find(o=>o.id===autoType)?.label || autoType;
+      const selectedAuto = AUTO_METRIC_OPTIONS.find(o=>o.id===metricAutoTypeChoice) || AUTO_METRIC_OPTIONS[0];
+      autoType = selectedAuto.id;
+      name = selectedAuto.label;
+      unit = selectedAuto.unit;
+      direction = selectedAuto.direction;
     } else {
       name = document.getElementById('nm-name').value.trim();
       if(!name) return;
+      unit = document.getElementById('nm-unit').value;
+      direction = document.getElementById('nm-direction').value;
     }
+    const existingNames = new Set(state.metrics.map(m=>m.name));
+    if(existingNames.has(name)){ alert(`A metric named "${name}" already exists. Edit the existing one instead of creating a duplicate.`); return; }
     const metric = {
       id: uid(), name, category: document.getElementById('nm-category').value,
-      unit: document.getElementById('nm-unit').value, target,
-      direction: document.getElementById('nm-direction').value,
+      unit, target,
+      direction,
       critical: document.getElementById('nm-critical').checked,
       source, autoType, history: []
     };
