@@ -340,6 +340,10 @@ const CIP_TYPES = ["CIP (Automated)","Manual Clean","COP (Clean Out of Place)"];
 const CIP_VERIFICATION_STEPS = ["Chemical concentration verified","Temperature achieved","Time completed","ATP test completed","Microbiological swab completed","Visual inspection passed"];
 const cipStatusTone = {"On Track":"green","Due Soon":"amber",Overdue:"rust",Inactive:"neutral"};
 
+const SENSORY_ATTRIBUTES = ["Appearance","Color","Odor/Aroma","Taste/Flavor","Texture","Overall Acceptability"];
+const SENSORY_SAMPLE_TYPES = ["Raw Material","In-Process","Finished Product"];
+const sensoryResultTone = {Pass:"green",Borderline:"amber",Fail:"rust"};
+
 function logHistory(a, text){
   if(!a.history) a.history = [];
   a.history.push({ id: uid(), date: new Date().toISOString(), text });
@@ -426,6 +430,7 @@ if(!state.allergenProducts){ state.allergenProducts = []; }
 if(!state.allergenIncidents){ state.allergenIncidents = []; }
 if(!state.cipSchedules){ state.cipSchedules = []; }
 if(!state.cipDeviations){ state.cipDeviations = []; }
+if(!state.sensoryEvaluations){ state.sensoryEvaluations = []; }
 if(!state.productRecalls){ state.productRecalls = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
 let checklistSeq = state.checklists.length;
@@ -639,13 +644,14 @@ function render(){
           ${navBtn("suppliers","Supplier Mgmt")}
           ${navBtn("allergens","Allergen Mgmt")}
           ${navBtn("cip","CIP Cleaning")}
+          ${navBtn("sensory","Sensory Eval")}
           ${navBtn("quality-cycle","Quality Cycle")}
           ${navBtn("analytics","Analytics")}
           ${navBtn("settings","Settings")}
         </div>
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? renderSensory() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -801,6 +807,8 @@ function renderDashboard(){
   const allergenScore = totalAllergenIncidents>0 ? Math.round((state.allergenIncidents.filter(i=>i.capaStatus==="Closed").length/totalAllergenIncidents)*1000)/10 : null;
   const activeCip = state.cipSchedules.filter(c=>c.status!=="Inactive");
   const cipScore = activeCip.length>0 ? Math.round((activeCip.filter(c=>cipStatus(c)!=="Overdue").length/activeCip.length)*1000)/10 : null;
+  const totalSensory = state.sensoryEvaluations.length;
+  const sensoryScore = totalSensory>0 ? Math.round((state.sensoryEvaluations.filter(e=>sensoryResult(e)==="Pass").length/totalSensory)*1000)/10 : null;
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
     {label:"CAPA Management", score:capaScore},
@@ -812,7 +820,8 @@ function renderDashboard(){
     {label:"Product Recall Progress", score:recallScore},
     {label:"Supplier Approval Rate", score:supplierScore},
     {label:"Allergen Incident Closure", score:allergenScore},
-    {label:"CIP Cleaning Compliance", score:cipScore}
+    {label:"CIP Cleaning Compliance", score:cipScore},
+    {label:"Sensory Evaluation Pass Rate", score:sensoryScore}
   ];
   const availableScores = moduleScores.filter(x=>x.score!==null);
   const overallScore = availableScores.length ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
@@ -1134,6 +1143,9 @@ let openAllergenProductId = null;
 let showNewCip = false;
 let openCipId = null;
 let cipStatusFilter = "All";
+let showNewSensory = false;
+let openSensoryId = null;
+let sensoryResultFilter = "All";
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
@@ -1291,9 +1303,14 @@ function renderNewDocumentForm(){
       <label class="field">Category<select id="nd-category">${DOCUMENT_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
       <label class="field">Version<input id="nd-version" placeholder="e.g. 3" /></label>
       <label class="field">Status<select id="nd-status">${DOCUMENT_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
-      <label class="field">Owner<input id="nd-owner" placeholder="e.g. QA Manager" /></label>
+      <label class="field">Owner / Prepared By<input id="nd-owner" placeholder="e.g. QA Manager" /></label>
       <label class="field">Issue Date<input type="date" id="nd-issue-date" value="${today()}" /></label>
       <label class="field">Next Review Date<input type="date" id="nd-review-date" /></label>
+      <div style="grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:6px;">Sign-Off</div>
+      <label class="field">Reviewed By (Managing Director)<input id="nd-reviewed-by" placeholder="e.g. J. Naidoo" /></label>
+      <label class="field">Review Sign-Off Date<input type="date" id="nd-reviewed-date" /></label>
+      <label class="field">Approved By (3rd Signatory)<input id="nd-approved-by" placeholder="e.g. QA Director" /></label>
+      <label class="field">Approval Sign-Off Date<input type="date" id="nd-approved-date" /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input id="nd-notes" placeholder="Optional notes…" /></label>
       <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn btn-ghost" data-action="cancel-new-document">Cancel</button>
@@ -1306,6 +1323,7 @@ function renderNewDocumentForm(){
 function renderDocumentRow(d){
   const open = openDocumentId === d.id;
   const reviewFlag = documentReviewStatus(d);
+  const signCount = [d.reviewedBy, d.approvedBy].filter(Boolean).length + 1; // +1 for owner/prepared by
   return `
     <div class="card" style="margin-bottom:10px;overflow:hidden;">
       <button class="audit-row" data-toggle-document="${d.id}">
@@ -1313,7 +1331,7 @@ function renderDocumentRow(d){
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
             <div class="audit-title">${esc(d.title)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(d.docNumber)||'—'}</span></div>
-            <div class="audit-sub">${esc(d.category)||'—'} · v${esc(d.version)||'1'} · Owner: ${esc(d.owner)||'—'}</div>
+            <div class="audit-sub">${esc(d.category)||'—'} · v${esc(d.version)||'1'} · Owner: ${esc(d.owner)||'—'} · ✍ ${signCount}/3 signed</div>
           </div>
         </div>
         <div class="flex-wrap">
@@ -1334,9 +1352,14 @@ function renderDocumentDetail(d){
       <label class="field">Category<select data-document-field="${d.id}:category">${DOCUMENT_CATEGORIES.map(c=>`<option ${c===d.category?'selected':''}>${c}</option>`).join('')}</select></label>
       <label class="field">Version<input data-document-field="${d.id}:version" value="${esc(d.version)}" /></label>
       <label class="field">Status<select data-document-field="${d.id}:status">${DOCUMENT_STATUSES.map(s=>`<option ${s===d.status?'selected':''}>${s}</option>`).join('')}</select></label>
-      <label class="field">Owner<input data-document-field="${d.id}:owner" value="${esc(d.owner)}" /></label>
+      <label class="field">Owner / Prepared By<input data-document-field="${d.id}:owner" value="${esc(d.owner)}" /></label>
       <label class="field">Issue Date<input type="date" data-document-field="${d.id}:issueDate" value="${d.issueDate||''}" /></label>
       <label class="field">Next Review Date<input type="date" data-document-field="${d.id}:reviewDate" value="${d.reviewDate||''}" /></label>
+      <div style="grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:6px;">Sign-Off</div>
+      <label class="field">Reviewed By (Managing Director)<input data-document-field="${d.id}:reviewedBy" value="${esc(d.reviewedBy)}" /></label>
+      <label class="field">Review Sign-Off Date<input type="date" data-document-field="${d.id}:reviewedDate" value="${d.reviewedDate||''}" /></label>
+      <label class="field">Approved By (3rd Signatory)<input data-document-field="${d.id}:approvedBy" value="${esc(d.approvedBy)}" /></label>
+      <label class="field">Approval Sign-Off Date<input type="date" data-document-field="${d.id}:approvedDate" value="${d.approvedDate||''}" /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-document-field="${d.id}:notes" value="${esc(d.notes)}" /></label>
     </div>
     <div style="display:flex;justify-content:flex-end;">
@@ -2034,6 +2057,117 @@ function renderCipDetail(c){
     </div>
     <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" data-action="delete-cip" data-cip="${c.id}">Delete Equipment Schedule</button>
+    </div>
+  `;
+}
+
+/* ---------- Sensory Evaluation ---------- */
+function sensoryOverallScore(e){
+  const scores = SENSORY_ATTRIBUTES.map(attr => Number(e.scores?.[attr])).filter(v=>!Number.isNaN(v));
+  if(scores.length===0) return null;
+  return Math.round((scores.reduce((a,b)=>a+b,0)/scores.length)*10)/10;
+}
+function sensoryResult(e){
+  const scores = SENSORY_ATTRIBUTES.map(attr => Number(e.scores?.[attr])).filter(v=>!Number.isNaN(v));
+  if(scores.length===0) return "Fail";
+  if(scores.some(v=>v<=2)) return "Fail";
+  const avg = scores.reduce((a,b)=>a+b,0)/scores.length;
+  if(avg>=4) return "Pass";
+  if(avg>=3) return "Borderline";
+  return "Fail";
+}
+
+function renderSensory(){
+  const all = state.sensoryEvaluations;
+  const filtered = all.filter(e => sensoryResultFilter==="All" || sensoryResult(e)===sensoryResultFilter);
+  const passCount = all.filter(e=>sensoryResult(e)==="Pass").length;
+  const failCount = all.filter(e=>sensoryResult(e)==="Fail").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🧪 Sensory Evaluation</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-sensory-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-sensory">+ New Evaluation</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("🧪", "Total Evaluations", all.length)}
+      ${statCard("✅", "Pass", passCount)}
+      ${statCard("❌", "Fail", failCount)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Result:</span>
+        ${["All","Pass","Borderline","Fail"].map(f=>`<button class="status-pill ${sensoryResultFilter===f?'active':''}" data-sensory-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewSensory ? renderNewSensoryForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No sensory evaluations logged yet.</p>` : filtered.map(e=>renderSensoryRow(e)).join('')}
+    </div>
+  `;
+}
+
+function renderNewSensoryForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Product Name<input id="ns-sensory-product" placeholder="e.g. Sponge Cake 500g" /></label>
+      <label class="field">Batch / Lot Number<input id="ns-sensory-batch" placeholder="e.g. SC500-1907A" /></label>
+      <label class="field">Evaluation Date<input type="date" id="ns-sensory-date" value="${today()}" /></label>
+      <label class="field">Evaluator<input id="ns-sensory-evaluator" placeholder="e.g. Sandiso" /></label>
+      <label class="field" style="grid-column:1/-1;">Sample Type<select id="ns-sensory-type">${SENSORY_SAMPLE_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
+      ${SENSORY_ATTRIBUTES.map(attr=>`
+        <label class="field">${attr} (1–5)<select id="ns-sensory-attr-${attr.replace(/[^a-zA-Z]/g,'')}"><option>5</option><option>4</option><option selected>3</option><option>2</option><option>1</option></select></label>
+      `).join('')}
+      <label class="field" style="grid-column:1/-1;">Comments<input id="ns-sensory-comments" placeholder="Optional notes…" /></label>
+      <label class="field" style="grid-column:1/-1;">Action Required (if Fail/Borderline)<input id="ns-sensory-action" placeholder="Optional" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-sensory">Cancel</button>
+        <button class="btn btn-primary" data-action="create-sensory">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSensoryRow(e){
+  const open = openSensoryId === e.id;
+  const result = sensoryResult(e);
+  const overall = sensoryOverallScore(e);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-sensory="${e.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(e.productName)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(e.batchLot)||'—'}</span></div>
+            <div class="audit-sub">${e.evaluationDate||'—'} · ${esc(e.evaluator)||'—'} · Score: ${overall??'—'}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${sensoryResultTone[result]||'neutral'}">${result}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderSensoryDetail(e)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderSensoryDetail(e){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Product Name<input data-sensory-field="${e.id}:productName" value="${esc(e.productName)}" /></label>
+      <label class="field">Batch / Lot Number<input data-sensory-field="${e.id}:batchLot" value="${esc(e.batchLot)}" /></label>
+      <label class="field">Evaluation Date<input type="date" data-sensory-field="${e.id}:evaluationDate" value="${e.evaluationDate||''}" /></label>
+      <label class="field">Evaluator<input data-sensory-field="${e.id}:evaluator" value="${esc(e.evaluator)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Sample Type<select data-sensory-field="${e.id}:sampleType">${SENSORY_SAMPLE_TYPES.map(t=>`<option ${t===e.sampleType?'selected':''}>${t}</option>`).join('')}</select></label>
+      ${SENSORY_ATTRIBUTES.map(attr=>`
+        <label class="field">${attr} (1–5)<select data-sensory-score="${e.id}:${attr}">${[5,4,3,2,1].map(v=>`<option ${String(e.scores?.[attr])===String(v)?'selected':''}>${v}</option>`).join('')}</select></label>
+      `).join('')}
+      <label class="field" style="grid-column:1/-1;">Comments<input data-sensory-field="${e.id}:comments" value="${esc(e.comments)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Action Required<input data-sensory-field="${e.id}:actionRequired" value="${esc(e.actionRequired)}" /></label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-sensory" data-sensory="${e.id}">Delete Evaluation</button>
     </div>
   `;
 }
@@ -2913,6 +3047,10 @@ function attachHandlers(){
       owner: document.getElementById('nd-owner').value,
       issueDate: document.getElementById('nd-issue-date').value || today(),
       reviewDate: document.getElementById('nd-review-date').value,
+      reviewedBy: document.getElementById('nd-reviewed-by').value,
+      reviewedDate: document.getElementById('nd-reviewed-date').value,
+      approvedBy: document.getElementById('nd-approved-by').value,
+      approvedDate: document.getElementById('nd-approved-date').value,
       notes: document.getElementById('nd-notes').value
     };
     state.documents.unshift(doc);
@@ -3380,6 +3518,74 @@ function attachHandlers(){
       ["Equipment","Cleaning Type","Frequency","Responsible","Last Completed","Next Due","Status"],
       state.cipSchedules.map(c=>[c.equipment, c.cleaningType||'', c.frequency||'', c.responsible||'', c.lastCompletedDate||'', c.nextDueDate||'', cipStatus(c)]),
       `aqms-cip-schedules-${today()}.csv`
+    );
+  };
+
+  /* Sensory Evaluation */
+  const toggleNewSensory = document.querySelector('[data-action="toggle-new-sensory"]'); if(toggleNewSensory) toggleNewSensory.onclick=()=>{ showNewSensory=!showNewSensory; render(); };
+  const cancelNewSensory = document.querySelector('[data-action="cancel-new-sensory"]'); if(cancelNewSensory) cancelNewSensory.onclick=()=>{ showNewSensory=false; render(); };
+  const createSensory = document.querySelector('[data-action="create-sensory"]');
+  if(createSensory) createSensory.onclick=()=>{
+    const productName = document.getElementById('ns-sensory-product').value.trim();
+    if(!productName) return;
+    const scores = {};
+    SENSORY_ATTRIBUTES.forEach(attr=>{
+      const el = document.getElementById(`ns-sensory-attr-${attr.replace(/[^a-zA-Z]/g,'')}`);
+      scores[attr] = el ? el.value : "3";
+    });
+    const record = {
+      id: uid(), productName,
+      batchLot: document.getElementById('ns-sensory-batch').value,
+      evaluationDate: document.getElementById('ns-sensory-date').value || today(),
+      evaluator: document.getElementById('ns-sensory-evaluator').value,
+      sampleType: document.getElementById('ns-sensory-type').value,
+      scores,
+      comments: document.getElementById('ns-sensory-comments').value,
+      actionRequired: document.getElementById('ns-sensory-action').value
+    };
+    state.sensoryEvaluations.unshift(record);
+    openSensoryId = record.id; showNewSensory=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-sensory]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleSensory; openSensoryId = openSensoryId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-sensory-filter]').forEach(el=>el.onclick=()=>{
+    sensoryResultFilter = el.dataset.sensoryFilter; render();
+  });
+  document.querySelectorAll('[data-sensory-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.sensoryField.split(':');
+      const e = state.sensoryEvaluations.find(x=>x.id===id);
+      if(!e) return;
+      e[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-sensory-score]').forEach(el=>{
+    el.onchange = () => {
+      const [id, attr] = el.dataset.sensoryScore.split(':');
+      const e = state.sensoryEvaluations.find(x=>x.id===id);
+      if(!e) return;
+      if(!e.scores) e.scores = {};
+      e.scores[attr] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-sensory"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this sensory evaluation record? This cannot be undone.")) return;
+    state.sensoryEvaluations = state.sensoryEvaluations.filter(e=>e.id!==el.dataset.sensory);
+    openSensoryId = null; persist(); render();
+  });
+  const sensoryCsvBtn = document.querySelector('[data-action="export-sensory-csv"]');
+  if(sensoryCsvBtn) sensoryCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Product Name","Batch/Lot","Date","Evaluator","Sample Type", ...SENSORY_ATTRIBUTES, "Overall Score","Result","Comments","Action Required"],
+      state.sensoryEvaluations.map(e=>[
+        e.productName, e.batchLot||'', e.evaluationDate||'', e.evaluator||'', e.sampleType||'',
+        ...SENSORY_ATTRIBUTES.map(attr=>e.scores?.[attr]||''),
+        sensoryOverallScore(e)??'', sensoryResult(e), e.comments||'', e.actionRequired||''
+      ]),
+      `aqms-sensory-evaluations-${today()}.csv`
     );
   };
 
