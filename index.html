@@ -344,6 +344,11 @@ const SENSORY_ATTRIBUTES = ["Appearance","Color","Odor/Aroma","Taste/Flavor","Te
 const SENSORY_SAMPLE_TYPES = ["Raw Material","In-Process","Finished Product"];
 const sensoryResultTone = {Pass:"green",Borderline:"amber",Fail:"rust"};
 
+const BATCH_TYPES = ["Raw Material","Finished Product"];
+const BATCH_STATUSES = ["Released","Quarantine","Rejected"];
+const batchStatusTone = {Released:"green",Quarantine:"amber",Rejected:"rust"};
+const BATCH_UNITS = ["kg","L","units","g","ml","pallets","boxes"];
+
 function logHistory(a, text){
   if(!a.history) a.history = [];
   a.history.push({ id: uid(), date: new Date().toISOString(), text });
@@ -431,6 +436,7 @@ if(!state.allergenIncidents){ state.allergenIncidents = []; }
 if(!state.cipSchedules){ state.cipSchedules = []; }
 if(!state.cipDeviations){ state.cipDeviations = []; }
 if(!state.sensoryEvaluations){ state.sensoryEvaluations = []; }
+if(!state.batches){ state.batches = []; }
 if(!state.productRecalls){ state.productRecalls = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
 let checklistSeq = state.checklists.length;
@@ -645,13 +651,14 @@ function render(){
           ${navBtn("allergens","Allergen Mgmt")}
           ${navBtn("cip","CIP Cleaning")}
           ${navBtn("sensory","Sensory Eval")}
+          ${navBtn("traceability","Traceability")}
           ${navBtn("quality-cycle","Quality Cycle")}
           ${navBtn("analytics","Analytics")}
           ${navBtn("settings","Settings")}
         </div>
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? renderSensory() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? renderSensory() : tab==="traceability" ? renderTraceability() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -853,6 +860,7 @@ function renderDashboard(){
       ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length)}
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length)}
       ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length)}
+      ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length)}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -1146,6 +1154,10 @@ let cipStatusFilter = "All";
 let showNewSensory = false;
 let openSensoryId = null;
 let sensoryResultFilter = "All";
+let showNewBatch = false;
+let openBatchId = null;
+let batchTypeFilter = "All";
+let batchSearch = "";
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
@@ -2168,6 +2180,175 @@ function renderSensoryDetail(e){
     </div>
     <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" data-action="delete-sensory" data-sensory="${e.id}">Delete Evaluation</button>
+    </div>
+  `;
+}
+
+/* ---------- Traceability ---------- */
+function batchExpiryStatus(b){
+  if(!b.expiry) return null;
+  const days = daysUntil(b.expiry);
+  if(days<0) return "Expired";
+  if(days<=14) return "Expiring Soon";
+  return null;
+}
+function batchForwardTrace(b){
+  return state.batches.filter(x=>x.type==="Finished Product" && (x.components||[]).includes(b.id));
+}
+function batchBackwardTrace(b){
+  return (b.components||[]).map(id=>state.batches.find(x=>x.id===id)).filter(Boolean);
+}
+
+function renderTraceability(){
+  const all = state.batches;
+  const q = batchSearch.trim().toLowerCase();
+  const filtered = all.filter(b=>{
+    const matchesType = batchTypeFilter==="All" || b.type===batchTypeFilter;
+    const matchesSearch = !q || [b.product,b.batchNo,b.supplier].some(v=>(v||'').toLowerCase().includes(q));
+    return matchesType && matchesSearch;
+  });
+  const rawCount = all.filter(b=>b.type==="Raw Material").length;
+  const finishedCount = all.filter(b=>b.type==="Finished Product").length;
+  const quarantineCount = all.filter(b=>b.status==="Quarantine").length;
+  const expired = all.filter(b=>batchExpiryStatus(b)==="Expired");
+  const expiringSoon = all.filter(b=>batchExpiryStatus(b)==="Expiring Soon");
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🔍 Traceability — Batch Register</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-batches-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-batch">+ Log Batch</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px;">
+      ${statCard("📦", "Total Batches", all.length)}
+      ${statCard("🌾", "Raw Materials", rawCount)}
+      ${statCard("🏭", "Finished Goods", finishedCount)}
+      ${statCard("🧊", "In Quarantine", quarantineCount)}
+    </div>
+    ${expired.length>0 ? `
+      <div class="card p4" style="margin-bottom:16px;border:1px solid var(--rust);">
+        <strong style="color:var(--rust);">⚠ Expired — Action Required</strong>
+        ${expired.map(b=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;"><span>${esc(b.product)} · <strong>${esc(b.batchNo)}</strong></span><span class="tag tag-rust">${Math.abs(daysUntil(b.expiry))}d expired</span></div>`).join('')}
+      </div>` : ''}
+    ${expiringSoon.length>0 ? `
+      <div class="card p4" style="margin-bottom:16px;">
+        <strong>Expiring Within 14 Days</strong>
+        ${expiringSoon.map(b=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;"><span>${esc(b.product)} · <strong>${esc(b.batchNo)}</strong></span><span class="tag tag-amber">${daysUntil(b.expiry)}d left</span></div>`).join('')}
+      </div>` : ''}
+    ${quarantineCount>0 ? `
+      <div class="card p4" style="margin-bottom:16px;">
+        <strong>⚠ Quarantine Hold</strong>
+        ${all.filter(b=>b.status==="Quarantine").map(b=>`<div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;"><span>${esc(b.product)} · <strong>${esc(b.batchNo)}</strong></span><span class="tag tag-amber">Quarantine</span></div>`).join('')}
+      </div>` : ''}
+    <div class="card p4" style="margin-bottom:16px;">
+      <input id="batch-search-input" placeholder="Search product, batch no, supplier…" value="${esc(batchSearch)}" style="margin-bottom:10px;" />
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Type:</span>
+        ${["All",...BATCH_TYPES].map(f=>`<button class="status-pill ${batchTypeFilter===f?'active':''}" data-batch-type-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewBatch ? renderNewBatchForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No batches logged yet.</p>` : filtered.map(b=>renderBatchRow(b)).join('')}
+    </div>
+  `;
+}
+
+function renderNewBatchForm(){
+  const rawBatches = state.batches.filter(b=>b.type==="Raw Material");
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Type<select id="nb-type">${BATCH_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
+      <label class="field">Product<input id="nb-product" placeholder="e.g. Sponge Cake — 500g" /></label>
+      <label class="field">Batch / Lot No.<input id="nb-batchno" placeholder="e.g. SC500-1907A" /></label>
+      <label class="field">Supplier / Source<input id="nb-supplier" placeholder="e.g. Sasko Milling, or Internal — Line 2" /></label>
+      <label class="field">Received / Produced<input type="date" id="nb-received" value="${today()}" /></label>
+      <label class="field">Expiry<input type="date" id="nb-expiry" /></label>
+      <label class="field">Quantity<input type="number" id="nb-qty" /></label>
+      <label class="field">Unit<select id="nb-unit">${BATCH_UNITS.map(u=>`<option>${u}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Status<select id="nb-status">${BATCH_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      ${rawBatches.length>0 ? `
+        <div style="grid-column:1/-1;">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">Component Raw Material Batches (only applies if Type = Finished Product)</div>
+          ${rawBatches.map(rm=>`
+            <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;">
+              <input type="checkbox" class="nb-component-cb" value="${rm.id}" style="width:auto;" /> ${esc(rm.product)} — ${esc(rm.batchNo)}
+            </label>
+          `).join('')}
+        </div>
+      ` : ''}
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-batch">Cancel</button>
+        <button class="btn btn-primary" data-action="create-batch">+ Save</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderBatchRow(b){
+  const open = openBatchId === b.id;
+  const expiryFlag = batchExpiryStatus(b);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-batch="${b.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(b.product)} <span style="color:var(--muted);font-weight:400;font-size:11px;">#${esc(b.batchNo)}</span></div>
+            <div class="audit-sub">${esc(b.supplier)||'—'} · ${b.qty??'—'} ${esc(b.unit)||''}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-navy">${b.type==="Raw Material"?"RAW":"FINISHED"}</span>
+          ${expiryFlag ? `<span class="tag tag-${expiryFlag==='Expired'?'rust':'amber'}">${expiryFlag}</span>` : ''}
+          <span class="tag tag-${batchStatusTone[b.status]||'neutral'}">${b.status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderBatchDetail(b)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderBatchDetail(b){
+  const rawBatches = state.batches.filter(x=>x.type==="Raw Material" && x.id!==b.id);
+  const backward = batchBackwardTrace(b);
+  const forward = batchForwardTrace(b);
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Type<select data-batch-field="${b.id}:type"><option ${b.type==='Raw Material'?'selected':''}>Raw Material</option><option ${b.type==='Finished Product'?'selected':''}>Finished Product</option></select></label>
+      <label class="field">Product<input data-batch-field="${b.id}:product" value="${esc(b.product)}" /></label>
+      <label class="field">Batch / Lot No.<input data-batch-field="${b.id}:batchNo" value="${esc(b.batchNo)}" /></label>
+      <label class="field">Supplier / Source<input data-batch-field="${b.id}:supplier" value="${esc(b.supplier)}" /></label>
+      <label class="field">Received / Produced<input type="date" data-batch-field="${b.id}:received" value="${b.received||''}" /></label>
+      <label class="field">Expiry<input type="date" data-batch-field="${b.id}:expiry" value="${b.expiry||''}" /></label>
+      <label class="field">Quantity<input type="number" data-batch-field="${b.id}:qty" value="${b.qty??''}" /></label>
+      <label class="field">Unit<select data-batch-field="${b.id}:unit">${BATCH_UNITS.map(u=>`<option ${u===b.unit?'selected':''}>${u}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Status<select data-batch-field="${b.id}:status">${BATCH_STATUSES.map(s=>`<option ${s===b.status?'selected':''}>${s}</option>`).join('')}</select></label>
+    </div>
+    ${b.type==="Finished Product" ? `
+      <div class="card p4 top-border" style="margin-bottom:12px;">
+        <p class="mono" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:8px;">← Backward Trace — What Went Into This Batch</p>
+        ${rawBatches.length===0 ? `<p class="muted-italic">No raw material batches logged yet to link.</p>` : rawBatches.map(rm=>`
+          <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;">
+            <input type="checkbox" data-batch-component="${b.id}:${rm.id}" ${(b.components||[]).includes(rm.id)?'checked':''} style="width:auto;" /> ${esc(rm.product)} — ${esc(rm.batchNo)}
+          </label>
+        `).join('')}
+        ${backward.length>0 ? `<div class="top-border" style="margin-top:8px;padding-top:8px;">${backward.map(rm=>`<div style="font-size:13px;padding:4px 0;">✓ ${esc(rm.product)} · ${esc(rm.batchNo)}</div>`).join('')}</div>` : ''}
+      </div>
+    ` : `
+      <div class="card p4 top-border" style="margin-bottom:12px;">
+        <p class="mono" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:8px;">→ Forward Trace — Where This Batch Was Used</p>
+        ${forward.length===0 ? `<p class="muted-italic">Not yet used in any finished product batch.</p>` : forward.map(fp=>`
+          <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:13px;">
+            <span>${esc(fp.product)} · ${esc(fp.batchNo)}</span>
+            <span class="tag tag-${batchStatusTone[fp.status]||'neutral'}">${fp.status}</span>
+          </div>
+        `).join('')}
+      </div>
+    `}
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-batch" data-batch="${b.id}">Delete Batch</button>
     </div>
   `;
 }
@@ -3586,6 +3767,77 @@ function attachHandlers(){
         sensoryOverallScore(e)??'', sensoryResult(e), e.comments||'', e.actionRequired||''
       ]),
       `aqms-sensory-evaluations-${today()}.csv`
+    );
+  };
+
+  /* Traceability */
+  const toggleNewBatch = document.querySelector('[data-action="toggle-new-batch"]'); if(toggleNewBatch) toggleNewBatch.onclick=()=>{ showNewBatch=!showNewBatch; render(); };
+  const cancelNewBatch = document.querySelector('[data-action="cancel-new-batch"]'); if(cancelNewBatch) cancelNewBatch.onclick=()=>{ showNewBatch=false; render(); };
+  const createBatch = document.querySelector('[data-action="create-batch"]');
+  if(createBatch) createBatch.onclick=()=>{
+    const product = document.getElementById('nb-product').value.trim();
+    const batchNo = document.getElementById('nb-batchno').value.trim();
+    if(!product || !batchNo) return;
+    const type = document.getElementById('nb-type').value;
+    const components = type==="Finished Product"
+      ? [...document.querySelectorAll('.nb-component-cb:checked')].map(cb=>cb.value)
+      : [];
+    const qtyVal = document.getElementById('nb-qty').value;
+    const batch = {
+      id: uid(), type, product, batchNo,
+      supplier: document.getElementById('nb-supplier').value,
+      received: document.getElementById('nb-received').value || today(),
+      expiry: document.getElementById('nb-expiry').value,
+      qty: qtyVal===''?null:Number(qtyVal),
+      unit: document.getElementById('nb-unit').value,
+      status: document.getElementById('nb-status').value,
+      components
+    };
+    state.batches.unshift(batch);
+    openBatchId = batch.id; showNewBatch=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-batch]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleBatch; openBatchId = openBatchId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-batch-type-filter]').forEach(el=>el.onclick=()=>{
+    batchTypeFilter = el.dataset.batchTypeFilter; render();
+  });
+  const batchSearchInput = document.getElementById('batch-search-input');
+  if(batchSearchInput) batchSearchInput.oninput = () => { batchSearch = batchSearchInput.value; render(); };
+  document.querySelectorAll('[data-batch-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.batchField.split(':');
+      const b = state.batches.find(x=>x.id===id);
+      if(!b) return;
+      b[field] = el.type==="number" ? (el.value===''?null:Number(el.value)) : el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-batch-component]').forEach(el=>{
+    el.onchange = () => {
+      const [batchId, rmId] = el.dataset.batchComponent.split(':');
+      const b = state.batches.find(x=>x.id===batchId);
+      if(!b) return;
+      if(!b.components) b.components = [];
+      if(el.checked){ if(!b.components.includes(rmId)) b.components.push(rmId); }
+      else { b.components = b.components.filter(id=>id!==rmId); }
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-batch"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this batch record? This cannot be undone.")) return;
+    state.batches = state.batches.filter(b=>b.id!==el.dataset.batch);
+    openBatchId = null; persist(); render();
+  });
+  const batchesCsvBtn = document.querySelector('[data-action="export-batches-csv"]');
+  if(batchesCsvBtn) batchesCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Type","Product","Batch/Lot No.","Supplier/Source","Received","Expiry","Quantity","Unit","Status","Component Batches"],
+      state.batches.map(b=>[
+        b.type, b.product, b.batchNo, b.supplier||'', b.received||'', b.expiry||'', b.qty??'', b.unit||'', b.status,
+        (b.components||[]).map(id=>state.batches.find(x=>x.id===id)?.batchNo).filter(Boolean).join('; ')
+      ]),
+      `aqms-traceability-batches-${today()}.csv`
     );
   };
 
