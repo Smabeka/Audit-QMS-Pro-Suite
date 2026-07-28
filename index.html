@@ -328,6 +328,18 @@ const RECALL_ACTION_STEPS = [
   "Complete investigation","Verify effectiveness"
 ];
 
+const SUPPLIER_CATEGORIES = ["Raw Material","Packaging","Ingredients","Services","Transport/Logistics","Equipment","Other"];
+const SUPPLIER_APPROVAL_STATUSES = ["Approved","Conditional","Not Approved"];
+const supplierApprovalTone = {Approved:"green",Conditional:"amber","Not Approved":"rust"};
+
+const ALLERGEN_LIST = ["Milk","Eggs","Fish","Crustaceans","Peanuts","Tree Nuts","Soy","Wheat/Gluten","Sesame","Sulphites","Mustard","Celery","Lupin","Molluscs"];
+const ALLERGEN_STATUSES = ["Contains Allergen","May Contain Allergen","Allergen-Free"];
+const allergenStatusTone = {"Contains Allergen":"amber","May Contain Allergen":"rust","Allergen-Free":"green"};
+
+const CIP_TYPES = ["CIP (Automated)","Manual Clean","COP (Clean Out of Place)"];
+const CIP_VERIFICATION_STEPS = ["Chemical concentration verified","Temperature achieved","Time completed","ATP test completed","Microbiological swab completed","Visual inspection passed"];
+const cipStatusTone = {"On Track":"green","Due Soon":"amber",Overdue:"rust",Inactive:"neutral"};
+
 function logHistory(a, text){
   if(!a.history) a.history = [];
   a.history.push({ id: uid(), date: new Date().toISOString(), text });
@@ -409,6 +421,11 @@ if(!state.checklists){ state.checklists = []; }
 if(!state.documents){ state.documents = []; }
 if(!state.trainingRecords){ state.trainingRecords = []; }
 if(!state.haccpPoints){ state.haccpPoints = []; }
+if(!state.suppliers){ state.suppliers = []; }
+if(!state.allergenProducts){ state.allergenProducts = []; }
+if(!state.allergenIncidents){ state.allergenIncidents = []; }
+if(!state.cipSchedules){ state.cipSchedules = []; }
+if(!state.cipDeviations){ state.cipDeviations = []; }
 if(!state.productRecalls){ state.productRecalls = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
 let checklistSeq = state.checklists.length;
@@ -530,6 +547,17 @@ function persist(){
 
 function esc(str){ const d=document.createElement("div"); d.textContent = str==null? "": str; return d.innerHTML; }
 
+function downloadCsv(headers, rows, filename){
+  const csvEscape = (v) => `"${String(v==null?'':v).replace(/"/g,'""')}"`;
+  const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
+  const blob = new Blob([csv], {type:"text/csv"});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = filename;
+  document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 function compressImageToDataURL(file, maxWidth, quality, cb){
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -575,7 +603,7 @@ function compressImageFile(file, maxDim=1000, quality=0.7){
   });
 }
 function photoAttachControl(dataAttrName, idPath, hasPhoto){
-  return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:6px;">📷 ${hasPhoto?'Replace':'Add'} Photo<input type="file" accept="image/*" capture="environment" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
+  return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:6px;">📷 ${hasPhoto?'Replace':'Add'} Photo<input type="file" accept="image/*" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
 }
 
 /* ---------- render ---------- */
@@ -608,13 +636,16 @@ function render(){
           ${navBtn("training","Training Matrix")}
           ${navBtn("haccp","HACCP")}
           ${navBtn("recalls","Product Recall")}
+          ${navBtn("suppliers","Supplier Mgmt")}
+          ${navBtn("allergens","Allergen Mgmt")}
+          ${navBtn("cip","CIP Cleaning")}
           ${navBtn("quality-cycle","Quality Cycle")}
           ${navBtn("analytics","Analytics")}
           ${navBtn("settings","Settings")}
         </div>
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -747,9 +778,7 @@ function renderDashboard(){
   const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
   const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed");
 
-  /* Overall Compliance Score — built only from modules that actually exist in this app today
-     (Audit Register, CAPA, Risk Register, KPI Metrics, Document Control). Training and Supplier
-     Management aren't separate modules yet, so they're intentionally left out rather than faked. */
+  /* Overall Compliance Score — built from every module that exists in this app today. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
   const totalRisks = state.riskAssessments.length;
   const riskScore = totalRisks>0 ? Math.round(((totalRisks-highRisks.length)/totalRisks)*1000)/10 : null;
@@ -762,13 +791,28 @@ function renderDashboard(){
   const totalTraining = state.trainingRecords.length;
   const trainingInGoodStanding = state.trainingRecords.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
   const trainingScore = totalTraining>0 ? Math.round((trainingInGoodStanding/totalTraining)*1000)/10 : null;
+  const activeHaccp = state.haccpPoints.filter(p=>p.status!=="Inactive");
+  const haccpScore = activeHaccp.length>0 ? Math.round((activeHaccp.filter(p=>haccpStatus(p)==="Compliant").length/activeHaccp.length)*1000)/10 : null;
+  const totalRecalls = state.productRecalls.length;
+  const recallScore = totalRecalls>0 ? Math.round((state.productRecalls.reduce((sum,r)=>sum+recallCompletionPct(r),0)/totalRecalls)*10)/10 : null;
+  const totalSuppliers = state.suppliers.length;
+  const supplierScore = totalSuppliers>0 ? Math.round((state.suppliers.filter(s=>s.approvalStatus==="Approved").length/totalSuppliers)*1000)/10 : null;
+  const totalAllergenIncidents = state.allergenIncidents.length;
+  const allergenScore = totalAllergenIncidents>0 ? Math.round((state.allergenIncidents.filter(i=>i.capaStatus==="Closed").length/totalAllergenIncidents)*1000)/10 : null;
+  const activeCip = state.cipSchedules.filter(c=>c.status!=="Inactive");
+  const cipScore = activeCip.length>0 ? Math.round((activeCip.filter(c=>cipStatus(c)!=="Overdue").length/activeCip.length)*1000)/10 : null;
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
     {label:"CAPA Management", score:capaScore},
     {label:"Risk Management", score:riskScore},
     {label:"KPI Metrics On-Target", score:metricsScore},
     {label:"Document Control", score:documentScore},
-    {label:"Training Compliance", score:trainingScore}
+    {label:"Training Compliance", score:trainingScore},
+    {label:"HACCP Compliance", score:haccpScore},
+    {label:"Product Recall Progress", score:recallScore},
+    {label:"Supplier Approval Rate", score:supplierScore},
+    {label:"Allergen Incident Closure", score:allergenScore},
+    {label:"CIP Cleaning Compliance", score:cipScore}
   ];
   const availableScores = moduleScores.filter(x=>x.score!==null);
   const overallScore = availableScores.length ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
@@ -790,7 +834,7 @@ function renderDashboard(){
         </div>`;
       }).join('')}
       ${state.complianceScoreHistory.length>=2 ? `<div class="top-border"><canvas id="compliance-trend-chart" height="100"></canvas></div>` : ''}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Supplier Management isn't a separate module yet, so it's not included in this score.</p>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Modules with no records yet show "no data" and aren't averaged into the overall score until you start logging.</p>
     </div>
     <div class="stats">
       ${statCard("📋", "Total Audits", audits.length)}
@@ -971,7 +1015,7 @@ function renderAuditDetail(a){
                 ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
                 ${it.photo
                   ? `<div style="margin-top:6px;"><img src="${it.photo}" style="max-width:90px;max-height:90px;border-radius:6px;display:block;object-fit:cover;" /><button class="x-btn" data-action="remove-item-photo" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}" style="font-size:11px;margin-top:4px;">✕ Remove Photo</button></div>`
-                  : `<input type="file" accept="image/*" capture="environment" data-item-photo="${a.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
+                  : `<input type="file" accept="image/*" data-item-photo="${a.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
                 ` : ''}
               </div>
               <button class="x-btn" data-action="remove-item" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}">🗑</button>
@@ -1082,6 +1126,14 @@ let haccpStatusFilter = "All";
 let showNewRecall = false;
 let openRecallId = null;
 let recallStatusFilter = "All";
+let showNewSupplier = false;
+let openSupplierId = null;
+let supplierStatusFilter = "All";
+let showNewAllergenProduct = false;
+let openAllergenProductId = null;
+let showNewCip = false;
+let openCipId = null;
+let cipStatusFilter = "All";
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
@@ -1653,6 +1705,339 @@ function renderRecallDetail(r){
   `;
 }
 
+/* ---------- Supplier Management ---------- */
+function renderSuppliers(){
+  const all = state.suppliers;
+  const filtered = all.filter(s => supplierStatusFilter==="All" || s.approvalStatus===supplierStatusFilter);
+  const approvedCount = all.filter(s=>s.approvalStatus==="Approved").length;
+  const highRiskCount = all.filter(s=>s.riskRating==="High").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">Supplier Management</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-suppliers-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-supplier">+ New Supplier</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("🏭", "Total Suppliers", all.length)}
+      ${statCard("✅", "Approved", approvedCount)}
+      ${statCard("⚠", "High Risk", highRiskCount)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
+        ${["All",...SUPPLIER_APPROVAL_STATUSES].map(f=>`<button class="status-pill ${supplierStatusFilter===f?'active':''}" data-supplier-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewSupplier ? renderNewSupplierForm() : ''}
+    <div>
+      ${filtered.length===0 ? `<p class="muted-italic">No suppliers logged yet.</p>` : filtered.map(s=>renderSupplierRow(s)).join('')}
+    </div>
+  `;
+}
+
+function renderNewSupplierForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field" style="grid-column:1/-1;">Supplier Name<input id="ns-name" placeholder="e.g. Sasko Milling" /></label>
+      <label class="field">Category<select id="ns-category">${SUPPLIER_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
+      <label class="field">Approval Status<select id="ns-approval">${SUPPLIER_APPROVAL_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <label class="field">Risk Rating<select id="ns-risk">${RISK_LEVELS.filter(l=>l!=="Critical").map(l=>`<option>${l}</option>`).join('')}</select></label>
+      <label class="field">Last Assessment Date<input type="date" id="ns-assessment-date" /></label>
+      <label class="field">Contact Person<input id="ns-contact" placeholder="e.g. J. Smith" /></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input id="ns-notes" placeholder="Optional notes…" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-supplier">Cancel</button>
+        <button class="btn btn-primary" data-action="create-supplier">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSupplierRow(s){
+  const open = openSupplierId === s.id;
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-supplier="${s.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(s.name)}</div>
+            <div class="audit-sub">${esc(s.category)||'—'} · Risk: ${esc(s.riskRating)||'—'}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${supplierApprovalTone[s.approvalStatus]||'neutral'}">${s.approvalStatus}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderSupplierDetail(s)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderSupplierDetail(s){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field" style="grid-column:1/-1;">Supplier Name<input data-supplier-field="${s.id}:name" value="${esc(s.name)}" /></label>
+      <label class="field">Category<select data-supplier-field="${s.id}:category">${SUPPLIER_CATEGORIES.map(c=>`<option ${c===s.category?'selected':''}>${c}</option>`).join('')}</select></label>
+      <label class="field">Approval Status<select data-supplier-field="${s.id}:approvalStatus">${SUPPLIER_APPROVAL_STATUSES.map(a=>`<option ${a===s.approvalStatus?'selected':''}>${a}</option>`).join('')}</select></label>
+      <label class="field">Risk Rating<select data-supplier-field="${s.id}:riskRating">${RISK_LEVELS.filter(l=>l!=="Critical").map(l=>`<option ${l===s.riskRating?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="field">Last Assessment Date<input type="date" data-supplier-field="${s.id}:lastAssessmentDate" value="${s.lastAssessmentDate||''}" /></label>
+      <label class="field">Contact Person<input data-supplier-field="${s.id}:contactPerson" value="${esc(s.contactPerson)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Notes<input data-supplier-field="${s.id}:notes" value="${esc(s.notes)}" /></label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-supplier" data-supplier="${s.id}">Delete Supplier</button>
+    </div>
+  `;
+}
+
+/* ---------- Allergen Management ---------- */
+function renderAllergens(){
+  const products = state.allergenProducts;
+  const incidents = state.allergenIncidents;
+  const containsCount = products.filter(p=>p.status==="Contains Allergen").length;
+  const openIncidents = incidents.filter(i=>i.capaStatus==="Open").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🥜 Allergen Management</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-allergens-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-allergen-product">+ New Product Entry</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("📦", "Products Logged", products.length)}
+      ${statCard("⚠", "Contains Allergen", containsCount)}
+      ${statCard("🚨", "Open Incidents", openIncidents)}
+    </div>
+    ${showNewAllergenProduct ? renderNewAllergenProductForm() : ''}
+    <h3 class="serif" style="font-size:15px;margin:16px 0 8px;">Product Allergen Register</h3>
+    <div style="margin-bottom:20px;">
+      ${products.length===0 ? `<p class="muted-italic">No products logged yet.</p>` : products.map(p=>renderAllergenProductRow(p)).join('')}
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">⚠ Allergen Incidents</h3>
+      <div class="grid2">
+        <label class="field">Date<input type="date" id="ai-date" value="${today()}" /></label>
+        <label class="field">Product Affected<input id="ai-product" placeholder="e.g. Sponge Cake 500g" /></label>
+        <label class="field">Allergen Involved<select id="ai-allergen">${ALLERGEN_LIST.map(a=>`<option>${a}</option>`).join('')}</select></label>
+        <label class="field">CAPA Status<select id="ai-capa-status"><option>Open</option><option>Closed</option></select></label>
+        <label class="field" style="grid-column:1/-1;">Root Cause<input id="ai-root-cause" placeholder="e.g. Undeclared cross-contact from shared line" /></label>
+        <label class="field" style="grid-column:1/-1;">Corrective Action<input id="ai-corrective" placeholder="e.g. Retrain staff, update label" /></label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" data-action="add-allergen-incident">+ Log Incident</button>
+      </div>
+      <div class="top-border">
+        ${incidents.length===0 ? `<p class="muted-italic">No allergen incidents logged.</p>` : incidents.map(i=>`
+          <div style="display:flex;justify-content:space-between;align-items:start;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;gap:8px;">
+            <div style="flex:1;min-width:0;">
+              <strong>${esc(i.product)}</strong> — ${esc(i.allergen)} <span class="muted-italic">(${i.date})</span>
+              ${i.rootCause?`<div>Root cause: ${esc(i.rootCause)}</div>`:''}
+              ${i.correctiveAction?`<div>Action: ${esc(i.correctiveAction)}</div>`:''}
+            </div>
+            <span class="tag tag-${i.capaStatus==='Open'?'rust':'green'}">${i.capaStatus}</span>
+            <button class="x-btn" data-action="delete-allergen-incident" data-incident="${i.id}">✕</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderNewAllergenProductForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Product Name<input id="nap-name" placeholder="e.g. Sponge Cake 500g" /></label>
+      <label class="field">Product Code<input id="nap-code" placeholder="e.g. SC500-1907A" /></label>
+      <label class="field" style="grid-column:1/-1;">Allergen Status<select id="nap-status">${ALLERGEN_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <div class="field" style="grid-column:1/-1;">
+        <span>Allergens Present</span>
+        <div class="flex-wrap">${ALLERGEN_LIST.map(a=>`<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" class="nap-allergen-cb" value="${a}" style="width:auto;" />${a}</label>`).join('')}</div>
+      </div>
+      <label class="field" style="grid-column:1/-1;">Notes<input id="nap-notes" placeholder="Optional notes…" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-allergen-product">Cancel</button>
+        <button class="btn btn-primary" data-action="create-allergen-product">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderAllergenProductRow(p){
+  const open = openAllergenProductId === p.id;
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-allergen-product="${p.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(p.productName)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(p.productCode)||'—'}</span></div>
+            <div class="audit-sub">${(p.allergensPresent||[]).join(', ')||'None specified'}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${allergenStatusTone[p.status]||'neutral'}">${p.status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderAllergenProductDetail(p)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderAllergenProductDetail(p){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Product Name<input data-allergen-product-field="${p.id}:productName" value="${esc(p.productName)}" /></label>
+      <label class="field">Product Code<input data-allergen-product-field="${p.id}:productCode" value="${esc(p.productCode)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Allergen Status<select data-allergen-product-field="${p.id}:status">${ALLERGEN_STATUSES.map(s=>`<option ${s===p.status?'selected':''}>${s}</option>`).join('')}</select></label>
+      <div class="field" style="grid-column:1/-1;">
+        <span>Allergens Present</span>
+        <div class="flex-wrap">${ALLERGEN_LIST.map(a=>`<label style="display:inline-flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" data-allergen-product-tag="${p.id}:${a}" ${(p.allergensPresent||[]).includes(a)?'checked':''} style="width:auto;" />${a}</label>`).join('')}</div>
+      </div>
+      <label class="field" style="grid-column:1/-1;">Notes<input data-allergen-product-field="${p.id}:notes" value="${esc(p.notes)}" /></label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-allergen-product" data-allergen-product="${p.id}">Delete Product Entry</button>
+    </div>
+  `;
+}
+
+/* ---------- CIP Cleaning Management ---------- */
+function cipStatus(c){
+  if(c.status==="Inactive") return "Inactive";
+  if(!c.nextDueDate) return "On Track";
+  const days = daysUntil(c.nextDueDate);
+  if(days<0) return "Overdue";
+  if(days<=1) return "Due Soon";
+  return "On Track";
+}
+
+function renderCip(){
+  const all = state.cipSchedules;
+  const filtered = all.filter(c => cipStatusFilter==="All" || cipStatus(c)===cipStatusFilter);
+  const overdueCount = all.filter(c=>cipStatus(c)==="Overdue").length;
+  const openDeviations = state.cipDeviations.filter(d=>d.status==="Open").length;
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🧼 CIP Cleaning Management</h2>
+      <div class="flex-wrap">
+        <button class="btn btn-ghost" data-action="export-cip-csv">⬇ CSV</button>
+        <button class="btn btn-primary" data-action="toggle-new-cip">+ New Equipment Schedule</button>
+      </div>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("🧼", "Equipment Tracked", all.length)}
+      ${statCard("⏰", "Overdue Cleans", overdueCount)}
+      ${statCard("⚠", "Open Deviations", openDeviations)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
+        ${["All","On Track","Due Soon","Overdue","Inactive"].map(f=>`<button class="status-pill ${cipStatusFilter===f?'active':''}" data-cip-filter="${f}">${f}</button>`).join('')}
+      </div>
+    </div>
+    ${showNewCip ? renderNewCipForm() : ''}
+    <div style="margin-bottom:20px;">
+      ${filtered.length===0 ? `<p class="muted-italic">No cleaning schedules defined yet.</p>` : filtered.map(c=>renderCipRow(c)).join('')}
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">⚠ CIP Non-Conformances</h3>
+      <div class="grid2">
+        <label class="field">Date<input type="date" id="cd-date" value="${today()}" /></label>
+        <label class="field">Equipment<input id="cd-equipment" placeholder="e.g. Milk Tank 01" /></label>
+        <label class="field" style="grid-column:1/-1;">Deviation Type<input id="cd-type" placeholder="e.g. Low chemical concentration, failed ATP test" /></label>
+        <label class="field" style="grid-column:1/-1;">Corrective Action<input id="cd-action" placeholder="e.g. Re-clean, recalibrate dosing pump" /></label>
+        <label class="field">Status<select id="cd-status"><option>Open</option><option>Closed</option></select></label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" data-action="add-cip-deviation">+ Log Deviation</button>
+      </div>
+      <div class="top-border">
+        ${state.cipDeviations.length===0 ? `<p class="muted-italic">No CIP deviations logged.</p>` : state.cipDeviations.map(d=>`
+          <div style="display:flex;justify-content:space-between;align-items:start;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;gap:8px;">
+            <div style="flex:1;min-width:0;">
+              <strong>${esc(d.equipment)}</strong> — ${esc(d.type)} <span class="muted-italic">(${d.date})</span>
+              ${d.action?`<div>Action: ${esc(d.action)}</div>`:''}
+            </div>
+            <span class="tag tag-${d.status==='Open'?'rust':'green'}">${d.status}</span>
+            <button class="x-btn" data-action="delete-cip-deviation" data-deviation="${d.id}">✕</button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function renderNewCipForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Equipment<input id="nc-equipment" placeholder="e.g. Milk Tank 01" /></label>
+      <label class="field">Cleaning Type<select id="nc-clean-type">${CIP_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
+      <label class="field">Frequency<input id="nc-frequency" placeholder="e.g. Daily, After allergen change" /></label>
+      <label class="field">Responsible Person<input id="nc-responsible" placeholder="e.g. Hygiene Team" /></label>
+      <label class="field">Last Completed Date<input type="date" id="nc-last-date" /></label>
+      <label class="field">Next Due Date<input type="date" id="nc-next-date" value="${today()}" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-cip">Cancel</button>
+        <button class="btn btn-primary" data-action="create-cip">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderCipRow(c){
+  const open = openCipId === c.id;
+  const status = cipStatus(c);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-cip="${c.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(c.equipment)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(c.cleaningType)}</span></div>
+            <div class="audit-sub">${esc(c.frequency)||'—'}${c.nextDueDate?` · Next due: ${c.nextDueDate}`:''}</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          <span class="tag tag-${cipStatusTone[status]||'neutral'}">${status}</span>
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderCipDetail(c)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderCipDetail(c){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Equipment<input data-cip-field="${c.id}:equipment" value="${esc(c.equipment)}" /></label>
+      <label class="field">Cleaning Type<select data-cip-field="${c.id}:cleaningType">${CIP_TYPES.map(t=>`<option ${t===c.cleaningType?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label class="field">Frequency<input data-cip-field="${c.id}:frequency" value="${esc(c.frequency)}" /></label>
+      <label class="field">Responsible Person<input data-cip-field="${c.id}:responsible" value="${esc(c.responsible)}" /></label>
+      <label class="field">Last Completed Date<input type="date" data-cip-field="${c.id}:lastCompletedDate" value="${c.lastCompletedDate||''}" /></label>
+      <label class="field">Next Due Date<input type="date" data-cip-field="${c.id}:nextDueDate" value="${c.nextDueDate||''}" /></label>
+      <label class="field">Status<select data-cip-field="${c.id}:status"><option ${c.status==='Active'?'selected':''}>Active</option><option ${c.status==='Inactive'?'selected':''}>Inactive</option></select></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">CIP Verification Checklist</h3>
+      ${CIP_VERIFICATION_STEPS.map((label,i)=>`
+        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;">
+          <input type="checkbox" data-cip-verify="${c.id}:${i}" ${(c.verification&&c.verification[i])?'checked':''} style="width:auto;" /> ${label}
+        </label>
+      `).join('')}
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" data-action="mark-cip-complete" data-cip="${c.id}">✓ Mark Cleaning Complete Today</button>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-cip" data-cip="${c.id}">Delete Equipment Schedule</button>
+    </div>
+  `;
+}
+
 /* ---------- KPI metrics render ---------- */
 let showNewMetric = false;
 let openMetricId = null;
@@ -1670,10 +2055,7 @@ function renderMetrics(){
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">KPI Metrics</h2>
       <div class="flex-wrap">
-        ${allSamplesLoaded
-          ? `<button class="btn btn-ghost" data-action="seed-sample-metrics" disabled style="opacity:.55;cursor:default;">✓ Sample Metrics Loaded</button>
-             <button class="btn btn-ghost" data-action="reset-sample-metrics" title="Delete and reload all sample metrics fresh">↺ Reset Samples</button>`
-          : `<button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>`}
+        <button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>
         <button class="btn btn-ghost" data-action="export-metrics-csv">⬇ CSV</button>
         <button class="btn btn-ghost" data-action="export-metrics-pdf">📄 Export Report</button>
         <button class="btn btn-primary" data-action="toggle-new-metric">+ New Metric</button>
@@ -1906,7 +2288,7 @@ function renderChecklistDetail(c){
                 ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-checklist-item-note="${c.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
                 ${it.photo
                   ? `<div style="margin-top:6px;"><img src="${it.photo}" style="max-width:90px;max-height:90px;border-radius:6px;display:block;object-fit:cover;" /><button class="x-btn" data-action="remove-checklist-item-photo" data-checklist="${c.id}" data-section="${sec.id}" data-item="${it.id}" style="font-size:11px;margin-top:4px;">✕ Remove Photo</button></div>`
-                  : `<input type="file" accept="image/*" capture="environment" data-checklist-item-photo="${c.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
+                  : `<input type="file" accept="image/*" data-checklist-item-photo="${c.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
                 ` : ''}
               </div>
             </div>
@@ -2798,6 +3180,209 @@ function attachHandlers(){
     URL.revokeObjectURL(url);
   };
 
+  /* Supplier Management */
+  const toggleNewSupplier = document.querySelector('[data-action="toggle-new-supplier"]'); if(toggleNewSupplier) toggleNewSupplier.onclick=()=>{ showNewSupplier=!showNewSupplier; render(); };
+  const cancelNewSupplier = document.querySelector('[data-action="cancel-new-supplier"]'); if(cancelNewSupplier) cancelNewSupplier.onclick=()=>{ showNewSupplier=false; render(); };
+  const createSupplier = document.querySelector('[data-action="create-supplier"]');
+  if(createSupplier) createSupplier.onclick=()=>{
+    const name = document.getElementById('ns-name').value.trim();
+    if(!name) return;
+    const supplier = {
+      id: uid(), name,
+      category: document.getElementById('ns-category').value,
+      approvalStatus: document.getElementById('ns-approval').value,
+      riskRating: document.getElementById('ns-risk').value,
+      lastAssessmentDate: document.getElementById('ns-assessment-date').value,
+      contactPerson: document.getElementById('ns-contact').value,
+      notes: document.getElementById('ns-notes').value
+    };
+    state.suppliers.unshift(supplier);
+    openSupplierId = supplier.id; showNewSupplier=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-supplier]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleSupplier; openSupplierId = openSupplierId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-supplier-filter]').forEach(el=>el.onclick=()=>{
+    supplierStatusFilter = el.dataset.supplierFilter; render();
+  });
+  document.querySelectorAll('[data-supplier-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.supplierField.split(':');
+      const s = state.suppliers.find(x=>x.id===id);
+      if(!s) return;
+      s[field] = el.value; persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-supplier"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this supplier record? This cannot be undone.")) return;
+    state.suppliers = state.suppliers.filter(s=>s.id!==el.dataset.supplier);
+    openSupplierId = null; persist(); render();
+  });
+  const suppliersCsvBtn = document.querySelector('[data-action="export-suppliers-csv"]');
+  if(suppliersCsvBtn) suppliersCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Name","Category","Approval Status","Risk Rating","Last Assessment Date","Contact Person","Notes"],
+      state.suppliers.map(s=>[s.name, s.category||'', s.approvalStatus, s.riskRating||'', s.lastAssessmentDate||'', s.contactPerson||'', s.notes||'']),
+      `aqms-suppliers-${today()}.csv`
+    );
+  };
+
+  /* Allergen Management */
+  const toggleNewAllergenProduct = document.querySelector('[data-action="toggle-new-allergen-product"]'); if(toggleNewAllergenProduct) toggleNewAllergenProduct.onclick=()=>{ showNewAllergenProduct=!showNewAllergenProduct; render(); };
+  const cancelNewAllergenProduct = document.querySelector('[data-action="cancel-new-allergen-product"]'); if(cancelNewAllergenProduct) cancelNewAllergenProduct.onclick=()=>{ showNewAllergenProduct=false; render(); };
+  const createAllergenProduct = document.querySelector('[data-action="create-allergen-product"]');
+  if(createAllergenProduct) createAllergenProduct.onclick=()=>{
+    const productName = document.getElementById('nap-name').value.trim();
+    if(!productName) return;
+    const allergensPresent = [...document.querySelectorAll('.nap-allergen-cb:checked')].map(el=>el.value);
+    const product = {
+      id: uid(), productName,
+      productCode: document.getElementById('nap-code').value,
+      status: document.getElementById('nap-status').value,
+      allergensPresent,
+      notes: document.getElementById('nap-notes').value
+    };
+    state.allergenProducts.unshift(product);
+    openAllergenProductId = product.id; showNewAllergenProduct=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-allergen-product]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleAllergenProduct; openAllergenProductId = openAllergenProductId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-allergen-product-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.allergenProductField.split(':');
+      const p = state.allergenProducts.find(x=>x.id===id);
+      if(!p) return;
+      p[field] = el.value; persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-allergen-product-tag]').forEach(el=>{
+    el.onchange = () => {
+      const [id, allergen] = el.dataset.allergenProductTag.split(':');
+      const p = state.allergenProducts.find(x=>x.id===id);
+      if(!p) return;
+      if(!p.allergensPresent) p.allergensPresent = [];
+      if(el.checked){ if(!p.allergensPresent.includes(allergen)) p.allergensPresent.push(allergen); }
+      else { p.allergensPresent = p.allergensPresent.filter(a=>a!==allergen); }
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-allergen-product"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this product's allergen entry? This cannot be undone.")) return;
+    state.allergenProducts = state.allergenProducts.filter(p=>p.id!==el.dataset.allergenProduct);
+    openAllergenProductId = null; persist(); render();
+  });
+  const addAllergenIncident = document.querySelector('[data-action="add-allergen-incident"]');
+  if(addAllergenIncident) addAllergenIncident.onclick=()=>{
+    const product = document.getElementById('ai-product').value.trim();
+    if(!product) return;
+    state.allergenIncidents.unshift({
+      id: uid(),
+      date: document.getElementById('ai-date').value || today(),
+      product,
+      allergen: document.getElementById('ai-allergen').value,
+      rootCause: document.getElementById('ai-root-cause').value,
+      correctiveAction: document.getElementById('ai-corrective').value,
+      capaStatus: document.getElementById('ai-capa-status').value
+    });
+    persist(); render();
+  };
+  document.querySelectorAll('[data-action="delete-allergen-incident"]').forEach(el=>el.onclick=()=>{
+    state.allergenIncidents = state.allergenIncidents.filter(i=>i.id!==el.dataset.incident);
+    persist(); render();
+  });
+  const allergensCsvBtn = document.querySelector('[data-action="export-allergens-csv"]');
+  if(allergensCsvBtn) allergensCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Product Name","Product Code","Status","Allergens Present","Notes"],
+      state.allergenProducts.map(p=>[p.productName, p.productCode||'', p.status, (p.allergensPresent||[]).join('; '), p.notes||'']),
+      `aqms-allergen-register-${today()}.csv`
+    );
+  };
+
+  /* CIP Cleaning Management */
+  const toggleNewCip = document.querySelector('[data-action="toggle-new-cip"]'); if(toggleNewCip) toggleNewCip.onclick=()=>{ showNewCip=!showNewCip; render(); };
+  const cancelNewCip = document.querySelector('[data-action="cancel-new-cip"]'); if(cancelNewCip) cancelNewCip.onclick=()=>{ showNewCip=false; render(); };
+  const createCip = document.querySelector('[data-action="create-cip"]');
+  if(createCip) createCip.onclick=()=>{
+    const equipment = document.getElementById('nc-equipment').value.trim();
+    if(!equipment) return;
+    const schedule = {
+      id: uid(), equipment,
+      cleaningType: document.getElementById('nc-clean-type').value,
+      frequency: document.getElementById('nc-frequency').value,
+      responsible: document.getElementById('nc-responsible').value,
+      lastCompletedDate: document.getElementById('nc-last-date').value,
+      nextDueDate: document.getElementById('nc-next-date').value,
+      status: "Active",
+      verification: CIP_VERIFICATION_STEPS.map(()=>false)
+    };
+    state.cipSchedules.unshift(schedule);
+    openCipId = schedule.id; showNewCip=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-cip]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleCip; openCipId = openCipId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-cip-filter]').forEach(el=>el.onclick=()=>{
+    cipStatusFilter = el.dataset.cipFilter; render();
+  });
+  document.querySelectorAll('[data-cip-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.cipField.split(':');
+      const c = state.cipSchedules.find(x=>x.id===id);
+      if(!c) return;
+      c[field] = el.value; persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-cip-verify]').forEach(el=>{
+    el.onchange = () => {
+      const [id, idx] = el.dataset.cipVerify.split(':');
+      const c = state.cipSchedules.find(x=>x.id===id);
+      if(!c) return;
+      if(!c.verification) c.verification = CIP_VERIFICATION_STEPS.map(()=>false);
+      c.verification[idx] = el.checked;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="mark-cip-complete"]').forEach(el=>el.onclick=()=>{
+    const c = state.cipSchedules.find(x=>x.id===el.dataset.cip);
+    if(!c) return;
+    c.lastCompletedDate = today();
+    c.verification = CIP_VERIFICATION_STEPS.map(()=>false);
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-cip"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this equipment cleaning schedule? This cannot be undone.")) return;
+    state.cipSchedules = state.cipSchedules.filter(c=>c.id!==el.dataset.cip);
+    openCipId = null; persist(); render();
+  });
+  const addCipDeviation = document.querySelector('[data-action="add-cip-deviation"]');
+  if(addCipDeviation) addCipDeviation.onclick=()=>{
+    const equipment = document.getElementById('cd-equipment').value.trim();
+    const type = document.getElementById('cd-type').value.trim();
+    if(!equipment || !type) return;
+    state.cipDeviations.unshift({
+      id: uid(),
+      date: document.getElementById('cd-date').value || today(),
+      equipment, type,
+      action: document.getElementById('cd-action').value,
+      status: document.getElementById('cd-status').value
+    });
+    persist(); render();
+  };
+  document.querySelectorAll('[data-action="delete-cip-deviation"]').forEach(el=>el.onclick=()=>{
+    state.cipDeviations = state.cipDeviations.filter(d=>d.id!==el.dataset.deviation);
+    persist(); render();
+  });
+  const cipCsvBtn = document.querySelector('[data-action="export-cip-csv"]');
+  if(cipCsvBtn) cipCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Equipment","Cleaning Type","Frequency","Responsible","Last Completed","Next Due","Status"],
+      state.cipSchedules.map(c=>[c.equipment, c.cleaningType||'', c.frequency||'', c.responsible||'', c.lastCompletedDate||'', c.nextDueDate||'', cipStatus(c)]),
+      `aqms-cip-schedules-${today()}.csv`
+    );
+  };
+
   /* KPI metrics */
   const toggleNewMetric = document.querySelector('[data-action="toggle-new-metric"]'); if(toggleNewMetric) toggleNewMetric.onclick=()=>{ showNewMetric=!showNewMetric; metricSourceChoice="manual"; metricAutoTypeChoice=AUTO_METRIC_OPTIONS[0].id; render(); };
   const cancelNewMetric = document.querySelector('[data-action="cancel-new-metric"]'); if(cancelNewMetric) cancelNewMetric.onclick=()=>{ showNewMetric=false; render(); };
@@ -2869,12 +3454,13 @@ function attachHandlers(){
   const seedMetricsBtn = document.querySelector('[data-action="seed-sample-metrics"]');
   if(seedMetricsBtn) seedMetricsBtn.onclick=()=>{
     const added = seedSampleMetrics();
-    persist(); render();
-    alert(added>0 ? `${added} new sample metric${added===1?'':'s'} added.` : `All sample metrics are already loaded — nothing new to add. Use "+ New Metric" to add a custom one.`);
-  };
-  const resetMetricsBtn = document.querySelector('[data-action="reset-sample-metrics"]');
-  if(resetMetricsBtn) resetMetricsBtn.onclick=()=>{
-    if(!confirm("This will delete all sample metrics and reload them fresh with default values. Any custom edits or logged readings on sample metrics will be lost. Continue?")) return;
+    if(added>0){
+      persist(); render();
+      alert(`${added} new sample metric${added===1?'':'s'} added.`);
+      return;
+    }
+    // Nothing new to add — every sample metric already exists. Offer to reset just the samples.
+    if(!confirm(`All sample metrics are already loaded. Reset them to their default values?\n\nThis only affects the 23 sample metrics — any custom metrics you've added, and everything else in the app (audits, checklists, documents, training, HACCP, recalls), are untouched.`)) return;
     const sampleNames = new Set(SAMPLE_KPI_METRICS.map(sm=>sm.name));
     state.metrics = state.metrics.filter(m=>!sampleNames.has(m.name));
     seedSampleMetrics();
