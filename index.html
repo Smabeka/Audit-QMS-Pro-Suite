@@ -145,6 +145,8 @@ const STANDARDS = [
   "Customer Complaints & Change Management","Planned Job Observation (PJO)",
   "Security","Material Safety Data (MSDS)","Microbiological Analysis","Transport & Fleet Management"
 ];
+const AUDIT_TYPES = ["Internal","External"];
+const COPQ_CATEGORIES = ["Scrap & Rework","Customer Returns","Complaint Handling","Downtime & Delays","Recall Costs","Other"];
 const TEMPLATES = {
   "ISO 9001:2015":[
     {name:"4. Context of the Organization", items:["Internal/external issues relevant to the QMS identified and reviewed","Needs and expectations of interested parties documented"]},
@@ -367,10 +369,10 @@ function logHistory(a, text){
   a.history.push({ id: uid(), date: new Date().toISOString(), text });
 }
 
-function seedAudit(title, standard, area, sections, auditNumber){
+function seedAudit(title, standard, area, sections, auditNumber, auditType){
   return {
     id: uid(), auditNumber: auditNumber || null, title, standard, area, auditor:"", auditee:"", date: today(), status:"Planned",
-    riskLevel: "Medium", history: [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }],
+    riskLevel: "Medium", auditType: auditType || "Internal", history: [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }],
     sections: sections.map(s => ({ id: uid(), name: s.name, items: s.items.map(text => ({id:uid(), text, result:null, note:""})) })),
     findings: []
   };
@@ -432,14 +434,24 @@ let settingsOpenSection = null;
 let navGroupOpen = null;
 let navSubGroupOpen = null;
 let sensorySubTab = "Product Quality";
+let dashShowCopqForm = false;
+let dashShowCsatForm = false;
 if(!state.companySettings){
   state.companySettings = {
-    name: "SYDA MABEKA (PTY) LTD",
-    address: "12 Pretoria Road, Kempton Place, Johannesburg, Gauteng, 1619, South Africa",
+    name: "AQMS Pro Suite (Pty) Ltd",
+    address: "12 Pretoria Road, Kempton Park, 1619",
+    email: "Support@aqmsprosuite.com",
     footerText: "",
-    logoDataUrl: ""
+    logoDataUrl: "",
+    nextManagementReviewDate: ""
   };
 }
+if(state.companySettings && state.companySettings.name === "SYDA MABEKA (PTY) LTD"){
+  state.companySettings.name = "AQMS Pro Suite (Pty) Ltd";
+  state.companySettings.address = "12 Pretoria Road, Kempton Park, 1619";
+}
+if(!state.companySettings.email){ state.companySettings.email = "Support@aqmsprosuite.com"; }
+if(state.companySettings.nextManagementReviewDate===undefined){ state.companySettings.nextManagementReviewDate = ""; }
 if(!state.riskAssessments){ state.riskAssessments = []; }
 if(!state.metrics){ state.metrics = []; }
 if(!state.checklists){ state.checklists = []; }
@@ -467,6 +479,9 @@ if(!state.ppeIssueLogs){ state.ppeIssueLogs = []; }
 if(!state.pestControlLogs){ state.pestControlLogs = []; }
 if(!state.verificationLogs){ state.verificationLogs = []; }
 if(!state.recallDrills){ state.recallDrills = []; }
+if(!state.copqEntries){ state.copqEntries = []; }
+if(!state.csatEntries){ state.csatEntries = []; }
+state.audits.forEach(a=>{ if(!a.auditType){ a.auditType = "Internal"; } });
 state.sensoryEvaluations.forEach(e=>{ if(!e.category){ e.category = "Product Quality"; } });
 let checklistSeq = state.checklists.length;
 
@@ -852,7 +867,9 @@ function renderCompanyModal(){
         <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">This branding appears on PDF audit reports.</p>
         <div class="grid2" style="margin-bottom:10px;">
           <label class="field" style="grid-column:1/-1;">Company Name<input id="cs-name" value="${esc(c.name)}" placeholder="e.g. Siyathemba Catering" /></label>
-          <label class="field" style="grid-column:1/-1;">Company Address / Contact<input id="cs-address" value="${esc(c.address)}" placeholder="Address, phone, email…" /></label>
+          <label class="field" style="grid-column:1/-1;">Company Address<input id="cs-address" value="${esc(c.address)}" placeholder="Address, city, postal code…" /></label>
+          <label class="field" style="grid-column:1/-1;">Support Email<input id="cs-email" type="email" value="${esc(c.email)}" placeholder="e.g. support@yourcompany.com" /></label>
+          <label class="field" style="grid-column:1/-1;">Next Management Review Date<input id="cs-mgmt-review" type="date" value="${c.nextManagementReviewDate||''}" /></label>
           <label class="field" style="grid-column:1/-1;">Report Footer Text<input id="cs-footer" value="${esc(c.footerText)}" placeholder="e.g. Confidential — Internal Use Only" /></label>
           <label class="field" style="grid-column:1/-1;">Company Logo<input type="file" id="cs-logo" accept="image/*" /></label>
           ${c.logoDataUrl ? `<div style="grid-column:1/-1;"><img src="${c.logoDataUrl}" style="max-height:50px;max-width:140px;border:1px solid var(--line);border-radius:6px;padding:4px;" /></div>` : ''}
@@ -1054,6 +1071,112 @@ function renderDashboard(){
         </button>`;
       }).join('')}
     </div>
+    <div class="card p4" style="margin-top:16px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 4px;">📌 Executive Summary</h3>
+      <p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Rows marked "not tracked yet" don't have any entries logged yet.</p>
+      ${(() => {
+        const c = state.companySettings || {};
+        const mgmtDue = c.nextManagementReviewDate ? daysUntil(c.nextManagementReviewDate) : null;
+        const internalAudits = audits.filter(a=>(a.auditType||"Internal")==="Internal");
+        const externalAudits = audits.filter(a=>a.auditType==="External");
+        const internalClosed = internalAudits.filter(a=>a.status==="Closed").length;
+        const externalClosed = externalAudits.filter(a=>a.status==="Closed").length;
+        const latestExternal = [...externalAudits].sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
+        const custComplaints = state.sensoryEvaluations.filter(e=>(e.category||"Product Quality")==="Customer Complaint");
+        const custComplaintsOpen = custComplaints.filter(e=>e.actionRequired).length;
+        const supplierApproved = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
+        const copqTotal = state.copqEntries.reduce((sum,e)=>sum+(Number(e.amount)||0),0);
+        const csatAvg = state.csatEntries.length ? (state.csatEntries.reduce((sum,e)=>sum+(Number(e.score)||0),0)/state.csatEntries.length) : null;
+
+        const staticRows = [
+          { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint:"Set in ⚙ Company settings" },
+          { label:"Customer Complaints", value: `${custComplaints.length} logged · ${custComplaintsOpen} need action`, tone: custComplaintsOpen>0?'amber':'green', hint:"From Sensory Evaluation → Customer Complaints" },
+          { label:"Internal Audits Completed", value: internalAudits.length ? `${internalClosed} / ${internalAudits.length}` : null, tone: internalAudits.length && internalClosed===internalAudits.length?'green':'navy', hint:null },
+          { label:"External Audit Status", value: externalAudits.length ? `${externalClosed} / ${externalAudits.length} completed · Latest: ${latestExternal.status}` : null, tone: latestExternal?statusTone[latestExternal.status]:null, hint: externalAudits.length ? null : "No external audits logged — set Audit Type to External when creating/editing an audit" },
+          { label:"Compliance Trend (Last 12 Months)", value: overallScore===null?null:`${overallScore}%${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}`, tone: overallGrade.tone, hint:null },
+          { label:"Supplier Performance Trend", value: totalSuppliers ? `${Math.round((supplierApproved/totalSuppliers)*100)}% approved` : null, tone: supplierScore===null?null:complianceGrade(supplierScore).tone, hint:"Approval rate shown — trend over time not tracked yet" }
+        ];
+        const staticHtml = staticRows.map(r=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+            <div>
+              <div>${r.label}</div>
+              ${r.hint ? `<div class="muted-italic" style="font-size:11px;">${esc(r.hint)}</div>` : ''}
+            </div>
+            <span class="tag tag-${r.tone||'neutral'}">${r.value===null ? 'not tracked yet' : esc(r.value)}</span>
+          </div>
+        `).join('');
+
+        const recentCopq = [...state.copqEntries].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,3);
+        const copqHtml = `
+          <div style="padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              <div>Cost of Poor Quality (COPQ)</div>
+              <div class="flex-wrap">
+                <span class="tag tag-${state.copqEntries.length?'rust':'neutral'}">${state.copqEntries.length ? `R ${copqTotal.toLocaleString()} · ${state.copqEntries.length} entries` : 'not tracked yet'}</span>
+                <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px;" data-action="toggle-copq-form">${dashShowCopqForm?'Cancel':'+ Log Cost'}</button>
+              </div>
+            </div>
+            ${dashShowCopqForm ? `
+              <div class="grid3" style="margin-top:8px;">
+                <label class="field">Date<input type="date" id="copq-date" value="${today()}" /></label>
+                <label class="field">Category<select id="copq-category">${COPQ_CATEGORIES.map(cat=>`<option>${cat}</option>`).join('')}</select></label>
+                <label class="field">Cost (R)<input type="number" id="copq-amount" min="0" step="0.01" placeholder="0.00" /></label>
+                <label class="field" style="grid-column:1/-1;">Description<input id="copq-desc" placeholder="e.g. Rework of Batch B2207 — sealing defect" /></label>
+                <div style="grid-column:1/-1;display:flex;justify-content:flex-end;">
+                  <button class="btn btn-primary" data-action="create-copq">Save Entry</button>
+                </div>
+              </div>
+            ` : ''}
+            ${recentCopq.length ? `
+              <div style="margin-top:8px;">
+                ${recentCopq.map(e=>`
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);padding:3px 0;">
+                    <span>${e.date} · ${esc(e.category)} · ${esc(e.description)||'—'}</span>
+                    <span class="flex-wrap"><strong style="color:var(--text);">R ${Number(e.amount||0).toLocaleString()}</strong><button class="btn btn-ghost" style="padding:1px 6px;font-size:11px;" data-delete-copq="${e.id}">✕</button></span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        const recentCsat = [...state.csatEntries].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,3);
+        const csatHtml = `
+          <div style="padding:8px 0;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+              <div>Customer Satisfaction</div>
+              <div class="flex-wrap">
+                <span class="tag tag-${csatAvg===null?'neutral':(csatAvg>=4?'green':csatAvg>=3?'amber':'rust')}">${csatAvg===null ? 'not tracked yet' : `${csatAvg.toFixed(1)} / 5 · ${state.csatEntries.length} response(s)`}</span>
+                <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px;" data-action="toggle-csat-form">${dashShowCsatForm?'Cancel':'+ Log Score'}</button>
+              </div>
+            </div>
+            ${dashShowCsatForm ? `
+              <div class="grid3" style="margin-top:8px;">
+                <label class="field">Date<input type="date" id="csat-date" value="${today()}" /></label>
+                <label class="field">Customer / Account<input id="csat-customer" placeholder="e.g. Woolworths DC" /></label>
+                <label class="field">Score (1–5)<select id="csat-score">${[5,4,3,2,1].map(v=>`<option>${v}</option>`).join('')}</select></label>
+                <label class="field" style="grid-column:1/-1;">Comments<input id="csat-comments" placeholder="Optional" /></label>
+                <div style="grid-column:1/-1;display:flex;justify-content:flex-end;">
+                  <button class="btn btn-primary" data-action="create-csat">Save Score</button>
+                </div>
+              </div>
+            ` : ''}
+            ${recentCsat.length ? `
+              <div style="margin-top:8px;">
+                ${recentCsat.map(e=>`
+                  <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted);padding:3px 0;">
+                    <span>${e.date} · ${esc(e.customer)||'—'} ${e.comments?`· ${esc(e.comments)}`:''}</span>
+                    <span class="flex-wrap"><strong style="color:var(--text);">${e.score} / 5</strong><button class="btn btn-ghost" style="padding:1px 6px;font-size:11px;" data-delete-csat="${e.id}">✕</button></span>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+
+        return staticHtml + copqHtml + csatHtml;
+      })()}
+    </div>
   `;
 }
 let complianceChartInstance = null;
@@ -1126,6 +1249,7 @@ function renderAudits(){
         <label class="field">Title<input id="na-title" /></label>
         <label class="field">Standard<select id="na-standard">${STANDARDS.map(s=>`<option>${s}</option>`).join('')}</select></label>
         <label class="field">Department / Area<input id="na-area" /></label>
+        <label class="field">Audit Type<select id="na-audit-type">${AUDIT_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
         <div class="muted-italic" style="grid-column:1/-1;font-size:12px;">Checklist sections auto-populate from a starter template for the selected standard — you can edit or add to them after creating the audit.</div>
         <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
           <button class="btn btn-ghost" data-action="cancel-new-audit">Cancel</button>
@@ -1177,6 +1301,7 @@ function renderAuditDetail(a){
         <label class="field">Date<input type="date" data-audit-field="${a.id}:date" value="${a.date}" /></label>
         <label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>
         <label class="field">Risk Level<select data-audit-field="${a.id}:riskLevel">${RISK_LEVELS.map(s=>`<option ${s===a.riskLevel?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="field">Audit Type<select data-audit-field="${a.id}:auditType">${AUDIT_TYPES.map(t=>`<option ${t===(a.auditType||'Internal')?'selected':''}>${t}</option>`).join('')}</select></label>
       </div>
       <div class="top-border" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         ${score!==null ? `<div style="display:flex;align-items:center;gap:8px;"><span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span><span style="font-size:12px;color:var(--muted);">compliance score</span></div>` : `<span class="muted-italic">Score appears once checklist items are marked</span>`}
@@ -3276,23 +3401,23 @@ const SETTINGS_SECTIONS = [
     <p>AQMS Pro Suite was developed by combining practical experience in quality assurance, food safety, and compliance with modern software engineering to provide organizations with an efficient, reliable, and user-friendly digital audit management solution.</p>
   `},
   { key:"company", label:"Company", content: `
-    <p><strong>Company:</strong> SYDA MABEKA (PTY) LTD</p>
-    <p><strong>Business Address:</strong><br/>12 Pretoria Road<br/>Kempton Place<br/>Johannesburg, Gauteng<br/>1619<br/>South Africa</p>
+    <p><strong>Company:</strong> AQMS Pro Suite (Pty) Ltd</p>
+    <p><strong>Business Address:</strong><br/>12 Pretoria Road<br/>Kempton Park<br/>1619</p>
   `},
   { key:"contact", label:"Contact", content: `
     <p>For support, questions, or feedback:</p>
-    <p><a href="mailto:support@sydamabeka.com">support@sydamabeka.com</a></p>
+    <p><a href="mailto:Support@aqmsprosuite.com">Support@aqmsprosuite.com</a></p>
   `},
   { key:"privacy", label:"Privacy Policy", content: `
-    <p>AQMS Pro Suite runs entirely offline. All audit data, findings, CAPA records, and company settings are stored locally on your device using browser storage — nothing is sent to, or stored on, any server operated by SYDA MABEKA (PTY) LTD.</p>
+    <p>AQMS Pro Suite runs entirely offline. All audit data, findings, CAPA records, and company settings are stored locally on your device using browser storage — nothing is sent to, or stored on, any server operated by AQMS Pro Suite (Pty) Ltd.</p>
     <p>The app loads a small number of third-party resources over the internet (Google Fonts, and the Chart.js and SheetJS libraries used for analytics charts and Excel export) — these providers do not receive any of your audit data, only a standard request for the resource file itself.</p>
     <p>Because data is stored locally, you are responsible for backing it up (via the Backup feature) and for the security of the device you use the app on. Uninstalling the app or clearing browser site data will permanently delete locally stored audits unless you've exported a backup first.</p>
-    <p>Questions about this policy can be sent to <a href="mailto:support@sydamabeka.com">support@sydamabeka.com</a>.</p>
+    <p>Questions about this policy can be sent to <a href="mailto:Support@aqmsprosuite.com">Support@aqmsprosuite.com</a>.</p>
   `},
   { key:"version", label:"App Version", content: `
     <p><strong>AQMS Pro Suite — Version ${APP_VERSION}</strong></p>
-    <p style="margin-top:14px;">© 2026 SYDA MABEKA (PTY) LTD. All rights reserved.</p>
-    <p>AQMS Pro Suite is proprietary software developed and maintained by SYDA MABEKA (PTY) LTD. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
+    <p style="margin-top:14px;">© 2026 AQMS Pro Suite (Pty) Ltd. All rights reserved.</p>
+    <p>AQMS Pro Suite is proprietary software developed and maintained by AQMS Pro Suite (Pty) Ltd. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
   `}
 ];
 
@@ -3391,7 +3516,7 @@ function buildAuditPrintReport(a){
     ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
     : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>`;
   const brandName = c.name ? esc(c.name) : "AuditQMS Pro Suite";
-  const brandAddress = c.address ? `<div class="meta">${esc(c.address)}</div>` : '';
+  const brandAddress = c.address ? `<div class="meta">${esc(c.address)}${c.email?` &nbsp;·&nbsp; ${esc(c.email)}`:''}</div>` : (c.email ? `<div class="meta">${esc(c.email)}</div>` : '');
 
   document.getElementById('print-report').innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -3432,6 +3557,45 @@ function attachHandlers(){
     if(tab!==prevTab && tab!=="audits") openAuditId=null;
     render();
   });
+
+  /* Executive Summary — COPQ & CSAT quick log */
+  const toggleCopq = document.querySelector('[data-action="toggle-copq-form"]');
+  if(toggleCopq) toggleCopq.onclick=()=>{ dashShowCopqForm=!dashShowCopqForm; render(); };
+  const createCopq = document.querySelector('[data-action="create-copq"]');
+  if(createCopq) createCopq.onclick=()=>{
+    const amount = parseFloat(document.getElementById('copq-amount').value);
+    if(!amount || amount<=0) return;
+    state.copqEntries.unshift({
+      id: uid(),
+      date: document.getElementById('copq-date').value || today(),
+      category: document.getElementById('copq-category').value,
+      description: document.getElementById('copq-desc').value,
+      amount
+    });
+    dashShowCopqForm=false; persist(); render();
+  };
+  document.querySelectorAll('[data-delete-copq]').forEach(el=>el.onclick=()=>{
+    state.copqEntries = state.copqEntries.filter(e=>e.id!==el.dataset.deleteCopq);
+    persist(); render();
+  });
+  const toggleCsat = document.querySelector('[data-action="toggle-csat-form"]');
+  if(toggleCsat) toggleCsat.onclick=()=>{ dashShowCsatForm=!dashShowCsatForm; render(); };
+  const createCsat = document.querySelector('[data-action="create-csat"]');
+  if(createCsat) createCsat.onclick=()=>{
+    state.csatEntries.unshift({
+      id: uid(),
+      date: document.getElementById('csat-date').value || today(),
+      customer: document.getElementById('csat-customer').value,
+      score: parseInt(document.getElementById('csat-score').value, 10),
+      comments: document.getElementById('csat-comments').value
+    });
+    dashShowCsatForm=false; persist(); render();
+  };
+  document.querySelectorAll('[data-delete-csat]').forEach(el=>el.onclick=()=>{
+    state.csatEntries = state.csatEntries.filter(e=>e.id!==el.dataset.deleteCsat);
+    persist(); render();
+  });
+
   document.querySelectorAll('[data-jump-audit]').forEach(el=>el.onclick=()=>{
     jumpTo = el.dataset.jumpAudit; openAuditId = jumpTo; tab="audits";
     auditSearch = ""; auditStandardFilter = "All"; auditStatusFilter = "All"; auditRiskFilter = "All";
@@ -3445,11 +3609,12 @@ function attachHandlers(){
     if(!title) return;
     const standard = document.getElementById('na-standard').value;
     const area = document.getElementById('na-area').value;
+    const auditType = document.getElementById('na-audit-type').value;
     const tmpl = TEMPLATES[standard];
     const sections = tmpl ? tmpl.map(s=>({name:s.name, items:[...s.items]})) : [{name:"General", items:[]}];
     state.auditSeq = (state.auditSeq||0) + 1;
     const auditNumber = formatAuditNumber(state.auditSeq, new Date().getFullYear());
-    const a = seedAudit(title, standard, area, sections, auditNumber);
+    const a = seedAudit(title, standard, area, sections, auditNumber, auditType);
     state.audits.unshift(a);
     openAuditId = a.id; showNewAudit=false; persist(); render();
   };
@@ -4684,6 +4849,8 @@ function attachHandlers(){
   if(saveCompanyBtn) saveCompanyBtn.onclick=()=>{
     state.companySettings.name = document.getElementById('cs-name').value;
     state.companySettings.address = document.getElementById('cs-address').value;
+    state.companySettings.email = document.getElementById('cs-email').value;
+    state.companySettings.nextManagementReviewDate = document.getElementById('cs-mgmt-review').value;
     state.companySettings.footerText = document.getElementById('cs-footer').value;
     const logoFile = document.getElementById('cs-logo').files[0];
     if(logoFile){
