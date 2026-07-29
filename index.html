@@ -127,7 +127,7 @@ const PRO_GATE_ENABLED = false;
 function isPro(){ return !PRO_GATE_ENABLED || localStorage.getItem("aqms-pro-unlocked") === "true"; }
 function unlockPro(code){ if(code.trim() === PRO_CODE){ localStorage.setItem("aqms-pro-unlocked","true"); return true; } return false; }
 
-const APP_VERSION = "2.0.0 Beta";
+const APP_VERSION = "Enterprise Edition 2.0";
 const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2,9);
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
@@ -342,12 +342,25 @@ const cipStatusTone = {"On Track":"green","Due Soon":"amber",Overdue:"rust",Inac
 
 const SENSORY_ATTRIBUTES = ["Appearance","Color","Odor/Aroma","Taste/Flavor","Texture","Overall Acceptability"];
 const SENSORY_SAMPLE_TYPES = ["Raw Material","In-Process","Finished Product"];
+const SENSORY_CATEGORIES = ["Product Quality","New Product Development","Shelf-Life Study","Customer Complaint","Quality Release"];
 const sensoryResultTone = {Pass:"green",Borderline:"amber",Fail:"rust"};
 
 const BATCH_TYPES = ["Raw Material","Finished Product"];
 const BATCH_STATUSES = ["Released","Quarantine","Rejected"];
 const batchStatusTone = {Released:"green",Quarantine:"amber",Rejected:"rust"};
 const BATCH_UNITS = ["kg","L","units","g","ml","pallets","boxes"];
+
+const TEMP_CATEGORIES = ["Poultry","Dairy","Produce","Meat","Seafood","Bakery","Frozen","Dry Goods","Other"];
+
+const HACCP_DAILY_ITEMS = [
+  {section:"Receiving", text:"Receiving area temperature check (≤5°C for chilled goods)", limit:"≤5°C"},
+  {section:"Storage", text:"Cold storage temperature verified (0–5°C)", limit:"0–5°C"},
+  {section:"Storage", text:"Freezer temperature verified (-18°C or below)", limit:"≤-18°C"},
+  {section:"Hygiene", text:"Personal hygiene — all staff wearing PPE", limit:"Compliant"}
+];
+const NCR_SEVERITIES = ["Minor","Major","Critical"];
+const ncrSeverityTone = {Minor:"amber",Major:"rust",Critical:"rust"};
+const NCR_STATUSES = ["Open","Closed"];
 
 function logHistory(a, text){
   if(!a.history) a.history = [];
@@ -416,6 +429,9 @@ let darkMode = localStorage.getItem("aqms-dark") === "true";
 let pendingDeleteAuditId = null;
 let showCompanyModal = false;
 let settingsOpenSection = null;
+let navGroupOpen = null;
+let navSubGroupOpen = null;
+let sensorySubTab = "Product Quality";
 if(!state.companySettings){
   state.companySettings = {
     name: "SYDA MABEKA (PTY) LTD",
@@ -437,8 +453,21 @@ if(!state.cipSchedules){ state.cipSchedules = []; }
 if(!state.cipDeviations){ state.cipDeviations = []; }
 if(!state.sensoryEvaluations){ state.sensoryEvaluations = []; }
 if(!state.batches){ state.batches = []; }
+if(!state.tempProducts){ state.tempProducts = []; }
+if(!state.tempLogs){ state.tempLogs = []; }
+if(!state.haccpChecklistLogs){ state.haccpChecklistLogs = []; }
+if(!state.foodsafeNcrs){ state.foodsafeNcrs = []; }
 if(!state.productRecalls){ state.productRecalls = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
+if(!state.competencyRecords){ state.competencyRecords = []; }
+if(!state.medicalSurveillanceRecords){ state.medicalSurveillanceRecords = []; }
+if(!state.medicalCertRecords){ state.medicalCertRecords = []; }
+if(!state.foodHandlerDeclarations){ state.foodHandlerDeclarations = []; }
+if(!state.ppeIssueLogs){ state.ppeIssueLogs = []; }
+if(!state.pestControlLogs){ state.pestControlLogs = []; }
+if(!state.verificationLogs){ state.verificationLogs = []; }
+if(!state.recallDrills){ state.recallDrills = []; }
+state.sensoryEvaluations.forEach(e=>{ if(!e.category){ e.category = "Product Quality"; } });
 let checklistSeq = state.checklists.length;
 
 function riskLevelFromScore(score){
@@ -617,6 +646,145 @@ function photoAttachControl(dataAttrName, idPath, hasPhoto){
   return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:6px;">📷 ${hasPhoto?'Replace':'Add'} Photo<input type="file" accept="image/*" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
 }
 
+/* ---------- Grouped navigation (Enterprise Edition 2.0) ---------- */
+function renderComingSoon(icon, title, blurb, plannedItems){
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">${icon} ${title}</h2>
+      <span class="tag tag-navy">Coming Soon</span>
+    </div>
+    <div class="card p4">
+      <p style="margin:0 0 10px;">${esc(blurb)}</p>
+      ${plannedItems && plannedItems.length ? `
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:8px;">Planned for this module</div>
+        <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.8;">
+          ${plannedItems.map(i=>`<li>${esc(i)}</li>`).join('')}
+        </ul>
+      ` : ''}
+    </div>
+  `;
+}
+
+const NAV_TREE = [
+  { id:"nav-dashboard", icon:"📊", label:"Dashboard", action(){ tab="dashboard"; } },
+  { id:"nav-audit", icon:"📋", label:"Audit Management", children:[
+      { id:"nav-audit-register", label:"Audit Register", action(){ tab="audits"; } },
+      { id:"nav-audit-checklists", label:"Checklists", action(){ tab="checklists"; } }
+    ]
+  },
+  { id:"nav-documents", icon:"📄", label:"Document Control", action(){ tab="documents"; } },
+  { id:"nav-capa", icon:"⚠️", label:"CAPA", action(){ tab="capa"; } },
+  { id:"nav-risk", icon:"📈", label:"Risk Management", action(){ tab="risk"; } },
+  { id:"nav-people", icon:"👥", label:"People Compliance", children:[
+      { id:"nav-people-training", label:"Employee Training", action(){ tab="training"; } },
+      { id:"nav-people-competency", label:"Competency Matrix", action(){ tab="people-competency"; } },
+      { id:"nav-people-medsurv", label:"Medical Surveillance", action(){ tab="people-medsurv"; } },
+      { id:"nav-people-medexpiry", label:"Medical Certificate Expiry", action(){ tab="people-medexpiry"; } },
+      { id:"nav-people-foodhandler", label:"Food Handler Declarations", action(){ tab="people-foodhandler"; } },
+      { id:"nav-people-ppe", label:"PPE Compliance", action(){ tab="people-ppe"; } }
+    ]
+  },
+  { id:"nav-suppliers", icon:"🚚", label:"Supplier Management", action(){ tab="suppliers"; } },
+  { id:"nav-sensory", icon:"🧪", label:"Sensory Evaluation", children: SENSORY_CATEGORIES.map((c,i)=>({
+      id:"nav-sensory-"+i, label:c,
+      isActive(){ return tab==="sensory" && sensorySubTab===c; },
+      action(){ tab="sensory"; sensorySubTab=c; }
+    }))
+  },
+  { id:"nav-traceability", icon:"📦", label:"Traceability", children:[
+      { id:"nav-trace-batch", label:"Batch Tracking", isActive(){ return tab==="traceability" && batchTypeFilter==="All"; }, action(){ tab="traceability"; batchTypeFilter="All"; } },
+      { id:"nav-trace-raw", label:"Raw Materials", isActive(){ return tab==="traceability" && batchTypeFilter==="Raw Material"; }, action(){ tab="traceability"; batchTypeFilter="Raw Material"; } },
+      { id:"nav-trace-finished", label:"Finished Products", isActive(){ return tab==="traceability" && batchTypeFilter==="Finished Product"; }, action(){ tab="traceability"; batchTypeFilter="Finished Product"; } },
+      { id:"nav-trace-lothistory", label:"Lot History", action(){ tab="trace-lot-history"; } },
+      { id:"nav-trace-recall", label:"Product Recall", action(){ tab="recalls"; } },
+      { id:"nav-trace-recall-eff", label:"Recall Effectiveness", action(){ tab="recall-effectiveness"; } },
+      { id:"nav-trace-recall-reports", label:"Recall Reports", action(){ tab="recall-reports"; } }
+    ]
+  },
+  { id:"nav-foodsafe", icon:"🛡️", label:"FoodSafe Tracker", children:[
+      { id:"nav-fs-haccp", label:"HACCP", action(){ tab="haccp"; } },
+      { id:"nav-fs-temperature", label:"Temperature", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="temperature"; }, action(){ tab="foodsafe"; foodsafeSubTab="temperature"; } },
+      { id:"nav-fs-cleaning", label:"Cleaning & Sanitation", children:[
+          { id:"nav-fs-cip", label:"CIP", action(){ tab="cip"; } },
+          { id:"nav-fs-checklist", label:"Food Safety Checklist", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="haccp-checklist"; }, action(){ tab="foodsafe"; foodsafeSubTab="haccp-checklist"; } },
+          { id:"nav-fs-pest", label:"Pest Control", action(){ tab="pest-control"; } }
+        ]
+      },
+      { id:"nav-fs-allergens", label:"Allergen Management", action(){ tab="allergens"; } },
+      { id:"nav-fs-ncr", label:"Non-Conformances", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="ncr"; }, action(){ tab="foodsafe"; foodsafeSubTab="ncr"; } },
+      { id:"nav-fs-verification", label:"Verification", action(){ tab="fs-verification"; } }
+    ]
+  },
+  { id:"nav-metrics", icon:"📈", label:"KPI Metrics", action(){ tab="metrics"; } },
+  { id:"nav-quality-cycle", icon:"🔄", label:"Quality Cycle", action(){ tab="quality-cycle"; } },
+  { id:"nav-analytics", icon:"📊", label:"Analytics", action(){ tab="analytics"; } },
+  { id:"nav-settings", icon:"⚙️", label:"Settings", action(){ tab="settings"; } }
+];
+
+function navNodeActive(node){
+  if(node.children) return node.children.some(navNodeActive);
+  if(node.isActive) return node.isActive();
+  return false;
+}
+function navFindPath(id, nodes=NAV_TREE, path=[]){
+  for(const n of nodes){
+    const newPath = [...path, n];
+    if(n.id===id) return newPath;
+    if(n.children){ const r = navFindPath(id, n.children, newPath); if(r) return r; }
+  }
+  return null;
+}
+function navFirstLeafAction(node){
+  if(node.action){ node.action(); return; }
+  if(node.children && node.children.length) navFirstLeafAction(node.children[0]);
+}
+function navHandleClick(id){
+  const path = navFindPath(id);
+  if(!path) return;
+  const node = path[path.length-1];
+  if(node.children){
+    const depth = path.length;
+    if(depth===1){
+      if(navGroupOpen===node.id){ navGroupOpen=null; navSubGroupOpen=null; }
+      else { navGroupOpen=node.id; navSubGroupOpen=null; navFirstLeafAction(node); }
+    } else {
+      if(navSubGroupOpen===node.id){ navSubGroupOpen=null; }
+      else { navSubGroupOpen=node.id; navFirstLeafAction(node); }
+    }
+  } else {
+    node.action();
+    navGroupOpen = path.length>=2 ? path[0].id : null;
+    navSubGroupOpen = path.length>=3 ? path[1].id : null;
+  }
+}
+function navBtnHtml(node){
+  const active = navNodeActive(node);
+  const icon = node.icon ? node.icon+" " : "";
+  return `<button data-navid="${node.id}" class="${active?'active':''}">${icon}${esc(node.label)}</button>`;
+}
+function renderMainNav(){
+  let html = `<div class="wrap tabnav" style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">`;
+  html += NAV_TREE.map(navBtnHtml).join('');
+  html += `</div>`;
+  if(navGroupOpen){
+    const group = NAV_TREE.find(n=>n.id===navGroupOpen);
+    if(group && group.children){
+      html += `<div class="wrap" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 0;">`;
+      html += group.children.map(c=>`<button class="status-pill ${navNodeActive(c)?'active':''}" data-navid="${c.id}">${esc(c.label)}</button>`).join('');
+      html += `</div>`;
+      if(navSubGroupOpen){
+        const sub = group.children.find(c=>c.id===navSubGroupOpen);
+        if(sub && sub.children){
+          html += `<div class="wrap" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0 0;padding-left:14px;">`;
+          html += sub.children.map(c=>`<button class="status-pill ${navNodeActive(c)?'active':''}" data-navid="${c.id}">${esc(c.label)}</button>`).join('');
+          html += `</div>`;
+        }
+      }
+    }
+  }
+  return html;
+}
+
 /* ---------- render ---------- */
 function render(){
   scoreCache.clear();
@@ -636,29 +804,21 @@ function render(){
             <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
           </div>
         </div>
-        <div class="wrap tabnav" style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">
-          ${navBtn("dashboard","Dashboard")}
-          ${navBtn("audits","Audit Register")}
-          ${navBtn("checklists","Checklists")}
-          ${navBtn("risk","Risk Register")}
-          ${navBtn("metrics","KPI Metrics")}
-          ${navBtn("capa","CAPA Tracker")}
-          ${navBtn("documents","Document Control")}
-          ${navBtn("training","Training Matrix")}
-          ${navBtn("haccp","HACCP")}
-          ${navBtn("recalls","Product Recall")}
-          ${navBtn("suppliers","Supplier Mgmt")}
-          ${navBtn("allergens","Allergen Mgmt")}
-          ${navBtn("cip","CIP Cleaning")}
-          ${navBtn("sensory","Sensory Eval")}
-          ${navBtn("traceability","Traceability")}
-          ${navBtn("quality-cycle","Quality Cycle")}
-          ${navBtn("analytics","Analytics")}
-          ${navBtn("settings","Settings")}
-        </div>
+        ${renderMainNav()}
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? renderSensory() : tab==="traceability" ? renderTraceability() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics() : renderSettings()}
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? renderSensory() : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        : tab==="people-competency" ? renderComingSoon("🎓","Competency Matrix","Track each employee's proficiency across the skills and competencies required for their role.",["Employee × skill grid","Proficiency levels (Basic / Competent / Proficient / Expert)","Reassessment due dates","CSV export"])
+        : tab==="people-medsurv" ? renderComingSoon("🩺","Medical Surveillance","Log occupational health exams (pre-employment, annual, exit) and track fitness-for-duty outcomes.",["Exam type, date and result","Next due date tracking","Fit / Fit with restriction / Unfit status","CSV export"])
+        : tab==="people-medexpiry" ? renderComingSoon("📅","Medical Certificate Expiry","Track expiry dates for employee medical certificates so renewals never get missed.",["Certificate type, issue and expiry date","Automatic expired / expiring-soon flags","Renewal reminders","CSV export"])
+        : tab==="people-foodhandler" ? renderComingSoon("🧻","Food Handler Declarations","Daily fitness-for-duty declarations for food handlers, covering symptoms and illness reporting.",["Daily Yes/No fitness declaration","Symptom notes","Signed-off history","CSV export"])
+        : tab==="people-ppe" ? renderComingSoon("🥽","PPE Compliance","Track PPE issue, condition and compliance per employee, alongside the PPE Compliance KPI metric.",["PPE item issue log per employee","Condition tracking (New / Good / Needs Replacement)","Ties into the PPE Compliance % KPI","CSV export"])
+        : tab==="pest-control" ? renderComingSoon("🐀","Pest Control","Log pest control inspections, findings and corrective actions from your contracted service provider.",["Inspection date and contractor","Areas inspected and findings","Corrective actions and next visit date","CSV export"])
+        : tab==="fs-verification" ? renderComingSoon("✔","Verification","Log verification activities that confirm your food safety controls are working as intended.",["Activity type (mock recall, internal audit, calibration, HACCP review…)","Verified by and result","Next due date","CSV export"])
+        : tab==="trace-lot-history" ? renderComingSoon("🕓","Lot History","A chronological, searchable history of every batch and lot movement across your traceability register.",["Full lot timeline by product","Forward/backward trace links","Status changes over time","CSV export"])
+        : tab==="recall-effectiveness" ? renderComingSoon("🎯","Recall Effectiveness","Log mock recall drills and measure how quickly and completely product could be traced and recovered.",["Drill date, product and scenario","Target vs actual time to trace","% of product traced","Pass/Fail against your effectiveness target"])
+        : tab==="recall-reports" ? renderComingSoon("🧾","Recall Reports","Generate summary and regulatory-ready reports from your product recall register.",["Recall summary by class, reason and status","Printable report per recall","Average completion time trends","CSV export"])
+        : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
@@ -680,6 +840,7 @@ function render(){
   if(tab==="analytics") renderCharts();
   if(tab==="metrics") renderMetricCharts();
   if(tab==="dashboard") renderComplianceChart();
+  if(tab==="foodsafe" && foodsafeSubTab==="dashboard") renderFoodSafeTempTrendChart();
 }
 
 function renderCompanyModal(){
@@ -861,6 +1022,7 @@ function renderDashboard(){
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length)}
       ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length)}
       ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length)}
+      ${statCard("🌡️", "Critical Temp Readings", state.tempLogs.filter(l=>tempLogIsCritical(l)).length)}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -895,6 +1057,19 @@ function renderDashboard(){
   `;
 }
 let complianceChartInstance = null;
+let foodsafeTempChartInstance = null;
+function renderFoodSafeTempTrendChart(){
+  if(typeof Chart === 'undefined') return;
+  if(foodsafeTempChartInstance){ foodsafeTempChartInstance.destroy(); foodsafeTempChartInstance = null; }
+  const canvas = document.getElementById('foodsafe-temp-trend-chart');
+  if(!canvas) return;
+  const sorted = [...state.tempLogs].sort((a,b)=>a.time.localeCompare(b.time)).slice(-20);
+  foodsafeTempChartInstance = new Chart(canvas, {
+    type: 'line',
+    data: { labels: sorted.map(l=>l.time.slice(5,16).replace('T',' ')), datasets: [{ label:'Temperature (°C)', data: sorted.map(l=>l.temp), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:2 }] },
+    options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:false }, x:{ grid:{display:false}, ticks:{maxRotation:0, autoSkip:true, maxTicksLimit:6} } } }
+  });
+}
 function renderComplianceChart(){
   if(typeof Chart === 'undefined') return;
   if(complianceChartInstance){ complianceChartInstance.destroy(); complianceChartInstance = null; }
@@ -1158,6 +1333,12 @@ let showNewBatch = false;
 let openBatchId = null;
 let batchTypeFilter = "All";
 let batchSearch = "";
+let showNewTempProduct = false;
+let openTempProductId = null;
+let foodsafeSubTab = "dashboard";
+let showNewNcr = false;
+let openNcrId = null;
+let haccpChecklistAnswers = {};
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
@@ -2090,13 +2271,14 @@ function sensoryResult(e){
 }
 
 function renderSensory(){
-  const all = state.sensoryEvaluations;
+  const inCategory = state.sensoryEvaluations.filter(e=>(e.category||"Product Quality")===sensorySubTab);
+  const all = inCategory;
   const filtered = all.filter(e => sensoryResultFilter==="All" || sensoryResult(e)===sensoryResultFilter);
   const passCount = all.filter(e=>sensoryResult(e)==="Pass").length;
   const failCount = all.filter(e=>sensoryResult(e)==="Fail").length;
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">🧪 Sensory Evaluation</h2>
+      <h2 class="serif" style="font-size:18px;margin:0;">🧪 Sensory Evaluation <span style="font-size:13px;color:var(--muted);font-weight:400;">— ${esc(sensorySubTab)}</span></h2>
       <div class="flex-wrap">
         <button class="btn btn-ghost" data-action="export-sensory-csv">⬇ CSV</button>
         <button class="btn btn-primary" data-action="toggle-new-sensory">+ New Evaluation</button>
@@ -2172,6 +2354,7 @@ function renderSensoryDetail(e){
       <label class="field">Evaluation Date<input type="date" data-sensory-field="${e.id}:evaluationDate" value="${e.evaluationDate||''}" /></label>
       <label class="field">Evaluator<input data-sensory-field="${e.id}:evaluator" value="${esc(e.evaluator)}" /></label>
       <label class="field" style="grid-column:1/-1;">Sample Type<select data-sensory-field="${e.id}:sampleType">${SENSORY_SAMPLE_TYPES.map(t=>`<option ${t===e.sampleType?'selected':''}>${t}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Category<select data-sensory-field="${e.id}:category">${SENSORY_CATEGORIES.map(c=>`<option ${c===(e.category||'Product Quality')?'selected':''}>${c}</option>`).join('')}</select></label>
       ${SENSORY_ATTRIBUTES.map(attr=>`
         <label class="field">${attr} (1–5)<select data-sensory-score="${e.id}:${attr}">${[5,4,3,2,1].map(v=>`<option ${String(e.scores?.[attr])===String(v)?'selected':''}>${v}</option>`).join('')}</select></label>
       `).join('')}
@@ -2349,6 +2532,283 @@ function renderBatchDetail(b){
     `}
     <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" data-action="delete-batch" data-batch="${b.id}">Delete Batch</button>
+    </div>
+  `;
+}
+
+/* ---------- Temperature Monitoring ---------- */
+function tempLogIsCritical(log){
+  const p = state.tempProducts.find(x=>x.id===log.productId);
+  if(!p) return false;
+  return log.temp < p.tempMin || log.temp > p.tempMax;
+}
+
+/* ---------- FoodSafe Tracker (Products, Temperature, HACCP Checklist, NCRs) ---------- */
+function foodsafeSubNavBtn(key, label){
+  return `<button class="status-pill ${foodsafeSubTab===key?'active':''}" data-foodsafe-subtab="${key}">${label}</button>`;
+}
+
+function renderFoodSafeTracker(){
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🛡️ FoodSafe Tracker</h2>
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap">
+        ${foodsafeSubNavBtn("dashboard","📊 Dashboard")}
+        ${foodsafeSubNavBtn("products","📦 Products")}
+        ${foodsafeSubNavBtn("temperature","🌡️ Temperature")}
+        ${foodsafeSubNavBtn("haccp-checklist","✅ HACCP Checklist")}
+        ${foodsafeSubNavBtn("ncr","⚠️ Non-Conformances")}
+      </div>
+    </div>
+    ${foodsafeSubTab==="dashboard" ? renderFoodSafeDashboard()
+      : foodsafeSubTab==="products" ? renderFoodSafeProducts()
+      : foodsafeSubTab==="temperature" ? renderFoodSafeTemperature()
+      : foodsafeSubTab==="haccp-checklist" ? renderFoodSafeHaccpChecklist()
+      : renderFoodSafeNcr()}
+  `;
+}
+
+function renderFoodSafeDashboard(){
+  const products = state.tempProducts;
+  const expiringSoon = products.filter(p=>{ if(!p.expiry) return false; const d = daysUntil(p.expiry); return d>=0 && d<=7; });
+  const openNcrs = state.foodsafeNcrs.filter(n=>n.status==="Open");
+  const criticalAlerts = state.tempLogs.filter(l=>tempLogIsCritical(l));
+  const todayLog = state.haccpChecklistLogs.find(l=>l.date===today());
+  const recentLogs = [...state.tempLogs].sort((a,b)=>b.time.localeCompare(a.time)).slice(0,20);
+  return `
+    <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
+      ${statCard("📦", "Total Products", products.length)}
+      ${statCard("⏰", "Expiring Soon (7d)", expiringSoon.length)}
+      ${statCard("⚠️", "Open Issues", openNcrs.length)}
+      ${statCard("✅", "HACCP Today", todayLog ? `${todayLog.results.filter(r=>r.result==='Pass').length}/${todayLog.results.length}` : "—")}
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="card p4">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">🌡️ Critical Temperature Alerts</div>
+        ${criticalAlerts.length===0 ? `<p class="muted-italic" style="margin:0;">✅ No critical alerts</p>` : criticalAlerts.slice(0,5).map(l=>`<div style="font-size:13px;padding:4px 0;">${esc(l.productName)} — ${l.temp}°C</div>`).join('')}
+      </div>
+      <div class="card p4">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">⚠️ Open Non-Conformances</div>
+        ${openNcrs.length===0 ? `<p class="muted-italic" style="margin:0;">✅ No open issues</p>` : openNcrs.slice(0,5).map(n=>`<div style="font-size:13px;padding:4px 0;">${esc(n.description)} <span class="tag tag-${ncrSeverityTone[n.severity]}">${n.severity}</span></div>`).join('')}
+      </div>
+    </div>
+    <div class="card p4">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">📈 Temperature Trend (Last 20 Readings)</div>
+      ${recentLogs.length===0 ? `<p class="muted-italic" style="margin:0;">No logs yet.</p>` : `<canvas id="foodsafe-temp-trend-chart" height="90"></canvas>`}
+    </div>
+  `;
+}
+
+function renderFoodSafeProducts(){
+  const products = state.tempProducts;
+  return `
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 class="serif" style="font-size:15px;margin:0;">Products — Safe Temperature Range</h3>
+        <div class="flex-wrap">
+          <button class="btn btn-ghost" data-action="export-temp-products-csv">⬇ CSV</button>
+          <button class="btn btn-primary" data-action="toggle-new-temp-product">+ Add Product</button>
+        </div>
+      </div>
+      ${showNewTempProduct ? renderNewTempProductForm() : ''}
+      ${products.length===0 ? `<p class="muted-italic">No products registered yet.</p>` : products.map(p=>renderTempProductRow(p)).join('')}
+    </div>
+  `;
+}
+
+function renderFoodSafeTemperature(){
+  const products = state.tempProducts;
+  const logs = state.tempLogs;
+  const recentLogs = [...logs].sort((a,b)=>b.time.localeCompare(a.time)).slice(0,20);
+  const criticalCount = logs.filter(l=>tempLogIsCritical(l)).length;
+  return `
+    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+      ${statCard("📦", "Products Tracked", products.length)}
+      ${statCard("📈", "Readings Logged", logs.length)}
+      ${statCard("🚨", "Critical Readings", criticalCount)}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 class="serif" style="font-size:15px;margin:0;">Log Reading</h3>
+        <button class="btn btn-ghost" data-action="export-temp-logs-csv">⬇ CSV</button>
+      </div>
+      ${products.length===0 ? `<p class="muted-italic">Add a product in the Products tab first, so readings can be checked against its safe range.</p>` : `
+        <div class="grid2">
+          <label class="field" style="grid-column:1/-1;">Product<select id="tl-product">${products.map(p=>`<option value="${p.id}">${esc(p.name)} (${p.tempMin}–${p.tempMax}°C)</option>`).join('')}</select></label>
+          <label class="field">Temperature (°C)<input type="number" step="any" id="tl-temp" placeholder="e.g. 3.5" /></label>
+          <label class="field">Location<input id="tl-location" placeholder="e.g. Cold Room A" /></label>
+          <label class="field" style="grid-column:1/-1;">Logged By<input id="tl-loggedby" placeholder="Your name" /></label>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+          <button class="btn btn-primary" data-action="add-temp-log">Log Temperature</button>
+        </div>
+      `}
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Recent Logs</h3>
+      ${recentLogs.length===0 ? `<p class="muted-italic">No logs yet.</p>` : recentLogs.map(l=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;gap:8px;">
+          <span style="flex:1;min-width:0;">${esc(l.productName)} — <strong>${l.temp}°C</strong>${l.location?` · ${esc(l.location)}`:''}${l.loggedBy?` · ${esc(l.loggedBy)}`:''} <span class="muted-italic">(${l.time.slice(0,16).replace('T',' ')})</span></span>
+          <span class="tag tag-${tempLogIsCritical(l)?'rust':'green'}">${tempLogIsCritical(l)?'Critical':'OK'}</span>
+          <button class="x-btn" data-action="delete-temp-log" data-log="${l.id}">✕</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderFoodSafeHaccpChecklist(){
+  const history = [...state.haccpChecklistLogs].sort((a,b)=>b.date.localeCompare(a.date));
+  const sections = [...new Set(HACCP_DAILY_ITEMS.map(i=>i.section))];
+  return `
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <h3 class="serif" style="font-size:16px;margin:0;">HACCP Daily Checklist</h3>
+        <span class="mono" style="font-size:11px;color:var(--muted);">${today()}</span>
+      </div>
+      <label class="field" style="margin:12px 0;">Checked By<input id="hc-checked-by" placeholder="Your full name" /></label>
+      ${sections.map(sec=>`
+        <div style="margin-bottom:10px;">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin-bottom:6px;">${sec}</div>
+          ${HACCP_DAILY_ITEMS.filter(i=>i.section===sec).map((item,idx)=>{
+            const globalIdx = HACCP_DAILY_ITEMS.indexOf(item);
+            const current = haccpChecklistAnswers[globalIdx] || "Pass";
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);gap:8px;">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-size:14px;">${esc(item.text)}</div>
+                  <div style="font-size:11px;color:var(--muted);">Critical limit: ${esc(item.limit)}</div>
+                </div>
+                <div class="result-toggle">
+                  <button data-haccp-checklist-toggle="${globalIdx}:Pass" class="${current==='Pass'?'active':''}" style="color:#3f6b2e;">✓</button>
+                  <button data-haccp-checklist-toggle="${globalIdx}:Fail" class="${current==='Fail'?'active':''}" style="color:#9b3f28;">✕</button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `).join('')}
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" data-action="submit-haccp-checklist">💾 Submit Log</button>
+      </div>
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">🕐 Recent Submissions</h3>
+      ${history.length===0 ? `<p class="muted-italic">No checklists submitted yet.</p>` : history.map(l=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+          <span>${l.date} — ${esc(l.checkedBy)||'—'}</span>
+          <span class="tag tag-${l.results.every(r=>r.result==='Pass')?'green':'rust'}">${l.results.filter(r=>r.result==='Pass').length}/${l.results.length} passed</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderFoodSafeNcr(){
+  const all = state.foodsafeNcrs;
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 class="serif" style="font-size:16px;margin:0;">Non-Conformances</h3>
+      <button class="btn btn-primary" data-action="toggle-new-ncr">+ Log Issue</button>
+    </div>
+    ${showNewNcr ? `
+      <div class="card p4 grid2" style="margin-bottom:16px;">
+        <label class="field">Date<input type="date" id="ncr-date" value="${today()}" /></label>
+        <label class="field">Product / Area<input id="ncr-product" placeholder="e.g. Fresh Chicken Breast" /></label>
+        <label class="field" style="grid-column:1/-1;">Description<input id="ncr-description" placeholder="What happened?" /></label>
+        <label class="field">Severity<select id="ncr-severity">${NCR_SEVERITIES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+        <label class="field">Status<select id="ncr-status">${NCR_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+        <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-ghost" data-action="cancel-new-ncr">Cancel</button>
+          <button class="btn btn-primary" data-action="create-ncr">Save</button>
+        </div>
+      </div>
+    ` : ''}
+    <div>
+      ${all.length===0 ? `<p class="muted-italic">No non-conformances logged. ✅</p>` : all.map(n=>`
+        <div class="card" style="margin-bottom:10px;overflow:hidden;">
+          <button class="audit-row" data-toggle-ncr="${n.id}">
+            <div style="min-width:0;">
+              <div class="audit-title">${esc(n.description)}</div>
+              <div class="audit-sub">${n.date} · ${esc(n.product)||'—'}</div>
+            </div>
+            <div class="flex-wrap">
+              <span class="tag tag-${ncrSeverityTone[n.severity]}">${n.severity}</span>
+              <span class="tag tag-${n.status==='Open'?'rust':'green'}">${n.status}</span>
+            </div>
+          </button>
+          ${openNcrId===n.id ? `
+            <div style="border-top:1px solid var(--line2);padding:16px;">
+              <div class="grid2" style="margin-bottom:12px;">
+                <label class="field">Date<input type="date" data-ncr-field="${n.id}:date" value="${n.date}" /></label>
+                <label class="field">Product / Area<input data-ncr-field="${n.id}:product" value="${esc(n.product)}" /></label>
+                <label class="field" style="grid-column:1/-1;">Description<input data-ncr-field="${n.id}:description" value="${esc(n.description)}" /></label>
+                <label class="field">Severity<select data-ncr-field="${n.id}:severity">${NCR_SEVERITIES.map(s=>`<option ${s===n.severity?'selected':''}>${s}</option>`).join('')}</select></label>
+                <label class="field">Status<select data-ncr-field="${n.id}:status">${NCR_STATUSES.map(s=>`<option ${s===n.status?'selected':''}>${s}</option>`).join('')}</select></label>
+              </div>
+              <div style="display:flex;justify-content:flex-end;">
+                <button class="btn btn-danger" data-action="delete-ncr" data-ncr="${n.id}">Delete</button>
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+function renderNewTempProductForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;background:var(--bg2,transparent);">
+      <label class="field">Product Name<input id="tp-name" placeholder="e.g. Fresh Chicken Breast" /></label>
+      <label class="field">Category<select id="tp-category">${TEMP_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
+      <label class="field">Supplier<input id="tp-supplier" placeholder="e.g. Rainbow Chickens" /></label>
+      <label class="field">Min Temp (°C)<input type="number" step="any" id="tp-tmin" value="0" /></label>
+      <label class="field">Max Temp (°C)<input type="number" step="any" id="tp-tmax" value="5" /></label>
+      <label class="field">Expiry Date<input type="date" id="tp-expiry" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-temp-product">Cancel</button>
+        <button class="btn btn-primary" data-action="create-temp-product">Save Product</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderTempProductRow(p){
+  const open = openTempProductId === p.id;
+  const expiryFlag = (() => { if(!p.expiry) return null; const d = daysUntil(p.expiry); if(d<0) return "Expired"; if(d<=7) return "Expiring Soon"; return null; })();
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-temp-product="${p.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(p.name)}</div>
+            <div class="audit-sub">${esc(p.category)||'—'} · ${esc(p.supplier)||'—'} · Safe range: ${p.tempMin}–${p.tempMax}°C</div>
+          </div>
+        </div>
+        <div class="flex-wrap">
+          ${expiryFlag ? `<span class="tag tag-${expiryFlag==='Expired'?'rust':'amber'}">${expiryFlag}</span>` : ''}
+        </div>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderTempProductDetail(p)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderTempProductDetail(p){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Product Name<input data-temp-product-field="${p.id}:name" value="${esc(p.name)}" /></label>
+      <label class="field">Category<select data-temp-product-field="${p.id}:category">${TEMP_CATEGORIES.map(c=>`<option ${c===p.category?'selected':''}>${c}</option>`).join('')}</select></label>
+      <label class="field">Supplier<input data-temp-product-field="${p.id}:supplier" value="${esc(p.supplier)}" /></label>
+      <label class="field">Min Temp (°C)<input type="number" step="any" data-temp-product-field="${p.id}:tempMin" value="${p.tempMin}" /></label>
+      <label class="field">Max Temp (°C)<input type="number" step="any" data-temp-product-field="${p.id}:tempMax" value="${p.tempMax}" /></label>
+      <label class="field">Expiry Date<input type="date" data-temp-product-field="${p.id}:expiry" value="${p.expiry||''}" /></label>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-temp-product" data-temp-product="${p.id}">Delete Product</button>
     </div>
   `;
 }
@@ -2966,7 +3426,12 @@ function buildAuditPrintReport(a){
 
 /* ---------- event handling ---------- */
 function attachHandlers(){
-  document.querySelectorAll('[data-nav]').forEach(el=>el.onclick=()=>{ tab = el.dataset.nav; if(tab!=="audits") openAuditId=null; render(); });
+  document.querySelectorAll('[data-navid]').forEach(el=>el.onclick=()=>{
+    const prevTab = tab;
+    navHandleClick(el.dataset.navid);
+    if(tab!==prevTab && tab!=="audits") openAuditId=null;
+    render();
+  });
   document.querySelectorAll('[data-jump-audit]').forEach(el=>el.onclick=()=>{
     jumpTo = el.dataset.jumpAudit; openAuditId = jumpTo; tab="audits";
     auditSearch = ""; auditStandardFilter = "All"; auditStatusFilter = "All"; auditRiskFilter = "All";
@@ -3716,6 +4181,7 @@ function attachHandlers(){
     });
     const record = {
       id: uid(), productName,
+      category: sensorySubTab,
       batchLot: document.getElementById('ns-sensory-batch').value,
       evaluationDate: document.getElementById('ns-sensory-date').value || today(),
       evaluator: document.getElementById('ns-sensory-evaluator').value,
@@ -3840,6 +4306,137 @@ function attachHandlers(){
       `aqms-traceability-batches-${today()}.csv`
     );
   };
+
+  /* Temperature Monitoring */
+  const toggleNewTempProduct = document.querySelector('[data-action="toggle-new-temp-product"]'); if(toggleNewTempProduct) toggleNewTempProduct.onclick=()=>{ showNewTempProduct=!showNewTempProduct; render(); };
+  const cancelNewTempProduct = document.querySelector('[data-action="cancel-new-temp-product"]'); if(cancelNewTempProduct) cancelNewTempProduct.onclick=()=>{ showNewTempProduct=false; render(); };
+  const createTempProduct = document.querySelector('[data-action="create-temp-product"]');
+  if(createTempProduct) createTempProduct.onclick=()=>{
+    const name = document.getElementById('tp-name').value.trim();
+    if(!name) return;
+    const product = {
+      id: uid(), name,
+      category: document.getElementById('tp-category').value,
+      supplier: document.getElementById('tp-supplier').value,
+      tempMin: Number(document.getElementById('tp-tmin').value),
+      tempMax: Number(document.getElementById('tp-tmax').value),
+      expiry: document.getElementById('tp-expiry').value
+    };
+    state.tempProducts.unshift(product);
+    showNewTempProduct=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-temp-product]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleTempProduct; openTempProductId = openTempProductId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-temp-product-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.tempProductField.split(':');
+      const p = state.tempProducts.find(x=>x.id===id);
+      if(!p) return;
+      p[field] = el.type==="number" ? Number(el.value) : el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-temp-product"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this product? Its logged temperature readings will remain but will no longer show a safe-range comparison.")) return;
+    state.tempProducts = state.tempProducts.filter(p=>p.id!==el.dataset.tempProduct);
+    openTempProductId = null; persist(); render();
+  });
+  const addTempLog = document.querySelector('[data-action="add-temp-log"]');
+  if(addTempLog) addTempLog.onclick=()=>{
+    const productId = document.getElementById('tl-product').value;
+    const tempVal = document.getElementById('tl-temp').value;
+    if(tempVal==='') return;
+    const product = state.tempProducts.find(p=>p.id===productId);
+    const log = {
+      id: uid(), productId, productName: product ? product.name : '',
+      temp: Number(tempVal),
+      location: document.getElementById('tl-location').value,
+      loggedBy: document.getElementById('tl-loggedby').value,
+      time: new Date().toISOString()
+    };
+    state.tempLogs.unshift(log);
+    document.getElementById('tl-temp').value = '';
+    document.getElementById('tl-location').value = '';
+    persist(); render();
+  };
+  document.querySelectorAll('[data-action="delete-temp-log"]').forEach(el=>el.onclick=()=>{
+    state.tempLogs = state.tempLogs.filter(l=>l.id!==el.dataset.log);
+    persist(); render();
+  });
+  const tempProductsCsvBtn = document.querySelector('[data-action="export-temp-products-csv"]');
+  if(tempProductsCsvBtn) tempProductsCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Product Name","Category","Supplier","Min Temp (°C)","Max Temp (°C)","Expiry"],
+      state.tempProducts.map(p=>[p.name, p.category||'', p.supplier||'', p.tempMin, p.tempMax, p.expiry||'']),
+      `aqms-temperature-products-${today()}.csv`
+    );
+  };
+  const tempLogsCsvBtn = document.querySelector('[data-action="export-temp-logs-csv"]');
+  if(tempLogsCsvBtn) tempLogsCsvBtn.onclick=()=>{
+    downloadCsv(
+      ["Product","Temperature (°C)","Location","Logged By","Time","Critical"],
+      state.tempLogs.map(l=>[l.productName, l.temp, l.location||'', l.loggedBy||'', l.time, tempLogIsCritical(l)?'Yes':'No']),
+      `aqms-temperature-logs-${today()}.csv`
+    );
+  };
+
+  /* FoodSafe Tracker sub-nav */
+  document.querySelectorAll('[data-foodsafe-subtab]').forEach(el=>el.onclick=()=>{
+    foodsafeSubTab = el.dataset.foodsafeSubtab; render();
+  });
+
+  /* HACCP Daily Checklist */
+  document.querySelectorAll('[data-haccp-checklist-toggle]').forEach(el=>el.onclick=()=>{
+    const [idx, result] = el.dataset.haccpChecklistToggle.split(':');
+    haccpChecklistAnswers[idx] = result;
+    render();
+  });
+  const submitHaccpChecklist = document.querySelector('[data-action="submit-haccp-checklist"]');
+  if(submitHaccpChecklist) submitHaccpChecklist.onclick=()=>{
+    const checkedBy = document.getElementById('hc-checked-by').value;
+    const results = HACCP_DAILY_ITEMS.map((item,idx)=>({ text:item.text, result: haccpChecklistAnswers[idx] || "Pass" }));
+    state.haccpChecklistLogs = state.haccpChecklistLogs.filter(l=>l.date!==today());
+    state.haccpChecklistLogs.unshift({ id: uid(), date: today(), checkedBy, results });
+    haccpChecklistAnswers = {};
+    persist(); render();
+  };
+
+  /* FoodSafe Non-Conformances */
+  const toggleNewNcr = document.querySelector('[data-action="toggle-new-ncr"]'); if(toggleNewNcr) toggleNewNcr.onclick=()=>{ showNewNcr=!showNewNcr; render(); };
+  const cancelNewNcr = document.querySelector('[data-action="cancel-new-ncr"]'); if(cancelNewNcr) cancelNewNcr.onclick=()=>{ showNewNcr=false; render(); };
+  const createNcr = document.querySelector('[data-action="create-ncr"]');
+  if(createNcr) createNcr.onclick=()=>{
+    const description = document.getElementById('ncr-description').value.trim();
+    if(!description) return;
+    const ncr = {
+      id: uid(),
+      date: document.getElementById('ncr-date').value || today(),
+      product: document.getElementById('ncr-product').value,
+      description,
+      severity: document.getElementById('ncr-severity').value,
+      status: document.getElementById('ncr-status').value
+    };
+    state.foodsafeNcrs.unshift(ncr);
+    showNewNcr=false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-ncr]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleNcr; openNcrId = openNcrId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-ncr-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.ncrField.split(':');
+      const n = state.foodsafeNcrs.find(x=>x.id===id);
+      if(!n) return;
+      n[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-ncr"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this non-conformance record?")) return;
+    state.foodsafeNcrs = state.foodsafeNcrs.filter(n=>n.id!==el.dataset.ncr);
+    openNcrId = null; persist(); render();
+  });
 
   /* KPI metrics */
   const toggleNewMetric = document.querySelector('[data-action="toggle-new-metric"]'); if(toggleNewMetric) toggleNewMetric.onclick=()=>{ showNewMetric=!showNewMetric; metricSourceChoice="manual"; metricAutoTypeChoice=AUTO_METRIC_OPTIONS[0].id; render(); };
