@@ -434,6 +434,7 @@ let showCompanyModal = false;
 let settingsOpenSection = null;
 let navGroupOpen = null;
 let navSubGroupOpen = null;
+let navMenuOpen = false;
 let sensorySubTab = "Product Quality";
 let dashShowCopqForm = false;
 let dashShowCsatForm = false;
@@ -780,7 +781,8 @@ function renderGenericRow(cfg, r){
               return `<label class="field" ${f.full?'style="grid-column:1/-1;"':''}>${esc(f.label)}${genericInputEl(f, r[f.id], `data-generic-field="${cfg.key}:${r.id}:${f.id}"`)}</label>`;
             }).join('')}
           </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
+            ${cfg.key==="lab-microbiology" ? `<button class="btn btn-ghost" data-print-micro-cert="${r.id}">🖨 Certificate</button>` : ''}
             <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">Delete</button>
           </div>
         </div>
@@ -944,22 +946,34 @@ const GENERIC_MODULES = [
     }
   },
   { key:"lab-microbiology", stateArr:"labResults", icon:"🧫", title:"Microbiology",
-    blurb:"Microbiological test results from internal or external labs.",
+    blurb:"Microbiological test results from internal or external labs. Fill in the certificate fields below to generate a printable Certificate of Analysis.",
     sortField:"date",
     filterFn: r=>r.testType==="Microbiological",
     presetValues:{ testType:"Microbiological" },
     fields:[
-      {id:"date", label:"Sample Date", type:"date", default:"today"},
-      {id:"sampleId", label:"Sample ID", required:true},
-      {id:"product", label:"Product / Batch"},
-      {id:"parameters", label:"Organisms Tested", placeholder:"e.g. TPC, E.coli, Salmonella, Listeria", full:true},
+      {id:"labReferenceNumber", label:"Lab Reference Number", placeholder:"e.g. 2026-07-20-286"},
+      {id:"labSampleId", label:"Laboratory Sample ID", placeholder:"e.g. BF69615"},
+      {id:"clientSampleId", label:"Client Sample ID", placeholder:"e.g. 12"},
+      {id:"product", label:"Product", required:true},
+      {id:"batchCode", label:"Batch Code"},
+      {id:"temperature", label:"Temperature (°C)"},
+      {id:"sampleCondition", label:"Sample Condition", type:"select", options:["As Received","Frozen","Chilled","Ambient"]},
+      {id:"date", label:"Analysis Start Date", type:"date", default:"today"},
+      {id:"productionDate", label:"Production Date", type:"date"},
+      {id:"bestBeforeDate", label:"Best Before Date", type:"date"},
+      {id:"sellByDate", label:"Sell-By Date", type:"date"},
+      {id:"useByDate", label:"Use-By Date", type:"date"},
+      {id:"parameters", label:"Test Type", placeholder:"e.g. Total Plate Count - Air Plate", full:true},
+      {id:"reportingUnit", label:"Reporting Unit", placeholder:"e.g. CFUs/plate, CFUs/g, per swab"},
+      {id:"methodReference", label:"Method Reference", placeholder:"e.g. S.O.P.M. 1C"},
+      {id:"result", label:"Result"},
+      {id:"sampleComments", label:"Sample Comments", full:true},
       {id:"lab", label:"Lab", type:"select", options:["Internal Lab","External Lab"]},
       {id:"specLimit", label:"Spec Limit"},
-      {id:"result", label:"Result"},
       {id:"status", label:"Status", type:"select", options:["Pass","Fail","Pending"]},
       {id:"dateReported", label:"Date Reported", type:"date"}
     ],
-    rowTitle:r=>r.sampleId||"Sample",
+    rowTitle:r=>r.clientSampleId ? `Sample ${r.clientSampleId}` : (r.labSampleId || "Sample"),
     rowSub:r=>`${r.product||'—'} · ${r.parameters||'—'} · ${r.date||'—'}`,
     rowTag:r=>({label:r.status||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.status]||"neutral"})
   },
@@ -1312,35 +1326,60 @@ function renderLabTrendAnalysis(){
       ${(() => {
         const fails = [...micro, ...chem, ...emp].filter(r=>r.status==="Fail");
         if(!fails.length) return `<p class="muted-italic">No open failures across Micro, Chemistry, or EMP. 🎉</p>`;
-        return fails.map(r=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(r.sampleId||r.swabId||'—')} · ${esc(r.product||r.location||'—')}</span><span class="tag tag-rust">${esc(r.date||'—')}</span></div>`).join('');
+        return fails.map(r=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(r.labSampleId||r.clientSampleId||r.sampleId||r.swabId||'—')} · ${esc(r.product||r.location||'—')}</span><span class="tag tag-rust">${esc(r.date||'—')}</span></div>`).join('');
       })()}
     </div>
   `;
 }
 
 const NAV_TREE = [
-  { id:"nav-dashboard", icon:"📊", label:"Dashboard", action(){ tab="dashboard"; } },
+  { id:"nav-dashboard", icon:"📊", label:"Dashboard", isActive(){ return tab==="dashboard"; }, action(){ tab="dashboard"; } },
   { id:"nav-audit", icon:"📋", label:"Audit Management", children:[
-      { id:"nav-audit-register", label:"Audit Register", action(){ tab="audits"; } },
-      { id:"nav-audit-planning", label:"Audit Planning", action(){ tab="audit-planning"; } },
-      { id:"nav-audit-checklists", label:"Checklists", action(){ tab="checklists"; } }
+      { id:"nav-audit-register", label:"Audit Register", isActive(){ return tab==="audits"; }, action(){ tab="audits"; } },
+      { id:"nav-audit-planning", label:"Audit Planning", isActive(){ return tab==="audit-planning"; }, action(){ tab="audit-planning"; } },
+      { id:"nav-audit-checklists", label:"Checklists", isActive(){ return tab==="checklists"; }, action(){ tab="checklists"; } }
     ]
   },
-  { id:"nav-documents", icon:"📄", label:"Document Control", action(){ tab="documents"; } },
-  { id:"nav-capa", icon:"⚠️", label:"CAPA", action(){ tab="capa"; } },
-  { id:"nav-risk", icon:"📈", label:"Risk Management", action(){ tab="risk"; } },
+  { id:"nav-capa", icon:"⚠️", label:"CAPA", isActive(){ return tab==="capa"; }, action(){ tab="capa"; } },
+  { id:"nav-risk", icon:"📈", label:"Risk Management", isActive(){ return tab==="risk"; }, action(){ tab="risk"; } },
+  { id:"nav-documents", icon:"📄", label:"Document Control", isActive(){ return tab==="documents"; }, action(){ tab="documents"; } },
   { id:"nav-people", icon:"👥", label:"People Compliance", children:[
-      { id:"nav-people-training", label:"Employee Training", action(){ tab="training"; } },
-      { id:"nav-people-competency", label:"Competency Matrix", action(){ tab="people-competency"; } },
-      { id:"nav-people-medsurv", label:"Medical Surveillance", action(){ tab="people-medsurv"; } },
-      { id:"nav-people-medexpiry", label:"Medical Certificate Expiry", action(){ tab="people-medexpiry"; } },
-      { id:"nav-people-foodhandler", label:"Food Handler Declarations", action(){ tab="people-foodhandler"; } },
-      { id:"nav-people-ppe", label:"PPE Compliance", action(){ tab="people-ppe"; } }
+      { id:"nav-people-training", label:"Employee Training", isActive(){ return tab==="training"; }, action(){ tab="training"; } },
+      { id:"nav-people-competency", label:"Competency Matrix", isActive(){ return tab==="people-competency"; }, action(){ tab="people-competency"; } },
+      { id:"nav-people-medsurv", label:"Medical Surveillance", isActive(){ return tab==="people-medsurv"; }, action(){ tab="people-medsurv"; } },
+      { id:"nav-people-medexpiry", label:"Medical Certificate Expiry", isActive(){ return tab==="people-medexpiry"; }, action(){ tab="people-medexpiry"; } },
+      { id:"nav-people-foodhandler", label:"Food Handler Declarations", isActive(){ return tab==="people-foodhandler"; }, action(){ tab="people-foodhandler"; } },
+      { id:"nav-people-ppe", label:"PPE Compliance", isActive(){ return tab==="people-ppe"; }, action(){ tab="people-ppe"; } }
     ]
   },
   { id:"nav-suppliers", icon:"🚚", label:"Supplier Management", children:[
-      { id:"nav-suppliers-list", label:"Suppliers", action(){ tab="suppliers"; } },
-      { id:"nav-suppliers-scar", label:"Corrective Actions (SCAR)", action(){ tab="supplier-scar"; } }
+      { id:"nav-suppliers-list", label:"Suppliers", isActive(){ return tab==="suppliers"; }, action(){ tab="suppliers"; } },
+      { id:"nav-suppliers-scar", label:"Corrective Actions (SCAR)", isActive(){ return tab==="supplier-scar"; }, action(){ tab="supplier-scar"; } }
+    ]
+  },
+  { id:"nav-foodsafe", icon:"🛡️", label:"FoodSafe Tracker", children:[
+      { id:"nav-fs-haccp", label:"HACCP", isActive(){ return tab==="haccp"; }, action(){ tab="haccp"; } },
+      { id:"nav-fs-temperature", label:"Temperature", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="temperature"; }, action(){ tab="foodsafe"; foodsafeSubTab="temperature"; } },
+      { id:"nav-fs-cleaning", label:"Cleaning & Sanitation", children:[
+          { id:"nav-fs-cip", label:"CIP", isActive(){ return tab==="cip"; }, action(){ tab="cip"; } },
+          { id:"nav-fs-checklist", label:"Food Safety Checklist", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="haccp-checklist"; }, action(){ tab="foodsafe"; foodsafeSubTab="haccp-checklist"; } },
+          { id:"nav-fs-pest", label:"Pest Control", isActive(){ return tab==="pest-control"; }, action(){ tab="pest-control"; } }
+        ]
+      },
+      { id:"nav-fs-allergens", label:"Allergen Management", isActive(){ return tab==="allergens"; }, action(){ tab="allergens"; } },
+      { id:"nav-fs-ncr", label:"Non-Conformances", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="ncr"; }, action(){ tab="foodsafe"; foodsafeSubTab="ncr"; } },
+      { id:"nav-fs-verification", label:"Verification", isActive(){ return tab==="fs-verification"; }, action(){ tab="fs-verification"; } },
+      { id:"nav-fs-calibration", label:"Calibration & Equipment", isActive(){ return tab==="calibration"; }, action(){ tab="calibration"; } }
+    ]
+  },
+  { id:"nav-traceability", icon:"📦", label:"Traceability", children:[
+      { id:"nav-trace-batch", label:"Batch Tracking", isActive(){ return tab==="traceability" && batchTypeFilter==="All"; }, action(){ tab="traceability"; batchTypeFilter="All"; } },
+      { id:"nav-trace-raw", label:"Raw Materials", isActive(){ return tab==="traceability" && batchTypeFilter==="Raw Material"; }, action(){ tab="traceability"; batchTypeFilter="Raw Material"; } },
+      { id:"nav-trace-finished", label:"Finished Products", isActive(){ return tab==="traceability" && batchTypeFilter==="Finished Product"; }, action(){ tab="traceability"; batchTypeFilter="Finished Product"; } },
+      { id:"nav-trace-lothistory", label:"Lot History", isActive(){ return tab==="trace-lot-history"; }, action(){ tab="trace-lot-history"; } },
+      { id:"nav-trace-recall", label:"Product Recall", isActive(){ return tab==="recalls"; }, action(){ tab="recalls"; } },
+      { id:"nav-trace-recall-eff", label:"Recall Effectiveness", isActive(){ return tab==="recall-effectiveness"; }, action(){ tab="recall-effectiveness"; } },
+      { id:"nav-trace-recall-reports", label:"Recall Reports", isActive(){ return tab==="recall-reports"; }, action(){ tab="recall-reports"; } }
     ]
   },
   { id:"nav-sensory", icon:"🧪", label:"Sensory Evaluation", children: SENSORY_CATEGORIES.map((c,i)=>({
@@ -1349,48 +1388,23 @@ const NAV_TREE = [
       action(){ tab="sensory"; sensorySubTab=c; }
     }))
   },
-  { id:"nav-traceability", icon:"📦", label:"Traceability", children:[
-      { id:"nav-trace-batch", label:"Batch Tracking", isActive(){ return tab==="traceability" && batchTypeFilter==="All"; }, action(){ tab="traceability"; batchTypeFilter="All"; } },
-      { id:"nav-trace-raw", label:"Raw Materials", isActive(){ return tab==="traceability" && batchTypeFilter==="Raw Material"; }, action(){ tab="traceability"; batchTypeFilter="Raw Material"; } },
-      { id:"nav-trace-finished", label:"Finished Products", isActive(){ return tab==="traceability" && batchTypeFilter==="Finished Product"; }, action(){ tab="traceability"; batchTypeFilter="Finished Product"; } },
-      { id:"nav-trace-lothistory", label:"Lot History", action(){ tab="trace-lot-history"; } },
-      { id:"nav-trace-recall", label:"Product Recall", action(){ tab="recalls"; } },
-      { id:"nav-trace-recall-eff", label:"Recall Effectiveness", action(){ tab="recall-effectiveness"; } },
-      { id:"nav-trace-recall-reports", label:"Recall Reports", action(){ tab="recall-reports"; } }
-    ]
-  },
-  { id:"nav-foodsafe", icon:"🛡️", label:"FoodSafe Tracker", children:[
-      { id:"nav-fs-haccp", label:"HACCP", action(){ tab="haccp"; } },
-      { id:"nav-fs-temperature", label:"Temperature", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="temperature"; }, action(){ tab="foodsafe"; foodsafeSubTab="temperature"; } },
-      { id:"nav-fs-cleaning", label:"Cleaning & Sanitation", children:[
-          { id:"nav-fs-cip", label:"CIP", action(){ tab="cip"; } },
-          { id:"nav-fs-checklist", label:"Food Safety Checklist", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="haccp-checklist"; }, action(){ tab="foodsafe"; foodsafeSubTab="haccp-checklist"; } },
-          { id:"nav-fs-pest", label:"Pest Control", action(){ tab="pest-control"; } }
-        ]
-      },
-      { id:"nav-fs-allergens", label:"Allergen Management", action(){ tab="allergens"; } },
-      { id:"nav-fs-ncr", label:"Non-Conformances", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="ncr"; }, action(){ tab="foodsafe"; foodsafeSubTab="ncr"; } },
-      { id:"nav-fs-verification", label:"Verification", action(){ tab="fs-verification"; } },
-      { id:"nav-fs-calibration", label:"Calibration & Equipment", action(){ tab="calibration"; } }
-    ]
-  },
   { id:"nav-lab", icon:"🧫", label:"Laboratory Management", children:[
-      { id:"nav-lab-microbiology", label:"Microbiology", action(){ tab="lab-microbiology"; } },
-      { id:"nav-lab-chemistry", label:"Chemistry / Analytical", action(){ tab="lab-chemistry"; } },
-      { id:"nav-lab-sample-register", label:"Sample Register", action(){ tab="lab-sample-register"; } },
-      { id:"nav-lab-emp", label:"Environmental Monitoring (EMP)", action(){ tab="emp"; } },
-      { id:"nav-lab-pt", label:"Proficiency Testing", action(){ tab="proficiency-testing"; } },
-      { id:"nav-lab-trend", label:"Trend Analysis", action(){ tab="lab-trend"; } },
-      { id:"nav-lab-coa", label:"COA Management", action(){ tab="lab-coa"; } },
-      { id:"nav-lab-calibration", label:"Equipment Calibration", action(){ tab="calibration"; } },
-      { id:"nav-lab-media-prep", label:"Media Preparation", action(){ tab="lab-media-prep"; } },
-      { id:"nav-lab-incubation", label:"Incubation Tracking", action(){ tab="lab-incubation"; } }
+      { id:"nav-lab-microbiology", label:"Microbiology", isActive(){ return tab==="lab-microbiology"; }, action(){ tab="lab-microbiology"; } },
+      { id:"nav-lab-chemistry", label:"Chemistry / Analytical", isActive(){ return tab==="lab-chemistry"; }, action(){ tab="lab-chemistry"; } },
+      { id:"nav-lab-sample-register", label:"Sample Register", isActive(){ return tab==="lab-sample-register"; }, action(){ tab="lab-sample-register"; } },
+      { id:"nav-lab-emp", label:"Environmental Monitoring (EMP)", isActive(){ return tab==="emp"; }, action(){ tab="emp"; } },
+      { id:"nav-lab-pt", label:"Proficiency Testing", isActive(){ return tab==="proficiency-testing"; }, action(){ tab="proficiency-testing"; } },
+      { id:"nav-lab-trend", label:"Trend Analysis", isActive(){ return tab==="lab-trend"; }, action(){ tab="lab-trend"; } },
+      { id:"nav-lab-coa", label:"COA Management", isActive(){ return tab==="lab-coa"; }, action(){ tab="lab-coa"; } },
+      { id:"nav-lab-calibration", label:"Equipment Calibration", isActive(){ return tab==="calibration"; }, action(){ tab="calibration"; } },
+      { id:"nav-lab-media-prep", label:"Media Preparation", isActive(){ return tab==="lab-media-prep"; }, action(){ tab="lab-media-prep"; } },
+      { id:"nav-lab-incubation", label:"Incubation Tracking", isActive(){ return tab==="lab-incubation"; }, action(){ tab="lab-incubation"; } }
     ]
   },
-  { id:"nav-metrics", icon:"📈", label:"KPI Metrics", action(){ tab="metrics"; } },
-  { id:"nav-quality-cycle", icon:"🔄", label:"Quality Cycle", action(){ tab="quality-cycle"; } },
-  { id:"nav-analytics", icon:"📊", label:"Analytics", action(){ tab="analytics"; } },
-  { id:"nav-settings", icon:"⚙️", label:"Settings", action(){ tab="settings"; } }
+  { id:"nav-metrics", icon:"📈", label:"KPI Metrics", isActive(){ return tab==="metrics"; }, action(){ tab="metrics"; } },
+  { id:"nav-quality-cycle", icon:"🔄", label:"Quality Cycle", isActive(){ return tab==="quality-cycle"; }, action(){ tab="quality-cycle"; } },
+  { id:"nav-analytics", icon:"📊", label:"Analytics", isActive(){ return tab==="analytics"; }, action(){ tab="analytics"; } },
+  { id:"nav-settings", icon:"⚙️", label:"Settings", isActive(){ return tab==="settings"; }, action(){ tab="settings"; } }
 ];
 
 function navNodeActive(node){
@@ -1417,42 +1431,56 @@ function navHandleClick(id){
   if(node.children){
     const depth = path.length;
     if(depth===1){
-      if(navGroupOpen===node.id){ navGroupOpen=null; navSubGroupOpen=null; }
-      else { navGroupOpen=node.id; navSubGroupOpen=null; navFirstLeafAction(node); }
+      navGroupOpen = navGroupOpen===node.id ? null : node.id;
+      navSubGroupOpen = null;
     } else {
-      if(navSubGroupOpen===node.id){ navSubGroupOpen=null; }
-      else { navSubGroupOpen=node.id; navFirstLeafAction(node); }
+      navSubGroupOpen = navSubGroupOpen===node.id ? null : node.id;
     }
   } else {
     node.action();
     navGroupOpen = path.length>=2 ? path[0].id : null;
     navSubGroupOpen = path.length>=3 ? path[1].id : null;
+    navMenuOpen = false;
   }
 }
-function navBtnHtml(node){
+function navRowHtml(node, depth){
   const active = navNodeActive(node);
   const icon = node.icon ? node.icon+" " : "";
-  return `<button data-navid="${node.id}" class="${active?'active':''}">${icon}${esc(node.label)}</button>`;
+  const hasChildren = !!node.children;
+  const isOpen = depth===0 ? navGroupOpen===node.id : navSubGroupOpen===node.id;
+  const pad = 14 + depth*18;
+  return `
+    <button data-navid="${node.id}" class="${active?'active':''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left;padding:10px 14px 10px ${pad}px;background:none;border:none;border-bottom:1px solid var(--line2);font-size:${depth===0?'14px':'13px'};color:inherit;">
+      <span>${icon}${esc(node.label)}</span>
+      ${hasChildren ? `<span style="color:var(--muted);font-size:11px;">${isOpen?'▲':'▼'}</span>` : ''}
+    </button>
+    ${hasChildren && isOpen ? node.children.map(c=>navRowHtml(c, depth+1)).join('') : ''}
+  `;
+}
+function activeBreadcrumb(){
+  for(const g of NAV_TREE){
+    if(!g.children){ if(navNodeActive(g)) return g.label; continue; }
+    for(const c of g.children){
+      if(c.children){
+        for(const gc of c.children){ if(navNodeActive(gc)) return `${g.label} › ${c.label} › ${gc.label}`; }
+      }
+      if(navNodeActive(c)) return `${g.label} › ${c.label}`;
+    }
+    if(navNodeActive(g)) return g.label;
+  }
+  return "Dashboard";
 }
 function renderMainNav(){
-  let html = `<div class="wrap tabnav" style="display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;">`;
-  html += NAV_TREE.map(navBtnHtml).join('');
-  html += `</div>`;
-  if(navGroupOpen){
-    const group = NAV_TREE.find(n=>n.id===navGroupOpen);
-    if(group && group.children){
-      html += `<div class="wrap" style="display:flex;gap:6px;flex-wrap:wrap;padding:8px 0 0;">`;
-      html += group.children.map(c=>`<button class="status-pill ${navNodeActive(c)?'active':''}" data-navid="${c.id}">${esc(c.label)}</button>`).join('');
-      html += `</div>`;
-      if(navSubGroupOpen){
-        const sub = group.children.find(c=>c.id===navSubGroupOpen);
-        if(sub && sub.children){
-          html += `<div class="wrap" style="display:flex;gap:6px;flex-wrap:wrap;padding:6px 0 0;padding-left:14px;">`;
-          html += sub.children.map(c=>`<button class="status-pill ${navNodeActive(c)?'active':''}" data-navid="${c.id}">${esc(c.label)}</button>`).join('');
-          html += `</div>`;
-        }
-      }
-    }
+  let html = `<div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+    <button data-action="toggle-nav-menu" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:6px 0;">
+      <span style="font-size:16px;">${navMenuOpen?'✕':'☰'}</span> Platform Modules
+    </button>
+    <span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(activeBreadcrumb())}</span>
+  </div>`;
+  if(navMenuOpen){
+    html += `<div class="card" style="margin-top:8px;max-height:60vh;overflow-y:auto;">
+      ${NAV_TREE.map(n=>navRowHtml(n, 0)).join('')}
+    </div>`;
   }
   return html;
 }
@@ -1468,7 +1496,7 @@ function render(){
         <div class="wrap headrow">
           <div class="brand">
             <div class="logo">AQ</div>
-            <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>SHEQ Management Platform</p></div>
+            <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
@@ -1663,6 +1691,14 @@ function renderDashboard(){
   const cipScore = activeCip.length>0 ? Math.round((activeCip.filter(c=>cipStatus(c)!=="Overdue").length/activeCip.length)*1000)/10 : null;
   const totalSensory = state.sensoryEvaluations.length;
   const sensoryScore = totalSensory>0 ? Math.round((state.sensoryEvaluations.filter(e=>sensoryResult(e)==="Pass").length/totalSensory)*1000)/10 : null;
+  const foodSafetyComponents = [haccpScore, cipScore, allergenScore].filter(s=>s!==null);
+  const foodSafetyScore = foodSafetyComponents.length ? Math.round((foodSafetyComponents.reduce((a,b)=>a+b,0)/foodSafetyComponents.length)*10)/10 : null;
+  const labTests = [
+    ...state.labResults.filter(r=>r.status),
+    ...state.empSwabs.filter(r=>r.status),
+    ...state.proficiencyTests.filter(r=>r.status)
+  ];
+  const labScore = labTests.length ? Math.round((labTests.filter(r=>r.status==="Pass").length/labTests.length)*1000)/10 : null;
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
     {label:"CAPA Management", score:capaScore},
@@ -1684,6 +1720,25 @@ function renderDashboard(){
   const trend = complianceTrend();
 
   return `
+    <div class="card p4" style="margin-bottom:16px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Enterprise KPI Snapshot</h3>
+      ${[
+        {label:"Overall Compliance Score", score:overallScore},
+        {label:"Audit Compliance", score:avgScore},
+        {label:"CAPA Completion", score:capaScore},
+        {label:"Training Compliance", score:trainingScore},
+        {label:"Document Control", score:documentScore},
+        {label:"Supplier Compliance", score:supplierScore},
+        {label:"Food Safety Compliance", score:foodSafetyScore},
+        {label:"Laboratory Performance", score:labScore}
+      ].map(k=>{
+        const g = complianceGrade(k.score);
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+          <span>${GRADE_EMOJI[g.tone]} ${k.label}</span>
+          <strong>${k.score===null?'no data':k.score+'%'}</strong>
+        </div>`;
+      }).join('')}
+    </div>
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
         <h3 class="serif" style="font-size:16px;margin:0;">${GRADE_EMOJI[overallGrade.tone]} Overall Compliance Score</h3>
@@ -4169,6 +4224,77 @@ function buildMetricsPrintReport(){
   `;
 }
 
+function buildMicroCertificatePrintReport(recordId){
+  const record = state.labResults.find(r=>r.id===recordId);
+  if(!record) return;
+  const group = record.labReferenceNumber
+    ? state.labResults.filter(r=>r.testType==="Microbiological" && r.labReferenceNumber===record.labReferenceNumber)
+    : [record];
+  const c = state.companySettings || {};
+  const logoHtml = c.logoDataUrl
+    ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
+    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>`;
+  const brandName = c.name ? esc(c.name) : "AuditQMS Pro Suite";
+  const brandAddress = c.address ? `<div class="meta">${esc(c.address)}${c.email?` &nbsp;·&nbsp; ${esc(c.email)}`:''}</div>` : (c.email ? `<div class="meta">${esc(c.email)}</div>` : '');
+
+  const blocks = group.map(r => `
+    <div style="margin-bottom:22px;padding-bottom:14px;border-bottom:1px solid #ddd;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+        <table style="width:auto;border:none;margin:0;">
+          <tbody>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Product:</td><td style="border:none;padding:1px 0;font-weight:600;">${esc(r.product)||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Client Sample ID:</td><td style="border:none;padding:1px 0;">${esc(r.clientSampleId)||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Batch Code:</td><td style="border:none;padding:1px 0;">${esc(r.batchCode)||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Temperature:</td><td style="border:none;padding:1px 0;">${esc(r.temperature)||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Sample Condition:</td><td style="border:none;padding:1px 0;">${esc(r.sampleCondition)||'As Received'}</td></tr>
+          </tbody>
+        </table>
+        <table style="width:auto;border:none;margin:0;">
+          <tbody>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Analysis start date:</td><td style="border:none;padding:1px 0;">${r.date||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Production Date:</td><td style="border:none;padding:1px 0;">${r.productionDate||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Best Before Date:</td><td style="border:none;padding:1px 0;">${r.bestBeforeDate||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Sell-By Date:</td><td style="border:none;padding:1px 0;">${r.sellByDate||'—'}</td></tr>
+            <tr><td style="border:none;padding:1px 12px 1px 0;color:#555;">Use-By Date:</td><td style="border:none;padding:1px 0;">${r.useByDate||'—'}</td></tr>
+          </tbody>
+        </table>
+        <div style="text-align:right;font-size:11px;color:#555;">
+          ${r.labReferenceNumber ? `<div>Our Lab Reference Number:<br/><strong style="color:#000;">${esc(r.labReferenceNumber)}</strong></div>` : ''}
+          ${r.labSampleId ? `<div style="margin-top:4px;">Laboratory Sample ID:<br/><strong style="color:#000;">${esc(r.labSampleId)}</strong></div>` : ''}
+        </div>
+      </div>
+      <table style="margin-top:10px;">
+        <thead><tr><th>Test Date</th><th>Test Type</th><th>Reporting Unit</th><th>Method Reference</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>${r.date||'—'}</td><td>${esc(r.parameters)||'—'}</td><td>${esc(r.reportingUnit)||'—'}</td><td>${esc(r.methodReference)||'—'}</td><td><strong>${esc(r.result)||'—'}</strong></td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:#555;margin-top:6px;">Sample Comments: ${esc(r.sampleComments)||''}</div>
+    </div>
+  `).join('');
+
+  document.getElementById('print-report').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+      ${logoHtml}
+      <div>
+        <h1>${brandName}</h1>
+        ${brandAddress}
+      </div>
+    </div>
+    <div style="text-align:center;font-size:17px;font-weight:700;margin:14px 0 18px;border-top:1px solid #333;border-bottom:1px solid #333;padding:8px 0;">Microbiology Certificate of Analysis</div>
+    ${blocks}
+    <div class="sig-row">
+      <div class="sig-line">Confirmed by: Technical Signatory &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
+    </div>
+    <div style="margin-top:18px;padding-top:10px;border-top:1px solid #ddd;font-size:9px;color:#777;">
+      Result terms: "No Growth" / "Not Detected" indicates the organism was not found at the reporting limit stated. "Positive" / "Detected" indicates the organism was found in the portion of sample analysed. Results relate only to the sample(s) as received and tested.
+    </div>
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
+      ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}Generated by ${brandName} — ${APP_VERSION}
+    </div>
+  `;
+}
+
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
@@ -4228,6 +4354,8 @@ function buildAuditPrintReport(a){
 
 /* ---------- event handling ---------- */
 function attachHandlers(){
+  const toggleNavMenu = document.querySelector('[data-action="toggle-nav-menu"]');
+  if(toggleNavMenu) toggleNavMenu.onclick=()=>{ navMenuOpen = !navMenuOpen; render(); };
   document.querySelectorAll('[data-navid]').forEach(el=>el.onclick=()=>{
     const prevTab = tab;
     navHandleClick(el.dataset.navid);
@@ -5729,6 +5857,11 @@ function attachHandlers(){
   };
 
   /* PDF export (Pro gated) */
+  document.querySelectorAll('[data-print-micro-cert]').forEach(el=>el.onclick=()=>{
+    if(!isPro()){ showProModal=true; render(); return; }
+    buildMicroCertificatePrintReport(el.dataset.printMicroCert);
+    window.print();
+  });
   document.querySelectorAll('[data-action="export-audit-pdf"]').forEach(el=>el.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
     const a = state.audits.find(x=>x.id===el.dataset.audit);
