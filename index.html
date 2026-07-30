@@ -147,6 +147,7 @@ const STANDARDS = [
 ];
 const AUDIT_TYPES = ["Internal","External"];
 const COPQ_CATEGORIES = ["Scrap & Rework","Customer Returns","Complaint Handling","Downtime & Delays","Recall Costs","Other"];
+const CLAUSE_OPTIONS = ["4. Context of the Organization","5. Leadership","6. Planning","7. Support","8. Operation","9. Performance Evaluation","10. Improvement"];
 const TEMPLATES = {
   "ISO 9001:2015":[
     {name:"4. Context of the Organization", items:["Internal/external issues relevant to the QMS identified and reviewed","Needs and expectations of interested parties documented"]},
@@ -436,6 +437,10 @@ let navSubGroupOpen = null;
 let sensorySubTab = "Product Quality";
 let dashShowCopqForm = false;
 let dashShowCsatForm = false;
+let genericShowTrends = {};
+let genericShowNew = {};
+let genericOpenId = {};
+let lotHistorySearch = "";
 if(!state.companySettings){
   state.companySettings = {
     name: "AQMS Pro Suite (Pty) Ltd",
@@ -479,6 +484,22 @@ if(!state.ppeIssueLogs){ state.ppeIssueLogs = []; }
 if(!state.pestControlLogs){ state.pestControlLogs = []; }
 if(!state.verificationLogs){ state.verificationLogs = []; }
 if(!state.recallDrills){ state.recallDrills = []; }
+if(!state.labResults){ state.labResults = []; }
+if(!state.empSwabs){ state.empSwabs = []; }
+if(!state.proficiencyTests){ state.proficiencyTests = []; }
+if(!state.auditPlans){ state.auditPlans = []; }
+if(!state.calibrationRecords){ state.calibrationRecords = []; }
+if(!state.sampleRegister){ state.sampleRegister = []; }
+if(!state.coaRecords){ state.coaRecords = []; }
+if(!state.mediaPrepRecords){ state.mediaPrepRecords = []; }
+if(!state.incubationRecords){ state.incubationRecords = []; }
+if(!state.complaintRecords){ state.complaintRecords = []; }
+if(!state.supplierScars){ state.supplierScars = []; }
+state.suppliers.forEach(s=>{
+  if(s.qualityScore===undefined){ s.qualityScore = ""; }
+  if(s.lastAuditDate===undefined){ s.lastAuditDate = ""; }
+  if(s.lastAuditResult===undefined){ s.lastAuditResult = ""; }
+});
 if(!state.copqEntries){ state.copqEntries = []; }
 if(!state.csatEntries){ state.csatEntries = []; }
 state.audits.forEach(a=>{ if(!a.auditType){ a.auditType = "Internal"; } });
@@ -680,10 +701,628 @@ function renderComingSoon(icon, title, blurb, plannedItems){
   `;
 }
 
+/* ---------- Generic CRUD log modules (People Compliance / FoodSafe / Traceability sub-modules) ---------- */
+function batchOptionsList(){
+  return ["None / Not in system", ...state.batches.map(b=>`${b.batchNo} — ${b.product}`)];
+}
+function capaOptionsList(){
+  return ["None / Not linked", ...state.audits.flatMap(a=>a.findings.map(f=>`${f.desc} (${a.title})`))];
+}
+function recallOptionsList(){
+  return ["None / Not applicable", ...state.productRecalls.map(r=>`${r.product} — ${r.status}`)];
+}
+function renderCheckboxGroup(name, options, currentCsv){
+  const selected = (currentCsv||'').split(',').map(s=>s.trim()).filter(Boolean);
+  return `<div style="display:flex;flex-direction:column;gap:3px;padding:6px 0;">${options.map(o=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="${esc(name)}" value="${esc(o)}" ${selected.includes(o)?'checked':''}/> ${esc(o)}</label>`).join('')}</div>`;
+}
+function genericInputEl(field, value, attrString){
+  if(field.type==='select'){
+    const opts = field.optionsFn ? field.optionsFn() : field.options;
+    return `<select ${attrString}>${opts.map(o=>`<option ${String(o)===String(value)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  }
+  if(field.type==='date'){
+    return `<input type="date" ${attrString} value="${esc(value||'')}" />`;
+  }
+  if(field.type==='time'){
+    return `<input type="time" ${attrString} value="${esc(value||'')}" />`;
+  }
+  if(field.type==='number'){
+    return `<input type="number" ${attrString} value="${value==null?'':esc(value)}" placeholder="${esc(field.placeholder||'')}" />`;
+  }
+  if(field.datalistId){
+    const opts = field.datalistOptions ? field.datalistOptions() : [];
+    return `<input ${attrString} list="${field.datalistId}" value="${esc(value||'')}" placeholder="${esc(field.placeholder||'')}" /><datalist id="${field.datalistId}">${opts.map(o=>`<option value="${esc(o)}"></option>`).join('')}</datalist>`;
+  }
+  return `<input ${attrString} value="${esc(value||'')}" placeholder="${esc(field.placeholder||'')}" />`;
+}
+function genericDefaultValue(field){
+  if(field.type==='date' && field.default==='today') return today();
+  return '';
+}
+function renderGenericNewForm(cfg){
+  return `
+    <div class="card p4 grid3" style="margin-bottom:16px;">
+      ${cfg.fields.filter(f=>!f.hidden).map(f=>{
+        if(f.type==='checkboxes'){
+          return `<label class="field" style="grid-column:1/-1;">${esc(f.label)}${renderCheckboxGroup(`cb-new::${cfg.key}::${f.id}`, f.options, '')}</label>`;
+        }
+        return `<label class="field" ${f.full?'style="grid-column:1/-1;"':''}>${esc(f.label)}${genericInputEl(f, genericDefaultValue(f), `id="gn-${cfg.key}-${f.id}"`)}</label>`;
+      }).join('')}
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-generic-cancel="${cfg.key}">Cancel</button>
+        <button class="btn btn-primary" data-generic-create="${cfg.key}">Save</button>
+      </div>
+    </div>
+  `;
+}
+function renderGenericRow(cfg, r){
+  const open = genericOpenId[cfg.key] === r.id;
+  const tag = cfg.rowTag(r);
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-generic-toggle="${cfg.key}:${r.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(cfg.rowTitle(r))}</div>
+            <div class="audit-sub">${esc(cfg.rowSub(r))}</div>
+          </div>
+        </div>
+        <div class="flex-wrap"><span class="tag tag-${tag.tone||'neutral'}">${esc(tag.label)}</span></div>
+      </button>
+      ${open ? `
+        <div style="border-top:1px solid var(--line2);padding:16px;">
+          <div class="grid3">
+            ${cfg.fields.map(f=>{
+              if(f.type==='checkboxes'){
+                return `<label class="field" style="grid-column:1/-1;">${esc(f.label)}${renderCheckboxGroup(`cb-edit::${cfg.key}::${r.id}::${f.id}`, f.options, r[f.id])}</label>`;
+              }
+              return `<label class="field" ${f.full?'style="grid-column:1/-1;"':''}>${esc(f.label)}${genericInputEl(f, r[f.id], `data-generic-field="${cfg.key}:${r.id}:${f.id}"`)}</label>`;
+            }).join('')}
+          </div>
+          <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+            <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">Delete</button>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+function renderGenericModule(cfg){
+  const rawArr = state[cfg.stateArr] || [];
+  const arr = cfg.filterFn ? rawArr.filter(cfg.filterFn) : rawArr;
+  const sorted = cfg.sortField ? [...arr].sort((a,b)=>String(b[cfg.sortField]||'').localeCompare(String(a[cfg.sortField]||''))) : arr;
+  const showTrends = genericShowTrends[cfg.key];
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">${cfg.icon} ${cfg.title}</h2>
+      <div class="flex-wrap">
+        ${cfg.trendsFn ? `<button class="btn btn-ghost" data-generic-trends="${cfg.key}">${showTrends?'📋 Register':'📈 Trends'}</button>` : ''}
+        <button class="btn btn-ghost" data-generic-csv="${cfg.key}">⬇ CSV</button>
+        <button class="btn btn-primary" data-generic-new="${cfg.key}">+ ${cfg.newLabel||'Add Record'}</button>
+      </div>
+    </div>
+    ${cfg.blurb ? `<p class="muted-italic" style="font-size:12px;margin:-10px 0 14px;">${esc(cfg.blurb)}</p>` : ''}
+    ${cfg.extraStats ? cfg.extraStats(arr) : ''}
+    ${showTrends && cfg.trendsFn ? cfg.trendsFn(arr) : `
+      ${genericShowNew[cfg.key] ? renderGenericNewForm(cfg) : ''}
+      <div>
+        ${sorted.length ? sorted.map(r=>renderGenericRow(cfg,r)).join('') : `<p class="muted-italic">No records logged yet.</p>`}
+      </div>
+    `}
+  `;
+}
+
+const GENERIC_MODULES = [
+  { key:"people-competency", stateArr:"competencyRecords", icon:"🎓", title:"Competency Matrix",
+    blurb:"Track each employee's proficiency across the skills and competencies required for their role.",
+    sortField:"assessedDate",
+    fields:[
+      {id:"employee", label:"Employee Name", required:true},
+      {id:"skill", label:"Skill / Competency", required:true},
+      {id:"level", label:"Proficiency Level", type:"select", options:["Not Assessed","Basic","Competent","Proficient","Expert"]},
+      {id:"assessedDate", label:"Assessed Date", type:"date", default:"today"},
+      {id:"assessor", label:"Assessed By"}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.skill||'—'} · Assessed ${r.assessedDate||'—'}`,
+    rowTag:r=>({label:r.level||"Not Assessed", tone:{Expert:"green",Proficient:"green",Competent:"navy",Basic:"amber","Not Assessed":"rust"}[r.level]||"neutral"})
+  },
+  { key:"people-medsurv", stateArr:"medicalSurveillanceRecords", icon:"🩺", title:"Medical Surveillance",
+    blurb:"Log occupational health exams and track fitness-for-duty outcomes.",
+    sortField:"examDate",
+    fields:[
+      {id:"employee", label:"Employee Name", required:true},
+      {id:"examType", label:"Exam Type", type:"select", options:["Pre-Employment","Annual","Exit","Audiometric","Spirometry","Vision"]},
+      {id:"examDate", label:"Exam Date", type:"date", default:"today"},
+      {id:"result", label:"Result", type:"select", options:["Fit","Fit with Restriction","Unfit","Pending"]},
+      {id:"nextDueDate", label:"Next Due Date", type:"date"}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.examType||'—'} · ${r.examDate||'—'}`,
+    rowTag:r=>({label:r.result||"Pending", tone:{Fit:"green","Fit with Restriction":"amber",Unfit:"rust",Pending:"navy"}[r.result]||"neutral"})
+  },
+  { key:"people-medexpiry", stateArr:"medicalCertRecords", icon:"📅", title:"Medical Certificate Expiry",
+    blurb:"Track expiry dates for employee medical certificates so renewals never get missed.",
+    sortField:"expiryDate",
+    fields:[
+      {id:"employee", label:"Employee Name", required:true},
+      {id:"certType", label:"Certificate Type", placeholder:"e.g. Food Handler Medical Certificate"},
+      {id:"issueDate", label:"Issue Date", type:"date"},
+      {id:"expiryDate", label:"Expiry Date", type:"date", required:true}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.certType||'—'} · expires ${r.expiryDate||'—'}`,
+    rowTag:r=>{
+      if(!r.expiryDate) return {label:"No expiry set", tone:"neutral"};
+      const d = daysUntil(r.expiryDate);
+      if(d<0) return {label:`Expired ${Math.abs(d)}d ago`, tone:"rust"};
+      if(d<=30) return {label:`Expiring in ${d}d`, tone:"amber"};
+      return {label:"Valid", tone:"green"};
+    }
+  },
+  { key:"people-foodhandler", stateArr:"foodHandlerDeclarations", icon:"🧻", title:"Food Handler Declarations",
+    blurb:"Daily fitness-for-duty declarations for food handlers, covering symptoms and illness reporting.",
+    sortField:"date",
+    fields:[
+      {id:"employee", label:"Employee Name", required:true},
+      {id:"date", label:"Date", type:"date", default:"today"},
+      {id:"fitForDuty", label:"Fit for Duty?", type:"select", options:["Yes","No"]},
+      {id:"symptoms", label:"Symptoms Noted", placeholder:"None / describe"}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.date||'—'}${r.symptoms?` · ${r.symptoms}`:''}`,
+    rowTag:r=>({label:r.fitForDuty||"—", tone: r.fitForDuty==="Yes"?"green":(r.fitForDuty==="No"?"rust":"neutral")})
+  },
+  { key:"people-ppe", stateArr:"ppeIssueLogs", icon:"🥽", title:"PPE Compliance",
+    blurb:"Log PPE issue and condition per employee — ties into the PPE Compliance % KPI Metric.",
+    sortField:"issueDate",
+    fields:[
+      {id:"employee", label:"Employee Name", required:true},
+      {id:"ppeItem", label:"PPE Item(s)", placeholder:"e.g. Hairnet, Apron, Gloves"},
+      {id:"issueDate", label:"Issue Date", type:"date", default:"today"},
+      {id:"condition", label:"Condition", type:"select", options:["New","Good","Needs Replacement"]}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.ppeItem||'—'} · issued ${r.issueDate||'—'}`,
+    rowTag:r=>({label:r.condition||"—", tone:{New:"green",Good:"navy","Needs Replacement":"rust"}[r.condition]||"neutral"})
+  },
+  { key:"pest-control", stateArr:"pestControlLogs", icon:"🐀", title:"Pest Control",
+    blurb:"Log pest control inspections, findings and corrective actions from your contracted service provider.",
+    sortField:"date",
+    fields:[
+      {id:"date", label:"Inspection Date", type:"date", default:"today"},
+      {id:"contractor", label:"Contractor", placeholder:"e.g. Rentokil"},
+      {id:"areasInspected", label:"Areas Inspected", placeholder:"e.g. Warehouse, dry store"},
+      {id:"findings", label:"Findings", placeholder:"None / describe", full:true},
+      {id:"actionTaken", label:"Action Taken", full:true},
+      {id:"nextVisitDate", label:"Next Visit Date", type:"date"}
+    ],
+    rowTitle:r=>`${r.contractor||'Inspection'} — ${r.date||'—'}`,
+    rowSub:r=>r.areasInspected||'—',
+    rowTag:r=>({label: r.findings ? "Findings Noted" : "Clear", tone: r.findings ? "amber" : "green"})
+  },
+  { key:"fs-verification", stateArr:"verificationLogs", icon:"✔", title:"Verification",
+    blurb:"Log verification activities that confirm your food safety controls are working as intended.",
+    sortField:"date",
+    fields:[
+      {id:"date", label:"Date", type:"date", default:"today"},
+      {id:"activityType", label:"Activity Type", type:"select", options:["Mock Recall","Internal Audit","Calibration Check","HACCP Plan Review","Environmental Swab","Other"]},
+      {id:"verifiedBy", label:"Verified By"},
+      {id:"result", label:"Result", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"nextDueDate", label:"Next Due Date", type:"date"}
+    ],
+    rowTitle:r=>r.activityType||"Verification",
+    rowSub:r=>`${r.date||'—'} · Verified by ${r.verifiedBy||'—'}`,
+    rowTag:r=>({label:r.result||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.result]||"neutral"})
+  },
+  { key:"recall-effectiveness", stateArr:"recallDrills", icon:"🎯", title:"Recall Effectiveness",
+    blurb:"Log mock recall drills to measure how quickly and completely product could be traced and recovered.",
+    sortField:"date",
+    fields:[
+      {id:"date", label:"Drill Date", type:"date", default:"today"},
+      {id:"product", label:"Product", required:true},
+      {id:"scenario", label:"Scenario", placeholder:"e.g. Allergen mislabel", full:true},
+      {id:"targetTimeMins", label:"Target Time (mins)", type:"number"},
+      {id:"actualTimeMins", label:"Actual Time (mins)", type:"number"},
+      {id:"percentTraced", label:"% Product Traced", type:"number"},
+      {id:"result", label:"Result", type:"select", options:["Pass","Fail"]}
+    ],
+    rowTitle:r=>r.product||"Drill",
+    rowSub:r=>`${r.date||'—'} · ${r.actualTimeMins??'—'}min · ${r.percentTraced??'—'}% traced`,
+    rowTag:r=>({label:r.result||"Pending", tone:r.result==="Pass"?"green":(r.result==="Fail"?"rust":"neutral")}),
+    extraStats:(arr)=>{
+      if(!arr.length) return '';
+      const avgTime = Math.round(arr.reduce((s,e)=>s+(Number(e.actualTimeMins)||0),0)/arr.length);
+      const avgTraced = Math.round(arr.reduce((s,e)=>s+(Number(e.percentTraced)||0),0)/arr.length);
+      const passRate = Math.round((arr.filter(e=>e.result==="Pass").length/arr.length)*100);
+      return `<div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        ${statCard("⏱","Avg. Trace Time","~"+avgTime+"m")}
+        ${statCard("🎯","Avg. % Traced",avgTraced+"%")}
+        ${statCard("✅","Drill Pass Rate",passRate+"%")}
+      </div>`;
+    }
+  },
+  { key:"lab-microbiology", stateArr:"labResults", icon:"🧫", title:"Microbiology",
+    blurb:"Microbiological test results from internal or external labs.",
+    sortField:"date",
+    filterFn: r=>r.testType==="Microbiological",
+    presetValues:{ testType:"Microbiological" },
+    fields:[
+      {id:"date", label:"Sample Date", type:"date", default:"today"},
+      {id:"sampleId", label:"Sample ID", required:true},
+      {id:"product", label:"Product / Batch"},
+      {id:"parameters", label:"Organisms Tested", placeholder:"e.g. TPC, E.coli, Salmonella, Listeria", full:true},
+      {id:"lab", label:"Lab", type:"select", options:["Internal Lab","External Lab"]},
+      {id:"specLimit", label:"Spec Limit"},
+      {id:"result", label:"Result"},
+      {id:"status", label:"Status", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"dateReported", label:"Date Reported", type:"date"}
+    ],
+    rowTitle:r=>r.sampleId||"Sample",
+    rowSub:r=>`${r.product||'—'} · ${r.parameters||'—'} · ${r.date||'—'}`,
+    rowTag:r=>({label:r.status||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.status]||"neutral"})
+  },
+  { key:"lab-chemistry", stateArr:"labResults", icon:"⚗️", title:"Chemistry / Analytical",
+    blurb:"Chemical and physical/analytical test results from internal or external labs.",
+    sortField:"date",
+    filterFn: r=>r.testType!=="Microbiological",
+    fields:[
+      {id:"date", label:"Sample Date", type:"date", default:"today"},
+      {id:"sampleId", label:"Sample ID", required:true},
+      {id:"product", label:"Product / Batch"},
+      {id:"testType", label:"Test Type", type:"select", options:["Chemical/Analytical","Physical"]},
+      {id:"parameters", label:"Parameters Tested", placeholder:"e.g. Moisture, pH, Fat%, Salt%", full:true},
+      {id:"lab", label:"Lab", type:"select", options:["Internal Lab","External Lab"]},
+      {id:"specLimit", label:"Spec Limit"},
+      {id:"result", label:"Result"},
+      {id:"status", label:"Status", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"dateReported", label:"Date Reported", type:"date"}
+    ],
+    rowTitle:r=>r.sampleId||"Sample",
+    rowSub:r=>`${r.product||'—'} · ${r.testType||'—'} · ${r.date||'—'}`,
+    rowTag:r=>({label:r.status||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.status]||"neutral"})
+  },
+  { key:"emp", stateArr:"empSwabs", icon:"🧼", title:"Environmental Monitoring (EMP)",
+    blurb:"Log environmental swab results across your hygiene zones.",
+    sortField:"date",
+    fields:[
+      {id:"date", label:"Swab Date", type:"date", default:"today"},
+      {id:"swabId", label:"Swab ID"},
+      {id:"zone", label:"Zone", type:"select", options:["Zone 1 - Food Contact","Zone 2 - Near Food Contact","Zone 3 - Room/Area","Zone 4 - Remote"]},
+      {id:"location", label:"Location", placeholder:"e.g. Slicer blade, drain 3"},
+      {id:"organism", label:"Organism / Test", type:"select", options:["ATP","Total Plate Count","Listeria spp.","Salmonella","Coliforms","Other"]},
+      {id:"result", label:"Result"},
+      {id:"specLimit", label:"Spec Limit"},
+      {id:"status", label:"Status", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"correctiveAction", label:"Corrective Action", full:true}
+    ],
+    rowTitle:r=>r.swabId||"Swab",
+    rowSub:r=>`${r.zone||'—'} · ${r.location||'—'} · ${r.date||'—'}`,
+    rowTag:r=>({label:r.status||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.status]||"neutral"})
+  },
+  { key:"proficiency-testing", stateArr:"proficiencyTests", icon:"🧪", title:"Proficiency Testing",
+    blurb:"Track your lab's participation in external proficiency testing / PT schemes.",
+    sortField:"date",
+    fields:[
+      {id:"date", label:"Round Date", type:"date", default:"today"},
+      {id:"scheme", label:"Scheme Provider", placeholder:"e.g. FAPAS, LGC"},
+      {id:"testParameter", label:"Test Parameter", required:true},
+      {id:"roundReference", label:"Round Reference"},
+      {id:"result", label:"Result"},
+      {id:"zScore", label:"Z-Score", type:"number"},
+      {id:"status", label:"Status", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"nextRoundDate", label:"Next Round Date", type:"date"}
+    ],
+    rowTitle:r=>r.testParameter||"PT Round",
+    rowSub:r=>`${r.scheme||'—'} · Round ${r.roundReference||'—'} · ${r.date||'—'}`,
+    rowTag:r=>({label:r.status||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.status]||"neutral"})
+  },
+  { key:"lab-sample-register", stateArr:"sampleRegister", icon:"🧾", title:"Sample Register",
+    blurb:"Central log of samples collected and submitted for lab testing.",
+    sortField:"dateCollected",
+    fields:[
+      {id:"sampleId", label:"Sample ID", required:true},
+      {id:"dateCollected", label:"Date Collected", type:"date", default:"today"},
+      {id:"product", label:"Product"},
+      {id:"batchLot", label:"Batch / Lot No."},
+      {id:"sampleType", label:"Sample Type", type:"select", options:["Raw Material","In-Process","Finished Product","Environmental","Water"]},
+      {id:"samplingPoint", label:"Sampling Point", placeholder:"e.g. Line 2 outlet"},
+      {id:"collectedBy", label:"Collected By"},
+      {id:"status", label:"Status", type:"select", options:["Registered","Submitted to Lab","Testing In Progress","Completed"]}
+    ],
+    rowTitle:r=>r.sampleId||"Sample",
+    rowSub:r=>`${r.product||'—'} · ${r.sampleType||'—'} · ${r.dateCollected||'—'}`,
+    rowTag:r=>({label:r.status||"Registered", tone:{Registered:"navy","Submitted to Lab":"amber","Testing In Progress":"amber",Completed:"green"}[r.status]||"neutral"})
+  },
+  { key:"lab-coa", stateArr:"coaRecords", icon:"📜", title:"COA Management",
+    blurb:"Track Certificates of Analysis issued for products and batches.",
+    sortField:"dateIssued",
+    fields:[
+      {id:"coaNumber", label:"COA Number", required:true},
+      {id:"product", label:"Product"},
+      {id:"batchLot", label:"Batch / Lot No."},
+      {id:"dateIssued", label:"Date Issued", type:"date", default:"today"},
+      {id:"issuedBy", label:"Issued By"},
+      {id:"linkedSampleId", label:"Linked Sample ID"},
+      {id:"status", label:"Status", type:"select", options:["Draft","Issued","Sent to Customer"]}
+    ],
+    rowTitle:r=>r.coaNumber||"COA",
+    rowSub:r=>`${r.product||'—'} · ${r.batchLot||'—'} · ${r.dateIssued||'—'}`,
+    rowTag:r=>({label:r.status||"Draft", tone:{Draft:"neutral",Issued:"navy","Sent to Customer":"green"}[r.status]||"neutral"})
+  },
+  { key:"lab-media-prep", stateArr:"mediaPrepRecords", icon:"🧴", title:"Media Preparation",
+    blurb:"Log culture media batches prepared for microbiological testing.",
+    sortField:"datePrepared",
+    fields:[
+      {id:"mediaType", label:"Media Type", required:true, placeholder:"e.g. Plate Count Agar"},
+      {id:"lotNumber", label:"Lot Number"},
+      {id:"datePrepared", label:"Date Prepared", type:"date", default:"today"},
+      {id:"preparedBy", label:"Prepared By"},
+      {id:"expiryDate", label:"Expiry Date", type:"date"},
+      {id:"sterilityCheck", label:"Sterility Check", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"qcResult", label:"QC Result"}
+    ],
+    rowTitle:r=>r.mediaType||"Media Batch",
+    rowSub:r=>`Lot ${r.lotNumber||'—'} · Prepared ${r.datePrepared||'—'}`,
+    rowTag:r=>({label:r.sterilityCheck||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.sterilityCheck]||"neutral"})
+  },
+  { key:"lab-incubation", stateArr:"incubationRecords", icon:"🌡", title:"Incubation Tracking",
+    blurb:"Track samples through incubation, from plating to reading.",
+    sortField:"incubationStart",
+    fields:[
+      {id:"sampleId", label:"Sample ID", required:true},
+      {id:"mediaPlate", label:"Media / Plate", placeholder:"e.g. PCA Plate #4"},
+      {id:"incubationStart", label:"Incubation Start", type:"date", default:"today"},
+      {id:"temperatureC", label:"Temperature (°C)", type:"number"},
+      {id:"durationHours", label:"Duration (hours)", type:"number"},
+      {id:"readDate", label:"Read Date", type:"date"},
+      {id:"result", label:"Result", type:"select", options:["Pending","Growth","No Growth"]}
+    ],
+    rowTitle:r=>r.sampleId||"Sample",
+    rowSub:r=>`${r.mediaPlate||'—'} · Started ${r.incubationStart||'—'}`,
+    rowTag:r=>({label:r.result||"Pending", tone:{Pending:"navy",Growth:"amber","No Growth":"green"}[r.result]||"neutral"})
+  },
+  { key:"audit-planning", stateArr:"auditPlans", icon:"🗓", title:"Audit Planning",
+    blurb:"Plan the audit in full before it goes live in the Audit Register — objective, criteria, clauses, team and logistics.",
+    sortField:"plannedDate",
+    fields:[
+      {id:"auditObjective", label:"Audit Objective", full:true, placeholder:"e.g. Verify ongoing compliance with FSSC 22000 requirements"},
+      {id:"standard", label:"Audit Criteria (Standard)", type:"select", options:STANDARDS},
+      {id:"clausesSelected", label:"Clauses Being Audited", type:"checkboxes", options:CLAUSE_OPTIONS},
+      {id:"scope", label:"Audit Scope", full:true},
+      {id:"processArea", label:"Process / Department Being Audited"},
+      {id:"site", label:"Site / Location"},
+      {id:"leadAuditor", label:"Lead Auditor"},
+      {id:"auditTeam", label:"Audit Team Members", placeholder:"Comma-separated names", full:true},
+      {id:"auditeeProcessOwner", label:"Auditee / Process Owner"},
+      {id:"plannedDate", label:"Audit Date", type:"date", default:"today"},
+      {id:"endDate", label:"Audit End Date (if multi-day)", type:"date"},
+      {id:"openingMeetingTime", label:"Opening Meeting Time", type:"time"},
+      {id:"closingMeetingTime", label:"Closing Meeting Time", type:"time"},
+      {id:"status", label:"Status", type:"select", options:["Planned","Confirmed","Completed","Cancelled"]}
+    ],
+    rowTitle:r=>r.processArea || r.standard || "Planned Audit",
+    rowSub:r=>`${r.standard||'—'} · ${r.plannedDate||'—'} · Lead: ${r.leadAuditor||'—'}`,
+    rowTag:r=>({label:r.status||"Planned", tone:{Planned:"navy",Confirmed:"amber",Completed:"green",Cancelled:"rust"}[r.status]||"neutral"})
+  },
+  { key:"calibration", stateArr:"calibrationRecords", icon:"📏", title:"Calibration & Equipment",
+    blurb:"Register of equipment requiring calibration, with due dates and results.",
+    sortField:"nextDueDate",
+    fields:[
+      {id:"equipmentId", label:"Equipment ID", required:true, placeholder:"e.g. TH-014"},
+      {id:"description", label:"Description", placeholder:"e.g. Digital probe thermometer"},
+      {id:"location", label:"Location"},
+      {id:"frequency", label:"Calibration Frequency", type:"select", options:["Monthly","Quarterly","Bi-Annual","Annual"]},
+      {id:"lastCalDate", label:"Last Calibration Date", type:"date"},
+      {id:"nextDueDate", label:"Next Due Date", type:"date"},
+      {id:"result", label:"Result", type:"select", options:["Pass","Fail","Adjusted"]},
+      {id:"certRef", label:"Certificate / Reference No."}
+    ],
+    rowTitle:r=>r.equipmentId||"Equipment",
+    rowSub:r=>`${r.description||'—'} · ${r.location||'—'}`,
+    rowTag:r=>{
+      if(!r.nextDueDate) return {label:"No due date set", tone:"neutral"};
+      const d = daysUntil(r.nextDueDate);
+      if(d<0) return {label:`Overdue ${Math.abs(d)}d`, tone:"rust"};
+      if(d<=30) return {label:`Due in ${d}d`, tone:"amber"};
+      return {label:"Up to date", tone:"green"};
+    }
+  },
+  { key:"supplier-scar", stateArr:"supplierScars", icon:"📝", title:"Supplier Corrective Actions (SCAR)",
+    blurb:"Log corrective action requests raised against suppliers for quality issues.",
+    sortField:"dateRaised",
+    fields:[
+      {id:"supplierName", label:"Supplier", required:true},
+      {id:"dateRaised", label:"Date Raised", type:"date", default:"today"},
+      {id:"issue", label:"Issue / Non-Conformance", full:true},
+      {id:"correctiveAction", label:"Corrective Action Requested", full:true},
+      {id:"status", label:"Status", type:"select", options:["Open","In Progress","Closed"]},
+      {id:"closureDate", label:"Closure Date", type:"date"}
+    ],
+    rowTitle:r=>r.supplierName||"Supplier",
+    rowSub:r=>`${r.issue||'—'} · Raised ${r.dateRaised||'—'}`,
+    rowTag:r=>({label:r.status||"Open", tone:{Open:"rust","In Progress":"amber",Closed:"green"}[r.status]||"neutral"})
+  },
+  { key:"customer-complaints", stateArr:"complaintRecords", icon:"📮", title:"Customer & Consumer Complaints",
+    blurb:"Full complaint case register — separate from sensory quality scoring, this tracks the complaint itself through to closure.",
+    sortField:"dateReceived",
+    fields:[
+      {id:"dateReceived", label:"Date Received", type:"date", default:"today"},
+      {id:"complainantName", label:"Complainant Name"},
+      {id:"contactInfo", label:"Contact Info", placeholder:"Phone / email"},
+      {id:"product", label:"Product"},
+      {id:"batchLot", label:"Linked Batch / Lot", type:"select", optionsFn:batchOptionsList},
+      {id:"classification", label:"Complaint Classification", type:"select", options:["Foreign Object","Quality Defect","Packaging Defect","Allergen-Related","Illness / Health","Delivery / Service","Other"]},
+      {id:"natureOfComplaint", label:"Nature of Complaint", full:true},
+      {id:"severity", label:"Severity", type:"select", options:["Low","Medium","High","Critical"]},
+      {id:"rootCause", label:"Investigation / Root Cause", full:true},
+      {id:"correctiveAction", label:"Corrective Action", full:true},
+      {id:"capaReference", label:"Linked CAPA", type:"select", optionsFn:capaOptionsList},
+      {id:"relatedRecall", label:"Linked Product Recall", type:"select", optionsFn:recallOptionsList},
+      {id:"status", label:"Status", type:"select", options:["Open","Under Investigation","Closed"]},
+      {id:"dateClosed", label:"Date Closed", type:"date"},
+      {id:"customerResponseStatus", label:"Customer Response Status", type:"select", options:["Not Yet Contacted","Acknowledged","Investigation Communicated","Resolution Communicated","Closed with Customer"]}
+    ],
+    rowTitle:r=>r.complainantName || r.product || "Complaint",
+    rowSub:r=>`${r.classification||r.product||'—'} · ${r.dateReceived||'—'}`,
+    rowTag:r=>({label:r.status||"Open", tone:{Open:"rust","Under Investigation":"amber",Closed:"green"}[r.status]||"neutral"}),
+    trendsFn:(arr)=>{
+      if(!arr.length) return `<p class="muted-italic">No complaints logged yet.</p>`;
+      const byClass = {};
+      arr.forEach(r=>{ const k=r.classification||"Unclassified"; byClass[k]=(byClass[k]||0)+1; });
+      const open = arr.filter(r=>r.status!=="Closed").length;
+      const closedWithDates = arr.filter(r=>r.status==="Closed" && r.dateReceived && r.dateClosed);
+      const avgDays = closedWithDates.length ? Math.round(closedWithDates.reduce((s,r)=>s+((new Date(r.dateClosed)-new Date(r.dateReceived))/86400000),0)/closedWithDates.length) : null;
+      return `
+        <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+          ${statCard("📮","Total Complaints", arr.length)}
+          ${statCard("🟠","Open / In Progress", open)}
+          ${statCard("⏱","Avg. Days to Close", avgDays===null?'—':avgDays)}
+        </div>
+        <div class="card p4">
+          <h3 class="serif" style="font-size:15px;margin:0 0 10px;">By Classification</h3>
+          ${Object.entries(byClass).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+              <span>${esc(k)}</span><span class="tag tag-navy">${v}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+    }
+  }
+];
+
+function renderTraceLotHistory(){
+  const q = lotHistorySearch.trim().toLowerCase();
+  const rows = [...state.batches].filter(b=>{
+    if(!q) return true;
+    return [b.product,b.batchNo,b.supplier].some(v=>(v||'').toLowerCase().includes(q));
+  }).sort((a,b)=>String(b.received||'').localeCompare(String(a.received||'')));
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🕓 Lot History</h2>
+      <button class="btn btn-ghost" data-action="export-lot-history-csv">⬇ CSV</button>
+    </div>
+    <p class="muted-italic" style="font-size:12px;margin:-10px 0 14px;">A chronological view of every batch/lot across your traceability register, most recent first.</p>
+    <div class="card p4" style="margin-bottom:16px;">
+      <input id="lot-history-search" placeholder="Search product, batch/lot no, supplier…" value="${esc(lotHistorySearch)}" />
+    </div>
+    <div>
+      ${rows.length===0 ? `<p class="muted-italic">No batches logged yet.</p>` : rows.map(b=>{
+        const expiryFlag = batchExpiryStatus(b);
+        const fwd = batchForwardTrace(b).length;
+        const back = batchBackwardTrace(b).length;
+        return `
+          <button class="audit-row" data-jump-batch="${b.id}" style="border-radius:8px;margin-bottom:8px;background:#fff;border:1px solid var(--line2);width:100%;">
+            <div style="min-width:0;">
+              <div class="audit-title">${esc(b.product)} <span style="color:var(--muted);font-weight:400;font-size:11px;">#${esc(b.batchNo)}</span></div>
+              <div class="audit-sub">${esc(b.type)} · Received ${b.received||'—'}${b.expiry?` · Expires ${b.expiry}`:''}${fwd?` · ${fwd} downstream`:''}${back?` · ${back} upstream`:''}</div>
+            </div>
+            <div class="flex-wrap">
+              ${expiryFlag ? `<span class="tag tag-${expiryFlag==='Expired'?'rust':'amber'}">${expiryFlag}</span>` : ''}
+              <span class="tag tag-${statusTone[b.status]||'neutral'}">${esc(b.status)}</span>
+            </div>
+          </button>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+function renderRecallReports(){
+  const recalls = state.productRecalls;
+  const total = recalls.length;
+  const avgCompletion = total ? Math.round(recalls.reduce((s,r)=>s+recallCompletionPct(r),0)/total) : null;
+  const byClass = {}; RECALL_CLASSES.forEach(c=>byClass[c]=0); recalls.forEach(r=>{ if(r.riskClass) byClass[r.riskClass]=(byClass[r.riskClass]||0)+1; });
+  const byReason = {}; recalls.forEach(r=>{ if(r.reason) byReason[r.reason]=(byReason[r.reason]||0)+1; });
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">🧾 Recall Reports</h2>
+      <button class="btn btn-ghost" data-action="export-recalls-csv">⬇ CSV</button>
+    </div>
+    ${total===0 ? `<p class="muted-italic">No recalls logged yet — reports will populate once you log a Product Recall.</p>` : `
+      <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
+        ${statCard("🚨","Total Recalls",total)}
+        ${statCard("📊","Avg. Completion",avgCompletion+"%")}
+        ${statCard("⏳","Open Recalls", recalls.filter(r=>r.status!=="Closed").length)}
+      </div>
+      <div class="card p4" style="margin-bottom:16px;">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">By Risk Classification</h3>
+        ${RECALL_CLASSES.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(c)}</span><span class="tag tag-${recallClassTone[c]}">${byClass[c]||0}</span></div>`).join('')}
+      </div>
+      <div class="card p4" style="margin-bottom:16px;">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">By Reason</h3>
+        ${Object.keys(byReason).length ? Object.entries(byReason).sort((a,b)=>b[1]-a[1]).map(([reason,count])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(reason)}</span><span class="tag tag-navy">${count}</span></div>`).join('') : `<p class="muted-italic">—</p>`}
+      </div>
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Recall Register Summary</h3>
+        ${recalls.map(r=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+            <div>
+              <div>${esc(r.productName)} <span style="color:var(--muted);font-size:11px;">#${esc(r.recallNumber)}</span></div>
+              <div class="muted-italic" style="font-size:11px;">${esc(r.reason)||'—'} · ${(r.riskClass||'').split(' –')[0]}</div>
+            </div>
+            <div class="flex-wrap">
+              <span style="font-size:12px;color:var(--muted);">${recallCompletionPct(r)}%</span>
+              <span class="tag tag-${statusTone[r.status]||'neutral'}">${esc(r.status)}</span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  `;
+}
+
+function renderLabTrendAnalysis(){
+  const micro = state.labResults.filter(r=>r.testType==="Microbiological");
+  const chem = state.labResults.filter(r=>r.testType!=="Microbiological");
+  const emp = state.empSwabs;
+  const pt = state.proficiencyTests;
+  const passRate = arr => arr.length ? Math.round((arr.filter(r=>r.status==="Pass").length/arr.length)*100) : null;
+  const sections = [
+    { label:"Microbiology", arr:micro, icon:"🧫" },
+    { label:"Chemistry / Analytical", arr:chem, icon:"⚗️" },
+    { label:"Environmental Monitoring (EMP)", arr:emp, icon:"🧼" },
+    { label:"Proficiency Testing", arr:pt, icon:"🧪" }
+  ];
+  const monthKey = d => (d||"").slice(0,7);
+  const allDated = [...micro, ...chem, ...emp].filter(r=>r.date);
+  const months = [...new Set(allDated.map(r=>monthKey(r.date)))].sort().slice(-6);
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">📈 Laboratory Trend Analysis</h2>
+    </div>
+    <div class="stats" style="grid-template-columns:repeat(2,1fr);margin-bottom:16px;">
+      ${sections.map(s=>statCard(s.icon, s.label+" Pass Rate", passRate(s.arr)===null?'—':passRate(s.arr)+"%")).join('')}
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Sample Volume — Last 6 Months</h3>
+      ${months.length===0 ? `<p class="muted-italic">Not enough dated results yet to show a trend.</p>` : months.map(m=>{
+        const count = allDated.filter(r=>monthKey(r.date)===m).length;
+        const fails = allDated.filter(r=>monthKey(r.date)===m && r.status==="Fail").length;
+        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+          <span>${m}</span>
+          <span class="flex-wrap"><span class="tag tag-navy">${count} samples</span>${fails?`<span class="tag tag-rust">${fails} fail</span>`:''}</span>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Failures Needing Attention</h3>
+      ${(() => {
+        const fails = [...micro, ...chem, ...emp].filter(r=>r.status==="Fail");
+        if(!fails.length) return `<p class="muted-italic">No open failures across Micro, Chemistry, or EMP. 🎉</p>`;
+        return fails.map(r=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(r.sampleId||r.swabId||'—')} · ${esc(r.product||r.location||'—')}</span><span class="tag tag-rust">${esc(r.date||'—')}</span></div>`).join('');
+      })()}
+    </div>
+  `;
+}
+
 const NAV_TREE = [
   { id:"nav-dashboard", icon:"📊", label:"Dashboard", action(){ tab="dashboard"; } },
   { id:"nav-audit", icon:"📋", label:"Audit Management", children:[
       { id:"nav-audit-register", label:"Audit Register", action(){ tab="audits"; } },
+      { id:"nav-audit-planning", label:"Audit Planning", action(){ tab="audit-planning"; } },
       { id:"nav-audit-checklists", label:"Checklists", action(){ tab="checklists"; } }
     ]
   },
@@ -699,7 +1338,11 @@ const NAV_TREE = [
       { id:"nav-people-ppe", label:"PPE Compliance", action(){ tab="people-ppe"; } }
     ]
   },
-  { id:"nav-suppliers", icon:"🚚", label:"Supplier Management", action(){ tab="suppliers"; } },
+  { id:"nav-suppliers", icon:"🚚", label:"Supplier Management", children:[
+      { id:"nav-suppliers-list", label:"Suppliers", action(){ tab="suppliers"; } },
+      { id:"nav-suppliers-scar", label:"Corrective Actions (SCAR)", action(){ tab="supplier-scar"; } }
+    ]
+  },
   { id:"nav-sensory", icon:"🧪", label:"Sensory Evaluation", children: SENSORY_CATEGORIES.map((c,i)=>({
       id:"nav-sensory-"+i, label:c,
       isActive(){ return tab==="sensory" && sensorySubTab===c; },
@@ -727,7 +1370,21 @@ const NAV_TREE = [
       },
       { id:"nav-fs-allergens", label:"Allergen Management", action(){ tab="allergens"; } },
       { id:"nav-fs-ncr", label:"Non-Conformances", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="ncr"; }, action(){ tab="foodsafe"; foodsafeSubTab="ncr"; } },
-      { id:"nav-fs-verification", label:"Verification", action(){ tab="fs-verification"; } }
+      { id:"nav-fs-verification", label:"Verification", action(){ tab="fs-verification"; } },
+      { id:"nav-fs-calibration", label:"Calibration & Equipment", action(){ tab="calibration"; } }
+    ]
+  },
+  { id:"nav-lab", icon:"🧫", label:"Laboratory Management", children:[
+      { id:"nav-lab-microbiology", label:"Microbiology", action(){ tab="lab-microbiology"; } },
+      { id:"nav-lab-chemistry", label:"Chemistry / Analytical", action(){ tab="lab-chemistry"; } },
+      { id:"nav-lab-sample-register", label:"Sample Register", action(){ tab="lab-sample-register"; } },
+      { id:"nav-lab-emp", label:"Environmental Monitoring (EMP)", action(){ tab="emp"; } },
+      { id:"nav-lab-pt", label:"Proficiency Testing", action(){ tab="proficiency-testing"; } },
+      { id:"nav-lab-trend", label:"Trend Analysis", action(){ tab="lab-trend"; } },
+      { id:"nav-lab-coa", label:"COA Management", action(){ tab="lab-coa"; } },
+      { id:"nav-lab-calibration", label:"Equipment Calibration", action(){ tab="calibration"; } },
+      { id:"nav-lab-media-prep", label:"Media Preparation", action(){ tab="lab-media-prep"; } },
+      { id:"nav-lab-incubation", label:"Incubation Tracking", action(){ tab="lab-incubation"; } }
     ]
   },
   { id:"nav-metrics", icon:"📈", label:"KPI Metrics", action(){ tab="metrics"; } },
@@ -822,17 +1479,29 @@ function render(){
         ${renderMainNav()}
       </header>
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? renderSensory() : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
-        : tab==="people-competency" ? renderComingSoon("🎓","Competency Matrix","Track each employee's proficiency across the skills and competencies required for their role.",["Employee × skill grid","Proficiency levels (Basic / Competent / Proficient / Expert)","Reassessment due dates","CSV export"])
-        : tab==="people-medsurv" ? renderComingSoon("🩺","Medical Surveillance","Log occupational health exams (pre-employment, annual, exit) and track fitness-for-duty outcomes.",["Exam type, date and result","Next due date tracking","Fit / Fit with restriction / Unfit status","CSV export"])
-        : tab==="people-medexpiry" ? renderComingSoon("📅","Medical Certificate Expiry","Track expiry dates for employee medical certificates so renewals never get missed.",["Certificate type, issue and expiry date","Automatic expired / expiring-soon flags","Renewal reminders","CSV export"])
-        : tab==="people-foodhandler" ? renderComingSoon("🧻","Food Handler Declarations","Daily fitness-for-duty declarations for food handlers, covering symptoms and illness reporting.",["Daily Yes/No fitness declaration","Symptom notes","Signed-off history","CSV export"])
-        : tab==="people-ppe" ? renderComingSoon("🥽","PPE Compliance","Track PPE issue, condition and compliance per employee, alongside the PPE Compliance KPI metric.",["PPE item issue log per employee","Condition tracking (New / Good / Needs Replacement)","Ties into the PPE Compliance % KPI","CSV export"])
-        : tab==="pest-control" ? renderComingSoon("🐀","Pest Control","Log pest control inspections, findings and corrective actions from your contracted service provider.",["Inspection date and contractor","Areas inspected and findings","Corrective actions and next visit date","CSV export"])
-        : tab==="fs-verification" ? renderComingSoon("✔","Verification","Log verification activities that confirm your food safety controls are working as intended.",["Activity type (mock recall, internal audit, calibration, HACCP review…)","Verified by and result","Next due date","CSV export"])
-        : tab==="trace-lot-history" ? renderComingSoon("🕓","Lot History","A chronological, searchable history of every batch and lot movement across your traceability register.",["Full lot timeline by product","Forward/backward trace links","Status changes over time","CSV export"])
-        : tab==="recall-effectiveness" ? renderComingSoon("🎯","Recall Effectiveness","Log mock recall drills and measure how quickly and completely product could be traced and recovered.",["Drill date, product and scenario","Target vs actual time to trace","% of product traced","Pass/Fail against your effectiveness target"])
-        : tab==="recall-reports" ? renderComingSoon("🧾","Recall Reports","Generate summary and regulatory-ready reports from your product recall register.",["Recall summary by class, reason and status","Printable report per recall","Average completion time trends","CSV export"])
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
+        : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
+        : tab==="people-medexpiry" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medexpiry"))
+        : tab==="people-foodhandler" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-foodhandler"))
+        : tab==="people-ppe" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-ppe"))
+        : tab==="pest-control" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="pest-control"))
+        : tab==="fs-verification" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="fs-verification"))
+        : tab==="trace-lot-history" ? renderTraceLotHistory()
+        : tab==="recall-effectiveness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="recall-effectiveness"))
+        : tab==="recall-reports" ? renderRecallReports()
+        : tab==="lab-microbiology" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-microbiology"))
+        : tab==="lab-chemistry" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-chemistry"))
+        : tab==="lab-sample-register" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-sample-register"))
+        : tab==="lab-coa" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-coa"))
+        : tab==="lab-media-prep" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-media-prep"))
+        : tab==="lab-incubation" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-incubation"))
+        : tab==="lab-trend" ? renderLabTrendAnalysis()
+        : tab==="emp" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="emp"))
+        : tab==="proficiency-testing" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="proficiency-testing"))
+        : tab==="audit-planning" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="audit-planning"))
+        : tab==="calibration" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="calibration"))
+        : tab==="supplier-scar" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="supplier-scar"))
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
@@ -1361,6 +2030,7 @@ function renderAuditDetail(a){
           <div class="flex-wrap" style="font-size:12px;color:var(--muted);margin:6px 0;">
             <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
             <span>${esc(f.clause)}</span>
+            ${f.autoGenerated?`<span class="tag tag-navy">⚡ Auto-CAPA</span>`:''}
             ${f.owner?`<span>👤 ${esc(f.owner)}</span>`:''}
             ${f.dueDate?`<span style="${daysUntil(f.dueDate)<0 && f.status!=='Closed' ? 'color:var(--rust);font-weight:600;':''}">📅 ${f.dueDate}${daysUntil(f.dueDate)<0 && f.status!=='Closed'?' (overdue)':''}</span>`:''}
           </div>
@@ -1418,6 +2088,7 @@ function renderCapa(){
           <div class="flex-wrap" style="font-size:12px;color:var(--muted);">
             ${f.owner?`<span>👤 ${esc(f.owner)}</span>`:''}
             ${f.dueDate?`<span style="${overdue?'color:var(--rust);font-weight:600;':''}">📅 ${f.dueDate}</span>`:''}
+            ${f.autoGenerated?`<span class="tag tag-navy">⚡ Auto-CAPA</span>`:''}
             <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
             <span class="tag tag-${statusTone[f.status]}">${f.status}</span>
           </div>
@@ -2087,6 +2758,9 @@ function renderNewSupplierForm(){
       <label class="field">Risk Rating<select id="ns-risk">${RISK_LEVELS.filter(l=>l!=="Critical").map(l=>`<option>${l}</option>`).join('')}</select></label>
       <label class="field">Last Assessment Date<input type="date" id="ns-assessment-date" /></label>
       <label class="field">Contact Person<input id="ns-contact" placeholder="e.g. J. Smith" /></label>
+      <label class="field">Quality Score (0-100)<input type="number" id="ns-quality-score" min="0" max="100" placeholder="e.g. 92" /></label>
+      <label class="field">Last Audit Date<input type="date" id="ns-last-audit-date" /></label>
+      <label class="field">Last Audit Result<select id="ns-last-audit-result"><option value="">—</option><option>Pass</option><option>Conditional</option><option>Fail</option></select></label>
       <label class="field" style="grid-column:1/-1;">Notes<input id="ns-notes" placeholder="Optional notes…" /></label>
       <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn btn-ghost" data-action="cancel-new-supplier">Cancel</button>
@@ -2105,7 +2779,7 @@ function renderSupplierRow(s){
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
             <div class="audit-title">${esc(s.name)}</div>
-            <div class="audit-sub">${esc(s.category)||'—'} · Risk: ${esc(s.riskRating)||'—'}</div>
+            <div class="audit-sub">${esc(s.category)||'—'} · Risk: ${esc(s.riskRating)||'—'}${s.qualityScore?` · Quality: ${esc(s.qualityScore)}%`:''}</div>
           </div>
         </div>
         <div class="flex-wrap">
@@ -2126,6 +2800,9 @@ function renderSupplierDetail(s){
       <label class="field">Risk Rating<select data-supplier-field="${s.id}:riskRating">${RISK_LEVELS.filter(l=>l!=="Critical").map(l=>`<option ${l===s.riskRating?'selected':''}>${l}</option>`).join('')}</select></label>
       <label class="field">Last Assessment Date<input type="date" data-supplier-field="${s.id}:lastAssessmentDate" value="${s.lastAssessmentDate||''}" /></label>
       <label class="field">Contact Person<input data-supplier-field="${s.id}:contactPerson" value="${esc(s.contactPerson)}" /></label>
+      <label class="field">Quality Score (0-100)<input type="number" min="0" max="100" data-supplier-field="${s.id}:qualityScore" value="${s.qualityScore||''}" /></label>
+      <label class="field">Last Audit Date<input type="date" data-supplier-field="${s.id}:lastAuditDate" value="${s.lastAuditDate||''}" /></label>
+      <label class="field">Last Audit Result<select data-supplier-field="${s.id}:lastAuditResult"><option value="" ${!s.lastAuditResult?'selected':''}>—</option>${["Pass","Conditional","Fail"].map(o=>`<option ${o===s.lastAuditResult?'selected':''}>${o}</option>`).join('')}</select></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-supplier-field="${s.id}:notes" value="${esc(s.notes)}" /></label>
     </div>
     <div style="display:flex;justify-content:flex-end;">
@@ -3596,6 +4273,100 @@ function attachHandlers(){
     persist(); render();
   });
 
+  /* Generic CRUD log modules */
+  document.querySelectorAll('[data-generic-new]').forEach(el=>el.onclick=()=>{
+    genericShowNew[el.dataset.genericNew] = true; render();
+  });
+  document.querySelectorAll('[data-generic-cancel]').forEach(el=>el.onclick=()=>{
+    genericShowNew[el.dataset.genericCancel] = false; render();
+  });
+  document.querySelectorAll('[data-generic-trends]').forEach(el=>el.onclick=()=>{
+    const k = el.dataset.genericTrends;
+    genericShowTrends[k] = !genericShowTrends[k];
+    render();
+  });
+  document.querySelectorAll('[data-generic-create]').forEach(el=>el.onclick=()=>{
+    const k = el.dataset.genericCreate;
+    const cfg = GENERIC_MODULES.find(m=>m.key===k);
+    if(!cfg) return;
+    const record = { id: uid() };
+    let valid = true;
+    cfg.fields.filter(f=>!f.hidden).forEach(f=>{
+      if(f.type==='checkboxes'){
+        const checked = [...document.querySelectorAll(`input[name="cb-new::${k}::${f.id}"]:checked`)].map(c=>c.value);
+        record[f.id] = checked.join(', ');
+        return;
+      }
+      const inputEl = document.getElementById(`gn-${k}-${f.id}`);
+      const v = inputEl ? inputEl.value : '';
+      if(f.required && !v.trim()) valid = false;
+      record[f.id] = v;
+    });
+    if(cfg.presetValues) Object.assign(record, cfg.presetValues);
+    if(!valid) return;
+    state[cfg.stateArr].unshift(record);
+    genericShowNew[k] = false; genericOpenId[k] = record.id;
+    persist(); render();
+  });
+  document.querySelectorAll('[data-generic-toggle]').forEach(el=>el.onclick=()=>{
+    const [k,id] = el.dataset.genericToggle.split(':');
+    genericOpenId[k] = genericOpenId[k]===id ? null : id;
+    render();
+  });
+  document.querySelectorAll('[data-generic-field]').forEach(el=>{
+    el.onchange = () => {
+      const [k,id,field] = el.dataset.genericField.split(':');
+      const cfg = GENERIC_MODULES.find(m=>m.key===k);
+      if(!cfg) return;
+      const rec = state[cfg.stateArr].find(x=>x.id===id);
+      if(!rec) return;
+      rec[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('input[type="checkbox"][name^="cb-edit::"]').forEach(el=>{
+    el.onchange = () => {
+      const parts = el.name.split('::');
+      const k = parts[1], recId = parts[2], fieldId = parts[3];
+      const cfg = GENERIC_MODULES.find(m=>m.key===k);
+      if(!cfg) return;
+      const rec = state[cfg.stateArr].find(x=>x.id===recId);
+      if(!rec) return;
+      const checked = [...document.querySelectorAll(`input[name="${el.name}"]:checked`)].map(c=>c.value);
+      rec[fieldId] = checked.join(', ');
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-generic-delete]').forEach(el=>el.onclick=()=>{
+    const [k,id] = el.dataset.genericDelete.split(':');
+    const cfg = GENERIC_MODULES.find(m=>m.key===k);
+    if(!cfg) return;
+    state[cfg.stateArr] = state[cfg.stateArr].filter(x=>x.id!==id);
+    genericOpenId[k] = null;
+    persist(); render();
+  });
+  document.querySelectorAll('[data-generic-csv]').forEach(el=>el.onclick=()=>{
+    const k = el.dataset.genericCsv;
+    const cfg = GENERIC_MODULES.find(m=>m.key===k);
+    if(!cfg) return;
+    const rawArr = state[cfg.stateArr] || [];
+    const arr = cfg.filterFn ? rawArr.filter(cfg.filterFn) : rawArr;
+    const rows = arr.map(r=>cfg.fields.map(f=>r[f.id]??''));
+    downloadCsv(cfg.fields.map(f=>f.label), rows, `${cfg.key}.csv`);
+  });
+
+  /* Lot History */
+  const lotSearchInput = document.getElementById('lot-history-search');
+  if(lotSearchInput) lotSearchInput.oninput = () => { lotHistorySearch = lotSearchInput.value; render(); };
+  document.querySelectorAll('[data-jump-batch]').forEach(el=>el.onclick=()=>{
+    tab="traceability"; batchTypeFilter="All"; batchSearch=""; openBatchId = el.dataset.jumpBatch; render();
+  });
+  const exportLotHistory = document.querySelector('[data-action="export-lot-history-csv"]');
+  if(exportLotHistory) exportLotHistory.onclick=()=>{
+    const rows = state.batches.map(b=>[b.product,b.batchNo,b.type,b.status,b.received||'',b.expiry||'',b.supplier||'',b.qty??'',b.unit||'']);
+    downloadCsv(["Product","Batch/Lot No","Type","Status","Received","Expiry","Supplier","Qty","Unit"], rows, "lot-history.csv");
+  };
+
   document.querySelectorAll('[data-jump-audit]').forEach(el=>el.onclick=()=>{
     jumpTo = el.dataset.jumpAudit; openAuditId = jumpTo; tab="audits";
     auditSearch = ""; auditStandardFilter = "All"; auditStatusFilter = "All"; auditRiskFilter = "All";
@@ -3665,6 +4436,27 @@ function attachHandlers(){
     const sec = a.sections.find(s=>s.id===secId);
     const item = sec.items.find(i=>i.id===itemId);
     item.result = item.result===val ? null : val;
+    if(item.result==="Fail"){
+      const existing = item.linkedFindingId && a.findings.find(f=>f.id===item.linkedFindingId);
+      if(!existing){
+        const finding = {
+          id: uid(),
+          clause: sec.name,
+          category: a.standard || "",
+          desc: item.text + (item.note ? ` — ${item.note}` : ""),
+          severity: "Medium",
+          owner: "",
+          dueDate: "",
+          actionText: "",
+          status: "Open",
+          autoGenerated: true,
+          sourceItemId: item.id
+        };
+        a.findings.push(finding);
+        item.linkedFindingId = finding.id;
+        logHistory(a, `CAPA auto-generated from failed checklist item: "${item.text.slice(0,50)}${item.text.length>50?'…':''}"`);
+      }
+    }
     persist(); render();
   });
 
@@ -4143,6 +4935,9 @@ function attachHandlers(){
       riskRating: document.getElementById('ns-risk').value,
       lastAssessmentDate: document.getElementById('ns-assessment-date').value,
       contactPerson: document.getElementById('ns-contact').value,
+      qualityScore: document.getElementById('ns-quality-score').value,
+      lastAuditDate: document.getElementById('ns-last-audit-date').value,
+      lastAuditResult: document.getElementById('ns-last-audit-result').value,
       notes: document.getElementById('ns-notes').value
     };
     state.suppliers.unshift(supplier);
@@ -4170,8 +4965,8 @@ function attachHandlers(){
   const suppliersCsvBtn = document.querySelector('[data-action="export-suppliers-csv"]');
   if(suppliersCsvBtn) suppliersCsvBtn.onclick=()=>{
     downloadCsv(
-      ["Name","Category","Approval Status","Risk Rating","Last Assessment Date","Contact Person","Notes"],
-      state.suppliers.map(s=>[s.name, s.category||'', s.approvalStatus, s.riskRating||'', s.lastAssessmentDate||'', s.contactPerson||'', s.notes||'']),
+      ["Name","Category","Approval Status","Risk Rating","Last Assessment Date","Contact Person","Quality Score","Last Audit Date","Last Audit Result","Notes"],
+      state.suppliers.map(s=>[s.name, s.category||'', s.approvalStatus, s.riskRating||'', s.lastAssessmentDate||'', s.contactPerson||'', s.qualityScore||'', s.lastAuditDate||'', s.lastAuditResult||'', s.notes||'']),
       `aqms-suppliers-${today()}.csv`
     );
   };
