@@ -505,6 +505,7 @@ if(!state.coaRecords){ state.coaRecords = []; }
 if(!state.mediaPrepRecords){ state.mediaPrepRecords = []; }
 if(!state.incubationRecords){ state.incubationRecords = []; }
 if(!state.complaintRecords){ state.complaintRecords = []; }
+if(!state.activityLog){ state.activityLog = []; }
 if(!state.supplierScars){ state.supplierScars = []; }
 state.suppliers.forEach(s=>{
   if(s.qualityScore===undefined){ s.qualityScore = ""; }
@@ -632,6 +633,10 @@ function persist(){
   if(el){ el.style.opacity = "1"; clearTimeout(savedFlashTimer); savedFlashTimer = setTimeout(()=>{ if(el) el.style.opacity="0"; }, 900); }
 }
 
+function logActivity(text){
+  state.activityLog.unshift({ ts: new Date().toISOString(), text });
+  if(state.activityLog.length>200) state.activityLog.length = 200;
+}
 function esc(str){ const d=document.createElement("div"); d.textContent = str==null? "": str; return d.innerHTML; }
 
 function downloadCsv(headers, rows, filename){
@@ -1413,7 +1418,7 @@ const NAV_TREE = [
   },
   { id:"nav-metrics", icon:"📈", label:"KPI Metrics", isActive(){ return tab==="metrics"; }, action(){ tab="metrics"; } },
   { id:"nav-quality-cycle", icon:"🔄", label:"Quality Cycle", isActive(){ return tab==="quality-cycle"; }, action(){ tab="quality-cycle"; } },
-  { id:"nav-analytics", icon:"📊", label:"Analytics", isActive(){ return tab==="analytics"; }, action(){ tab="analytics"; } },
+  { id:"nav-analytics", icon:"📊", label:"Enterprise Analytics", isActive(){ return tab==="analytics"; }, action(){ tab="analytics"; } },
   { id:"nav-settings", icon:"⚙️", label:"Settings", isActive(){ return tab==="settings"; }, action(){ tab="settings"; } }
 ];
 
@@ -1771,20 +1776,55 @@ function renderDashboard(){
   recordComplianceSnapshot(overallScore, metricSnapshot);
   const trend = complianceTrend();
 
+  const KPI_NAV_TARGETS = {
+    audit:"nav-audit-register", capa:"nav-capa", risk:"nav-risk", training:"nav-people-training",
+    documents:"nav-documents", kpiMetrics:"nav-metrics", supplier:"nav-suppliers-list",
+    haccp:"nav-fs-haccp", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-cip",
+    sensory:"nav-sensory-0", lab:"nav-lab-trend"
+  };
   function kpiRow(label, score, key){
     const g = complianceGrade(score);
     const t = metricTrend(key, score);
     const trendHtml = t===null ? '' : `<span style="font-size:11px;color:${t>=0?'var(--green)':'var(--rust)'};margin-left:6px;">${t>=0?'↑ +':'↓ '}${t}%</span>`;
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+    const navId = KPI_NAV_TARGETS[key];
+    const inner = `
       <span>${GRADE_EMOJI[g.tone]} ${label}</span>
       <span>${score===null?'<span class="muted-italic">no data</span>':`<strong>${score}%</strong>`}${trendHtml}</span>
-    </div>`;
+    `;
+    if(navId){
+      return `<button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button>`;
+    }
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">${inner}</div>`;
   }
   function kpiGroup(title, rows){
     return `
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 4px;">${title}</div>
       ${rows.map(r=>kpiRow(r.label, r.score, r.key)).join('')}
     `;
+  }
+
+  /* Today's Priorities — a ranked, clickable action list */
+  const priorities = [];
+  overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId}));
+  audits.filter(a=>a.status==="In Progress").forEach(a=>priorities.push({dot:"🟡", text:`Complete audit: ${a.title}`, jumpAudit:a.id}));
+  highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk"}));
+  state.documents.filter(d=>d.status==="Under Review").forEach(d=>priorities.push({dot:"🟡", text:`Approve document: ${d.title}`, navId:"nav-documents"}));
+  state.suppliers.filter(s=>s.approvalStatus==="Pending").forEach(s=>priorities.push({dot:"🟡", text:`Review supplier: ${s.name}`, navId:"nav-suppliers-list"}));
+  haccpVerificationOverdue.forEach(v=>priorities.push({dot:"🔴", text:`Verify HACCP: ${v.activityType||'Verification overdue'}`, navId:"nav-fs-verification"}));
+  activeHaccp.filter(p=>haccpStatus(p)!=="Compliant").forEach(p=>priorities.push({dot:"🟢", text:`Verify CCP: ${p.ccpNumber||'CCP'} — ${p.processStep||''}`, navId:"nav-fs-haccp"}));
+  const priorityOrder = {"🔴":0,"🟡":1,"🟢":2};
+  priorities.sort((a,b)=>priorityOrder[a.dot]-priorityOrder[b.dot]);
+  const topPriorities = priorities.slice(0,8);
+
+  /* Recent Activity feed */
+  const recentActivity = [...state.activityLog].sort((a,b)=>b.ts.localeCompare(a.ts)).slice(0,10);
+  function activityDayLabel(ts){
+    const d = ts.slice(0,10);
+    const today0 = today();
+    const yest = new Date(Date.now()-86400000).toISOString().slice(0,10);
+    if(d===today0) return "Today";
+    if(d===yest) return "Yesterday";
+    return d;
   }
 
   return `
@@ -1795,13 +1835,35 @@ function renderDashboard(){
       <button class="btn btn-ghost" data-quick-action="add-risk">+ Add Risk</button>
       <button class="btn btn-ghost" data-quick-action="upload-document">+ Upload Document</button>
     </div>
+    ${topPriorities.length ? `
+    <div class="card p4" style="margin-bottom:16px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Today's Priorities</h3>
+      ${topPriorities.map(p=>`
+        <button ${p.jumpAudit?`data-jump-audit="${p.jumpAudit}"`:`data-navid="${p.navId}"`} class="audit-row" style="border-radius:8px;">
+          <span style="font-size:13px;">${p.dot} ${esc(p.text)}</span>
+        </button>
+      `).join('')}
+    </div>` : ''}
+    <div class="card p4" style="margin-bottom:16px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Recent Activity</h3>
+      ${recentActivity.length===0 ? `<p class="muted-italic" style="font-size:13px;">No activity logged yet — actions like creating audits, CAPAs, risks, documents, and supplier approvals will appear here.</p>` : (() => {
+        let lastDay = null;
+        return recentActivity.map(a=>{
+          const day = activityDayLabel(a.ts);
+          const dayHeader = day!==lastDay ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 0 4px;">${esc(day)}</div>` : '';
+          lastDay = day;
+          const time = new Date(a.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          return `${dayHeader}<div style="font-size:13px;padding:4px 0;"><span style="color:var(--muted);">${day==="Today"?time:''}</span> ${esc(a.text)}</div>`;
+        }).join('');
+      })()}
+    </div>
     <div class="stats" style="margin-bottom:16px;">
-      ${statCard("📋", "Open Audits", openAudits)}
-      ${statCard("⏳", "Overdue CAPAs", overdue.length)}
-      ${statCard("🚨", "High Risks", highRisks.length)}
-      ${statCard("📄", "Pending Documents", pendingDocuments)}
-      ${statCard("🚚", "Approved Suppliers", approvedSuppliers)}
-      ${statCard("👥", "Active Employees", activeEmployees)}
+      ${statCard("📋", "Open Audits", openAudits, "nav-audit-register")}
+      ${statCard("⏳", "Overdue CAPAs", overdue.length, "nav-capa")}
+      ${statCard("🚨", "High Risks", highRisks.length, "nav-risk")}
+      ${statCard("📄", "Pending Documents", pendingDocuments, "nav-documents")}
+      ${statCard("🚚", "Approved Suppliers", approvedSuppliers, "nav-suppliers-list")}
+      ${statCard("👥", "Active Employees", activeEmployees, "nav-people-training")}
     </div>
     ${alerts.length ? `
       <div class="card p4" style="margin-bottom:16px;border-color:var(--rustBg);">
@@ -1845,13 +1907,13 @@ function renderDashboard(){
       ${state.complianceScoreHistory.filter(h=>h.score!=null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas>` : `<p class="muted-italic" style="font-size:12px;">Come back next month to start seeing your compliance trend over time.</p>`}
     </div>
     <div class="stats">
-      ${statCard("📋", "Total Audits", audits.length)}
-      ${statCard("⚠", "Open Findings", openFindings.length)}
-      ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length)}
-      ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length)}
-      ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length)}
-      ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length)}
-      ${statCard("🌡️", "Critical Temp Readings", state.tempLogs.filter(l=>tempLogIsCritical(l)).length)}
+      ${statCard("📋", "Total Audits", audits.length, "nav-audit-register")}
+      ${statCard("⚠", "Open Findings", openFindings.length, "nav-capa")}
+      ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length, "nav-documents")}
+      ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length, "nav-people-training")}
+      ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length, "nav-trace-recall")}
+      ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length, "nav-trace-batch")}
+      ${statCard("🌡️", "Critical Temp Readings", state.tempLogs.filter(l=>tempLogIsCritical(l)).length, "nav-fs-temperature")}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -2018,7 +2080,10 @@ function renderComplianceChart(){
   });
 }
 
-function statCard(icon,label,value){
+function statCard(icon,label,value,navId){
+  if(navId){
+    return `<button data-navid="${navId}" class="card p4" style="text-align:left;cursor:pointer;display:block;width:100%;border:1px solid var(--line2);"><div class="stat-label">${icon} ${label}</div><div class="stat-value">${value}</div></button>`;
+  }
   return `<div class="card p4"><div class="stat-label">${icon} ${label}</div><div class="stat-value">${value}</div></div>`;
 }
 
@@ -2028,7 +2093,7 @@ function filteredAudits(){
     const haystack = (a.title+" "+a.area+" "+a.auditor+" "+(a.auditNumber||"")+" "+findingsText).toLowerCase();
     const matchesSearch = !auditSearch || haystack.includes(auditSearch.toLowerCase());
     const matchesStandard = auditStandardFilter==="All" || a.standard===auditStandardFilter;
-    const matchesStatus = auditStatusFilter==="All" || a.status===auditStatusFilter;
+    const matchesStatus = auditStatusFilter==="All" || a.status===auditStatusFilter || (auditStatusFilter==="Open" && a.status!=="Closed");
     const matchesRisk = auditRiskFilter==="All" || a.riskLevel===auditRiskFilter;
     return matchesSearch && matchesStandard && matchesStatus && matchesRisk;
   });
@@ -2053,7 +2118,7 @@ function renderAudits(){
     <div class="card p4 grid3" style="margin-bottom:16px;">
       <label class="field">Search<input id="audit-search" placeholder="Title, area, auditor, finding text…" value="${esc(auditSearch)}" /></label>
       <label class="field">Standard<select id="audit-filter-standard"><option>All</option>${STANDARDS.map(s=>`<option ${s===auditStandardFilter?'selected':''}>${s}</option>`).join('')}</select></label>
-      <label class="field">Status<select id="audit-filter-status"><option>All</option>${["Planned","In Progress","Closed"].map(s=>`<option ${s===auditStatusFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Status<select id="audit-filter-status"><option ${auditStatusFilter==="All"?'selected':''}>All</option><option ${auditStatusFilter==="Open"?'selected':''}>Open</option>${["Planned","In Progress","Closed"].map(s=>`<option ${s===auditStatusFilter?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="field">Risk Level<select id="audit-filter-risk"><option>All</option>${RISK_LEVELS.map(s=>`<option ${s===auditRiskFilter?'selected':''}>${s}</option>`).join('')}</select></label>
     </div>
     ${showNewAudit ? `
@@ -4028,7 +4093,7 @@ let chartInstances = {};
 
 function renderAnalytics(){
   return `
-    <h2 class="serif" style="font-size:18px;margin:0 0 16px;">Analytics</h2>
+    <h2 class="serif" style="font-size:18px;margin:0 0 16px;">Enterprise Analytics</h2>
     <div class="grid2" style="margin-bottom:16px;">
       <div class="card p4">
         <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Open Findings by Severity</h3>
@@ -4039,7 +4104,7 @@ function renderAnalytics(){
         <canvas id="chart-ageing" height="220"></canvas>
       </div>
     </div>
-    <div class="grid2">
+    <div class="grid2" style="margin-bottom:16px;">
       <div class="card p4">
         <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Compliance Trend</h3>
         <canvas id="chart-trend" height="220"></canvas>
@@ -4047,6 +4112,36 @@ function renderAnalytics(){
       <div class="card p4">
         <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Audits by Standard</h3>
         <canvas id="chart-standards" height="220"></canvas>
+      </div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">🥧 CAPA Status (Open / In Progress / Closed / Overdue)</h3>
+        <canvas id="chart-capa-status" height="220"></canvas>
+      </div>
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📊 Audit Results by Department</h3>
+        <canvas id="chart-audit-dept" height="220"></canvas>
+      </div>
+    </div>
+    <div class="grid2" style="margin-bottom:16px;">
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📊 Training Compliance by Department</h3>
+        <canvas id="chart-training-dept" height="220"></canvas>
+      </div>
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📈 Laboratory Test Pass Rate</h3>
+        <canvas id="chart-lab-pass-rate" height="220"></canvas>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📉 HACCP CCP Compliance</h3>
+        <canvas id="chart-haccp-ccp" height="220"></canvas>
+      </div>
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📉 Supplier Performance</h3>
+        <canvas id="chart-supplier-perf" height="220"></canvas>
       </div>
     </div>
   `;
@@ -4121,6 +4216,114 @@ function renderCharts(){
       type: 'bar',
       data: { labels: Object.keys(byStandard), datasets:[{ label:"Audits", data: Object.values(byStandard), backgroundColor:'#3f6b2e' }] },
       options: { indexAxis:'y', plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, ticks:{ precision:0 }, grid:{color:gridColor} }, y:{ grid:{display:false} } } }
+    });
+  }
+
+  /* CAPA Status pie (Open / In Progress / Closed / Overdue) */
+  const allFindings = state.audits.flatMap(a=>a.findings);
+  const capaOverdueCount = allFindings.filter(f=>f.status!=="Closed" && f.dueDate && daysUntil(f.dueDate)<0).length;
+  const capaStatusCounts = {
+    "Open": allFindings.filter(f=>f.status==="Open").length,
+    "In Progress": allFindings.filter(f=>f.status==="In Progress").length,
+    "Closed": allFindings.filter(f=>f.status==="Closed").length,
+    "Overdue": capaOverdueCount
+  };
+  destroyChart('capaStatus');
+  const capaStatusCtx = document.getElementById('chart-capa-status');
+  if(capaStatusCtx){
+    chartInstances.capaStatus = new Chart(capaStatusCtx, {
+      type: 'pie',
+      data: { labels: Object.keys(capaStatusCounts), datasets:[{ data: Object.values(capaStatusCounts), backgroundColor:['#c98a2b','#1c2b4a','#3f6b2e','#9b3f28'] }] },
+      options: { plugins:{ legend:{ position:'bottom' } } }
+    });
+  }
+
+  /* Audit results by department/area */
+  const byArea = {};
+  state.audits.forEach(a=>{
+    const s = scoreOf(a);
+    if(s===null) return;
+    const area = a.area || "Unspecified";
+    if(!byArea[area]) byArea[area] = [];
+    byArea[area].push(s);
+  });
+  const areaLabels = Object.keys(byArea);
+  const areaAverages = areaLabels.map(k=>Math.round(byArea[k].reduce((a,b)=>a+b,0)/byArea[k].length));
+  destroyChart('auditDept');
+  const auditDeptCtx = document.getElementById('chart-audit-dept');
+  if(auditDeptCtx){
+    chartInstances.auditDept = new Chart(auditDeptCtx, {
+      type: 'bar',
+      data: { labels: areaLabels, datasets:[{ label:"Avg. Audit Score %", data: areaAverages, backgroundColor:'#1c2b4a' }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, max:100, grid:{color:gridColor} }, x:{ grid:{display:false} } } }
+    });
+  }
+
+  /* Training compliance by department (role field) */
+  const byDept = {};
+  state.trainingRecords.forEach(t=>{
+    const dept = t.role || "Unspecified";
+    if(!byDept[dept]) byDept[dept] = {valid:0,total:0};
+    byDept[dept].total++;
+    const s = trainingStatus(t);
+    if(s==="Valid"||s==="No Expiry") byDept[dept].valid++;
+  });
+  const deptLabels = Object.keys(byDept);
+  const deptPct = deptLabels.map(k=>Math.round((byDept[k].valid/byDept[k].total)*100));
+  destroyChart('trainingDept');
+  const trainingDeptCtx = document.getElementById('chart-training-dept');
+  if(trainingDeptCtx){
+    chartInstances.trainingDept = new Chart(trainingDeptCtx, {
+      type: 'bar',
+      data: { labels: deptLabels, datasets:[{ label:"% Compliant", data: deptPct, backgroundColor:'#3f6b2e' }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, max:100, grid:{color:gridColor} }, x:{ grid:{display:false} } } }
+    });
+  }
+
+  /* Laboratory test pass rate over time (by month) */
+  const labAll = [...state.labResults, ...state.empSwabs, ...state.proficiencyTests].filter(r=>r.status && r.date);
+  const byMonth = {};
+  labAll.forEach(r=>{
+    const m = r.date.slice(0,7);
+    if(!byMonth[m]) byMonth[m] = {pass:0,total:0};
+    byMonth[m].total++;
+    if(r.status==="Pass") byMonth[m].pass++;
+  });
+  const monthLabels = Object.keys(byMonth).sort();
+  const monthPassRate = monthLabels.map(m=>Math.round((byMonth[m].pass/byMonth[m].total)*100));
+  destroyChart('labPassRate');
+  const labPassCtx = document.getElementById('chart-lab-pass-rate');
+  if(labPassCtx){
+    chartInstances.labPassRate = new Chart(labPassCtx, {
+      type: 'line',
+      data: { labels: monthLabels, datasets:[{ label:"Pass Rate %", data: monthPassRate, borderColor:'#3f6b2e', backgroundColor:'rgba(63,107,46,.15)', fill:true, tension:.25 }] },
+      options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:true, max:100, grid:{color:gridColor} }, x:{ grid:{display:false} } } }
+    });
+  }
+
+  /* HACCP CCP compliance */
+  const ccpLabels = state.haccpPoints.map(p=>p.ccpNumber||"CCP");
+  const ccpValues = state.haccpPoints.map(p=>haccpStatus(p)==="Compliant"?100:haccpStatus(p)==="Deviation"?0:50);
+  destroyChart('haccpCcp');
+  const haccpCcpCtx = document.getElementById('chart-haccp-ccp');
+  if(haccpCcpCtx){
+    chartInstances.haccpCcp = new Chart(haccpCcpCtx, {
+      type: 'bar',
+      data: { labels: ccpLabels, datasets:[{ label:"Compliance", data: ccpValues, backgroundColor: ccpValues.map(v=>v===100?'#3f6b2e':v===0?'#9b3f28':'#c98a2b') }] },
+      options: { indexAxis:'y', plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, max:100, grid:{color:gridColor} }, y:{ grid:{display:false} } } }
+    });
+  }
+
+  /* Supplier performance (quality score) */
+  const supplierLabels = state.suppliers.filter(s=>s.qualityScore).map(s=>s.name);
+  const supplierValues = state.suppliers.filter(s=>s.qualityScore).map(s=>Number(s.qualityScore));
+  destroyChart('supplierPerf');
+  const supplierPerfCtx = document.getElementById('chart-supplier-perf');
+  if(supplierPerfCtx){
+    chartInstances.supplierPerf = new Chart(supplierPerfCtx, {
+      type: 'bar',
+      data: { labels: supplierLabels, datasets:[{ label:"Quality Score", data: supplierValues, backgroundColor:'#1c2b4a' }] },
+      options: { indexAxis:'y', plugins:{ legend:{ display:false } }, scales:{ x:{ beginAtZero:true, max:100, grid:{color:gridColor} }, y:{ grid:{display:false} } } }
     });
   }
 }
@@ -4613,6 +4816,7 @@ function attachHandlers(){
     const auditNumber = formatAuditNumber(state.auditSeq, new Date().getFullYear());
     const a = seedAudit(title, standard, area, sections, auditNumber, auditType);
     state.audits.unshift(a);
+    logActivity(`Audit "${title}" started`);
     openAuditId = a.id; showNewAudit=false; persist(); render();
   };
 
@@ -4681,6 +4885,7 @@ function attachHandlers(){
         a.findings.push(finding);
         item.linkedFindingId = finding.id;
         logHistory(a, `CAPA auto-generated from failed checklist item: "${item.text.slice(0,50)}${item.text.length>50?'…':''}"`);
+        logActivity(`CAPA auto-generated from "${a.title}"`);
       }
     }
     persist(); render();
@@ -4772,6 +4977,7 @@ function attachHandlers(){
       status: "Open"
     });
     logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"`);
+    logActivity(`CAPA created: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
     persist(); render();
   });
 
@@ -4806,6 +5012,7 @@ function attachHandlers(){
       residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null
     };
     state.riskAssessments.unshift(risk);
+    logActivity(`Risk assessment logged: ${hazard.slice(0,40)}${hazard.length>40?'…':''}`);
     openRiskId = risk.id; showNewRisk=false; persist(); render();
   };
   document.querySelectorAll('[data-toggle-risk]').forEach(el=>el.onclick=()=>{
@@ -4833,6 +5040,7 @@ function attachHandlers(){
         }
       } else {
         r[field] = el.value;
+        if(field==="status" && el.value==="Closed") logActivity(`Risk assessment closed: ${(r.hazard||'').slice(0,40)}`);
       }
       persist(); render();
     };
@@ -4883,6 +5091,7 @@ function attachHandlers(){
       notes: document.getElementById('nd-notes').value
     };
     state.documents.unshift(doc);
+    logActivity(`Document ${doc.docNumber||title} created`);
     openDocumentId = doc.id; showNewDocument=false; persist(); render();
   };
   document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
@@ -4897,6 +5106,7 @@ function attachHandlers(){
       const d = state.documents.find(x=>x.id===id);
       if(!d) return;
       d[field] = el.value;
+      if(field==="version") logActivity(`Document ${d.docNumber||d.title} revised to v${el.value}`);
       persist(); render();
     };
   });
@@ -5180,7 +5390,9 @@ function attachHandlers(){
       const [id, field] = el.dataset.supplierField.split(':');
       const s = state.suppliers.find(x=>x.id===id);
       if(!s) return;
-      s[field] = el.value; persist(); render();
+      s[field] = el.value;
+      if(field==="approvalStatus" && el.value==="Approved") logActivity(`Supplier ${s.name} approved`);
+      persist(); render();
     };
   });
   document.querySelectorAll('[data-action="delete-supplier"]').forEach(el=>el.onclick=()=>{
