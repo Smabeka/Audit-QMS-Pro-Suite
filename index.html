@@ -114,8 +114,104 @@
 <script>
 /* ---------- storage ---------- */
 const STORE_KEY = "audit-qms-standalone-v1";
-function loadStore(){ try{ const r = localStorage.getItem(STORE_KEY); return r? JSON.parse(r): null; }catch(e){ return null; } }
-function saveStore(d){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(d)); }catch(e){ console.error(e); } }
+
+/* ---------- workspaces (multi-client support) ----------
+   Each client/company gets its own isolated dataset under its own localStorage key
+   (STORE_KEY + "::" + workspaceId). A small registry ("aqms-workspaces") tracks the
+   list of workspaces, and "aqms-current-workspace" tracks which one is active.
+   loadStore/saveStore always read/write whichever workspace is currently active. */
+const WORKSPACES_KEY = "aqms-workspaces";
+const CURRENT_WORKSPACE_KEY = "aqms-current-workspace";
+function workspaceStoreKey(id){ return STORE_KEY + "::" + id; }
+function getWorkspaces(){ try{ const r = localStorage.getItem(WORKSPACES_KEY); return r ? JSON.parse(r) : []; }catch(e){ return []; } }
+function saveWorkspaces(list){ try{ localStorage.setItem(WORKSPACES_KEY, JSON.stringify(list)); return true; }catch(e){ console.error(e); return false; } }
+
+let currentWorkspaceId = null;
+/* Runs once at startup. Migrates a pre-workspace install (single dataset under STORE_KEY)
+   into a first workspace, or creates a fresh one if this is a brand new install. */
+function initWorkspaces(){
+  let workspaces = getWorkspaces();
+  if(workspaces.length === 0){
+    const legacyRaw = localStorage.getItem(STORE_KEY);
+    const id = uid();
+    let name = "My Company";
+    if(legacyRaw){
+      try{ const legacy = JSON.parse(legacyRaw); if(legacy && legacy.companySettings && legacy.companySettings.name) name = legacy.companySettings.name; }catch(e){}
+      localStorage.setItem(workspaceStoreKey(id), legacyRaw);
+      localStorage.removeItem(STORE_KEY);
+    }
+    workspaces = [{id, name}];
+    saveWorkspaces(workspaces);
+    localStorage.setItem(CURRENT_WORKSPACE_KEY, id);
+    currentWorkspaceId = id;
+  } else {
+    currentWorkspaceId = localStorage.getItem(CURRENT_WORKSPACE_KEY);
+    if(!currentWorkspaceId || !workspaces.find(w=>w.id===currentWorkspaceId)){
+      currentWorkspaceId = workspaces[0].id;
+      localStorage.setItem(CURRENT_WORKSPACE_KEY, currentWorkspaceId);
+    }
+  }
+}
+function currentWorkspaceName(){
+  const w = getWorkspaces().find(w=>w.id===currentWorkspaceId);
+  return w ? w.name : "My Company";
+}
+function switchWorkspace(id){
+  if(id === currentWorkspaceId) return;
+  saveStore(state); // flush current workspace before leaving it
+  currentWorkspaceId = id;
+  localStorage.setItem(CURRENT_WORKSPACE_KEY, id);
+  state = loadStore() || { audits: [], auditSeq: 0 };
+  migrateAuditNumbers();
+  ensureStateDefaults();
+  showWorkspaceModal = false;
+  newWorkspaceName = "";
+  render();
+}
+function createWorkspace(name){
+  const trimmed = (name||"").trim();
+  if(!trimmed) return;
+  const id = uid();
+  const list = getWorkspaces();
+  list.push({id, name: trimmed});
+  saveWorkspaces(list);
+  saveStore(state); // flush current workspace first
+  currentWorkspaceId = id;
+  localStorage.setItem(CURRENT_WORKSPACE_KEY, id);
+  state = { audits: [], auditSeq: 0 }; // new client starts empty, not the demo dataset
+  saveStore(state);
+  migrateAuditNumbers();
+  ensureStateDefaults();
+  showWorkspaceModal = false;
+  newWorkspaceName = "";
+  render();
+}
+function renameWorkspace(id, name){
+  const trimmed = (name||"").trim();
+  if(!trimmed) return;
+  const list = getWorkspaces();
+  const w = list.find(w=>w.id===id);
+  if(w){ w.name = trimmed; saveWorkspaces(list); render(); }
+}
+function deleteWorkspace(id){
+  const list = getWorkspaces();
+  if(list.length <= 1) return; // never delete the last remaining workspace
+  const remaining = list.filter(w=>w.id!==id);
+  saveWorkspaces(remaining);
+  localStorage.removeItem(workspaceStoreKey(id));
+  if(id === currentWorkspaceId){
+    currentWorkspaceId = remaining[0].id;
+    localStorage.setItem(CURRENT_WORKSPACE_KEY, currentWorkspaceId);
+    state = loadStore() || { audits: [], auditSeq: 0 };
+    migrateAuditNumbers();
+    ensureStateDefaults();
+  }
+  pendingDeleteWorkspaceId = null;
+  render();
+}
+
+function loadStore(){ try{ const r = localStorage.getItem(workspaceStoreKey(currentWorkspaceId)); return r? JSON.parse(r): null; }catch(e){ return null; } }
+function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorkspaceId), JSON.stringify(d)); return true; }catch(e){ console.error(e); return false; } }
 
 /* Pro unlock — change PRO_CODE to whatever code you distribute to paying users.
    Note: this is a client-side check only (anyone could view-source to find it) —
@@ -415,8 +511,90 @@ function migrateAuditNumbers(){
   if(changed) saveStore(state);
 }
 
+function ensureStateDefaults(){
+  if(!state.companySettings){
+    state.companySettings = {
+      name: "AQMS Pro Suite (Pty) Ltd",
+      address: "12 Pretoria Road, Kempton Park, 1619",
+      email: "Support@auditqmspro.com",
+      footerText: "",
+      logoDataUrl: "",
+      nextManagementReviewDate: ""
+    };
+  }
+  if(state.companySettings && state.companySettings.name === "SYDA MABEKA (PTY) LTD"){
+    state.companySettings.name = "AQMS Pro Suite (Pty) Ltd";
+    state.companySettings.address = "12 Pretoria Road, Kempton Park, 1619";
+  }
+  if(!state.companySettings.email){ state.companySettings.email = "Support@auditqmspro.com"; }
+  if(state.companySettings.nextManagementReviewDate===undefined){ state.companySettings.nextManagementReviewDate = ""; }
+  if(!state.riskAssessments){ state.riskAssessments = []; }
+  if(!state.metrics){ state.metrics = []; }
+  if(!state.checklists){ state.checklists = []; }
+  if(!state.documents){ state.documents = []; }
+  if(!state.trainingRecords){ state.trainingRecords = []; }
+  if(!state.haccpPoints){ state.haccpPoints = []; }
+  if(!state.suppliers){ state.suppliers = []; }
+  if(!state.allergenProducts){ state.allergenProducts = []; }
+  if(!state.allergenIncidents){ state.allergenIncidents = []; }
+  if(!state.cipSchedules){ state.cipSchedules = []; }
+  if(!state.cipDeviations){ state.cipDeviations = []; }
+  if(!state.sensoryEvaluations){ state.sensoryEvaluations = []; }
+  if(!state.batches){ state.batches = []; }
+  if(!state.tempProducts){ state.tempProducts = []; }
+  if(!state.tempLogs){ state.tempLogs = []; }
+  if(!state.haccpChecklistLogs){ state.haccpChecklistLogs = []; }
+  if(!state.foodsafeNcrs){ state.foodsafeNcrs = []; }
+  if(!state.productRecalls){ state.productRecalls = []; }
+  if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
+  if(state.complianceScoreHistory.length && state.complianceScoreHistory[0].date){
+    const byMonth = {};
+    state.complianceScoreHistory.forEach(h=>{
+      const month = h.date.slice(0,7);
+      if(!byMonth[month] || h.date > byMonth[month]._date){
+        byMonth[month] = {month, score:h.score, metrics:{}, _date:h.date};
+      }
+    });
+    state.complianceScoreHistory = Object.values(byMonth).map(({month,score,metrics})=>({month,score,metrics}));
+  }
+  if(!state.competencyRecords){ state.competencyRecords = []; }
+  if(!state.medicalSurveillanceRecords){ state.medicalSurveillanceRecords = []; }
+  if(!state.medicalCertRecords){ state.medicalCertRecords = []; }
+  if(!state.foodHandlerDeclarations){ state.foodHandlerDeclarations = []; }
+  if(!state.ppeIssueLogs){ state.ppeIssueLogs = []; }
+  if(!state.pestControlLogs){ state.pestControlLogs = []; }
+  if(!state.verificationLogs){ state.verificationLogs = []; }
+  if(!state.recallDrills){ state.recallDrills = []; }
+  if(!state.labResults){ state.labResults = []; }
+  if(!state.empSwabs){ state.empSwabs = []; }
+  if(!state.proficiencyTests){ state.proficiencyTests = []; }
+  if(!state.auditPlans){ state.auditPlans = []; }
+  if(!state.calibrationRecords){ state.calibrationRecords = []; }
+  if(!state.sampleRegister){ state.sampleRegister = []; }
+  if(!state.coaRecords){ state.coaRecords = []; }
+  if(!state.mediaPrepRecords){ state.mediaPrepRecords = []; }
+  if(!state.incubationRecords){ state.incubationRecords = []; }
+  if(!state.complaintRecords){ state.complaintRecords = []; }
+  if(!state.activityLog){ state.activityLog = []; }
+  if(!state.supplierScars){ state.supplierScars = []; }
+  state.suppliers.forEach(s=>{
+    if(s.qualityScore===undefined){ s.qualityScore = ""; }
+    if(s.lastAuditDate===undefined){ s.lastAuditDate = ""; }
+    if(s.lastAuditResult===undefined){ s.lastAuditResult = ""; }
+  });
+  if(!state.copqEntries){ state.copqEntries = []; }
+  if(!state.csatEntries){ state.csatEntries = []; }
+  state.audits.forEach(a=>{ if(!a.auditType){ a.auditType = "Internal"; } });
+  state.sensoryEvaluations.forEach(e=>{ if(!e.category){ e.category = "Product Quality"; } });
+  checklistSeq = state.checklists.length;
+}
+
+initWorkspaces();
 let state = loadStore() || seedData();
 migrateAuditNumbers();
+let showWorkspaceModal = false;
+let newWorkspaceName = "";
+let pendingDeleteWorkspaceId = null;
 let tab = "dashboard";
 let jumpTo = null;
 let showNewAudit = false;
@@ -442,81 +620,8 @@ let genericShowTrends = {};
 let genericShowNew = {};
 let genericOpenId = {};
 let lotHistorySearch = "";
-if(!state.companySettings){
-  state.companySettings = {
-    name: "AQMS Pro Suite (Pty) Ltd",
-    address: "12 Pretoria Road, Kempton Park, 1619",
-    email: "Support@aqmsprosuite.com",
-    footerText: "",
-    logoDataUrl: "",
-    nextManagementReviewDate: ""
-  };
-}
-if(state.companySettings && state.companySettings.name === "SYDA MABEKA (PTY) LTD"){
-  state.companySettings.name = "AQMS Pro Suite (Pty) Ltd";
-  state.companySettings.address = "12 Pretoria Road, Kempton Park, 1619";
-}
-if(!state.companySettings.email){ state.companySettings.email = "Support@aqmsprosuite.com"; }
-if(state.companySettings.nextManagementReviewDate===undefined){ state.companySettings.nextManagementReviewDate = ""; }
-if(!state.riskAssessments){ state.riskAssessments = []; }
-if(!state.metrics){ state.metrics = []; }
-if(!state.checklists){ state.checklists = []; }
-if(!state.documents){ state.documents = []; }
-if(!state.trainingRecords){ state.trainingRecords = []; }
-if(!state.haccpPoints){ state.haccpPoints = []; }
-if(!state.suppliers){ state.suppliers = []; }
-if(!state.allergenProducts){ state.allergenProducts = []; }
-if(!state.allergenIncidents){ state.allergenIncidents = []; }
-if(!state.cipSchedules){ state.cipSchedules = []; }
-if(!state.cipDeviations){ state.cipDeviations = []; }
-if(!state.sensoryEvaluations){ state.sensoryEvaluations = []; }
-if(!state.batches){ state.batches = []; }
-if(!state.tempProducts){ state.tempProducts = []; }
-if(!state.tempLogs){ state.tempLogs = []; }
-if(!state.haccpChecklistLogs){ state.haccpChecklistLogs = []; }
-if(!state.foodsafeNcrs){ state.foodsafeNcrs = []; }
-if(!state.productRecalls){ state.productRecalls = []; }
-if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
-if(state.complianceScoreHistory.length && state.complianceScoreHistory[0].date){
-  const byMonth = {};
-  state.complianceScoreHistory.forEach(h=>{
-    const month = h.date.slice(0,7);
-    if(!byMonth[month] || h.date > byMonth[month]._date){
-      byMonth[month] = {month, score:h.score, metrics:{}, _date:h.date};
-    }
-  });
-  state.complianceScoreHistory = Object.values(byMonth).map(({month,score,metrics})=>({month,score,metrics}));
-}
-if(!state.competencyRecords){ state.competencyRecords = []; }
-if(!state.medicalSurveillanceRecords){ state.medicalSurveillanceRecords = []; }
-if(!state.medicalCertRecords){ state.medicalCertRecords = []; }
-if(!state.foodHandlerDeclarations){ state.foodHandlerDeclarations = []; }
-if(!state.ppeIssueLogs){ state.ppeIssueLogs = []; }
-if(!state.pestControlLogs){ state.pestControlLogs = []; }
-if(!state.verificationLogs){ state.verificationLogs = []; }
-if(!state.recallDrills){ state.recallDrills = []; }
-if(!state.labResults){ state.labResults = []; }
-if(!state.empSwabs){ state.empSwabs = []; }
-if(!state.proficiencyTests){ state.proficiencyTests = []; }
-if(!state.auditPlans){ state.auditPlans = []; }
-if(!state.calibrationRecords){ state.calibrationRecords = []; }
-if(!state.sampleRegister){ state.sampleRegister = []; }
-if(!state.coaRecords){ state.coaRecords = []; }
-if(!state.mediaPrepRecords){ state.mediaPrepRecords = []; }
-if(!state.incubationRecords){ state.incubationRecords = []; }
-if(!state.complaintRecords){ state.complaintRecords = []; }
-if(!state.activityLog){ state.activityLog = []; }
-if(!state.supplierScars){ state.supplierScars = []; }
-state.suppliers.forEach(s=>{
-  if(s.qualityScore===undefined){ s.qualityScore = ""; }
-  if(s.lastAuditDate===undefined){ s.lastAuditDate = ""; }
-  if(s.lastAuditResult===undefined){ s.lastAuditResult = ""; }
-});
-if(!state.copqEntries){ state.copqEntries = []; }
-if(!state.csatEntries){ state.csatEntries = []; }
-state.audits.forEach(a=>{ if(!a.auditType){ a.auditType = "Internal"; } });
-state.sensoryEvaluations.forEach(e=>{ if(!e.category){ e.category = "Product Quality"; } });
-let checklistSeq = state.checklists.length;
+let checklistSeq = 0;
+ensureStateDefaults();
 
 function riskLevelFromScore(score){
   if(score===null || score===undefined || score==="") return null;
@@ -628,9 +733,13 @@ function metricStatus(m, value){
 }
 
 function persist(){
-  saveStore(state);
+  const ok = saveStore(state);
   const el = document.getElementById("saved-flash");
-  if(el){ el.style.opacity = "1"; clearTimeout(savedFlashTimer); savedFlashTimer = setTimeout(()=>{ if(el) el.style.opacity="0"; }, 900); }
+  if(!ok){
+    if(el){ el.textContent = "⚠ Storage full — this change was NOT saved. Remove some photos or export a backup."; el.style.color = "var(--rust)"; el.style.opacity = "1"; clearTimeout(savedFlashTimer); }
+    return;
+  }
+  if(el){ el.textContent = "● saved"; el.style.color = "var(--green)"; el.style.opacity = "1"; clearTimeout(savedFlashTimer); savedFlashTimer = setTimeout(()=>{ if(el) el.style.opacity="0"; }, 900); }
 }
 
 function logActivity(text){
@@ -1514,6 +1623,7 @@ function render(){
             <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
+            <button class="btn btn-ghost no-print" data-action="open-workspace-modal" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Switch client workspace">🏢 ${esc(currentWorkspaceName())}</button>
             <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
             ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
             <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
@@ -1550,6 +1660,7 @@ function render(){
       ${showProModal ? renderProModal() : ''}
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
       ${showCompanyModal ? renderCompanyModal() : ''}
+      ${showWorkspaceModal ? renderWorkspaceModal() : ''}
     `;
   } catch(err){
     console.error("Render error:", err);
@@ -1589,6 +1700,51 @@ function renderCompanyModal(){
         <div style="display:flex;justify-content:flex-end;gap:8px;">
           <button class="btn btn-ghost" data-action="close-company-modal">Cancel</button>
           <button class="btn btn-primary" data-action="save-company-settings">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderWorkspaceModal(){
+  const workspaces = getWorkspaces();
+  const deleteTarget = pendingDeleteWorkspaceId ? workspaces.find(w=>w.id===pendingDeleteWorkspaceId) : null;
+  if(deleteTarget){
+    return `
+      <div class="modal-overlay" data-action="cancel-delete-workspace">
+        <div class="modal-card" onclick="event.stopPropagation()">
+          <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--rust);">Delete Client Workspace?</h3>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 14px;">This will permanently delete all audits, CAPAs, risks, and other records for "<strong>${esc(deleteTarget.name)}</strong>" and cannot be undone. Export a backup first if you want to keep a copy.</p>
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn btn-ghost" data-action="cancel-delete-workspace">Cancel</button>
+            <button class="btn btn-danger" style="background:var(--rust);color:#fff;border:none;" data-action="confirm-delete-workspace" data-workspace="${deleteTarget.id}">Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="modal-overlay" data-action="close-workspace-modal">
+      <div class="modal-card" style="max-width:460px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">Client Workspaces</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Each workspace keeps a separate, isolated set of audits, CAPAs, risks, and documents — useful when you're managing more than one client or site.</p>
+        <div style="margin-bottom:14px;">
+          ${workspaces.map(w=>`
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line2);">
+              <input data-workspace-rename="${w.id}" value="${esc(w.name)}" style="flex:1;font-size:13px;padding:6px 8px;${w.id===currentWorkspaceId?'font-weight:600;':''}" />
+              ${w.id===currentWorkspaceId
+                ? `<span class="tag tag-navy" style="font-size:11px;">Active</span>`
+                : `<button class="btn btn-ghost" data-action="switch-workspace" data-workspace="${w.id}" style="font-size:12px;padding:4px 8px;">Switch</button>`}
+              ${workspaces.length>1 ? `<button class="x-btn" data-action="open-delete-workspace" data-workspace="${w.id}" title="Delete workspace">✕</button>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:14px;">
+          <input id="new-workspace-name" placeholder="New client / company name…" value="${esc(newWorkspaceName)}" style="flex:1;" />
+          <button class="btn btn-primary" data-action="create-workspace" style="white-space:nowrap;">+ Add Client</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;">
+          <button class="btn btn-ghost" data-action="close-workspace-modal">Close</button>
         </div>
       </div>
     </div>
@@ -1803,17 +1959,20 @@ function renderDashboard(){
     `;
   }
 
-  /* Today's Priorities — a ranked, clickable action list */
+  /* Today's Priorities — a ranked, clickable action list.
+     Primary sort: severity tier (red > yellow > green).
+     Secondary sort: urgency within the tier (more overdue days / higher risk level first),
+     so the single worst item in each tier always surfaces first instead of insertion order. */
   const priorities = [];
-  overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId}));
-  audits.filter(a=>a.status==="In Progress").forEach(a=>priorities.push({dot:"🟡", text:`Complete audit: ${a.title}`, jumpAudit:a.id}));
-  highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk"}));
-  state.documents.filter(d=>d.status==="Under Review").forEach(d=>priorities.push({dot:"🟡", text:`Approve document: ${d.title}`, navId:"nav-documents"}));
-  state.suppliers.filter(s=>s.approvalStatus==="Pending").forEach(s=>priorities.push({dot:"🟡", text:`Review supplier: ${s.name}`, navId:"nav-suppliers-list"}));
-  haccpVerificationOverdue.forEach(v=>priorities.push({dot:"🔴", text:`Verify HACCP: ${v.activityType||'Verification overdue'}`, navId:"nav-fs-verification"}));
-  activeHaccp.filter(p=>haccpStatus(p)!=="Compliant").forEach(p=>priorities.push({dot:"🟢", text:`Verify CCP: ${p.ccpNumber||'CCP'} — ${p.processStep||''}`, navId:"nav-fs-haccp"}));
+  overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
+  highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk", urgency:r.riskLevel==="Critical"?1000:500}));
+  haccpVerificationOverdue.forEach(v=>priorities.push({dot:"🔴", text:`Verify HACCP: ${v.activityType||'Verification overdue'}`, navId:"nav-fs-verification", urgency:v.nextDueDate?-daysUntil(v.nextDueDate):0}));
+  audits.filter(a=>a.status==="In Progress").forEach(a=>priorities.push({dot:"🟡", text:`Complete audit: ${a.title}`, jumpAudit:a.id, urgency:a.dueDate?-daysUntil(a.dueDate):0}));
+  state.documents.filter(d=>d.status==="Under Review").forEach(d=>priorities.push({dot:"🟡", text:`Approve document: ${d.title}`, navId:"nav-documents", urgency:0}));
+  state.suppliers.filter(s=>s.approvalStatus==="Pending").forEach(s=>priorities.push({dot:"🟡", text:`Review supplier: ${s.name}`, navId:"nav-suppliers-list", urgency:0}));
+  activeHaccp.filter(p=>haccpStatus(p)!=="Compliant").forEach(p=>priorities.push({dot:"🟢", text:`Verify CCP: ${p.ccpNumber||'CCP'} — ${p.processStep||''}`, navId:"nav-fs-haccp", urgency:0}));
   const priorityOrder = {"🔴":0,"🟡":1,"🟢":2};
-  priorities.sort((a,b)=>priorityOrder[a.dot]-priorityOrder[b.dot]);
+  priorities.sort((a,b)=>priorityOrder[a.dot]-priorityOrder[b.dot] || b.urgency-a.urgency);
   const topPriorities = priorities.slice(0,8);
 
   /* Recent Activity feed */
@@ -1838,11 +1997,13 @@ function renderDashboard(){
     ${topPriorities.length ? `
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Today's Priorities</h3>
-      ${topPriorities.map(p=>`
-        <button ${p.jumpAudit?`data-jump-audit="${p.jumpAudit}"`:`data-navid="${p.navId}"`} class="audit-row" style="border-radius:8px;">
+      ${topPriorities.map(p=>{
+        const accent = p.dot==="🔴" ? "var(--rust)" : p.dot==="🟡" ? "var(--amber)" : "var(--green)";
+        return `
+        <button ${p.jumpAudit?`data-jump-audit="${p.jumpAudit}"`:`data-navid="${p.navId}"`} class="audit-row" style="border-radius:8px;border-left:3px solid ${accent};margin-bottom:4px;">
           <span style="font-size:13px;">${p.dot} ${esc(p.text)}</span>
         </button>
-      `).join('')}
+      `;}).join('')}
     </div>` : ''}
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Recent Activity</h3>
@@ -4429,13 +4590,13 @@ const SETTINGS_SECTIONS = [
   `},
   { key:"contact", label:"Contact", content: `
     <p>For support, questions, or feedback:</p>
-    <p><a href="mailto:Support@aqmsprosuite.com">Support@aqmsprosuite.com</a></p>
+    <p><a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a></p>
   `},
   { key:"privacy", label:"Privacy Policy", content: `
     <p>AQMS Pro Suite runs entirely offline. All audit data, findings, CAPA records, and company settings are stored locally on your device using browser storage — nothing is sent to, or stored on, any server operated by AQMS Pro Suite (Pty) Ltd.</p>
     <p>The app loads a small number of third-party resources over the internet (Google Fonts, and the Chart.js and SheetJS libraries used for analytics charts and Excel export) — these providers do not receive any of your audit data, only a standard request for the resource file itself.</p>
     <p>Because data is stored locally, you are responsible for backing it up (via the Backup feature) and for the security of the device you use the app on. Uninstalling the app or clearing browser site data will permanently delete locally stored audits unless you've exported a backup first.</p>
-    <p>Questions about this policy can be sent to <a href="mailto:Support@aqmsprosuite.com">Support@aqmsprosuite.com</a>.</p>
+    <p>Questions about this policy can be sent to <a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a>.</p>
   `},
   { key:"version", label:"App Version", content: `
     <p><strong>AQMS Pro Suite — Version ${APP_VERSION}</strong></p>
@@ -4444,9 +4605,56 @@ const SETTINGS_SECTIONS = [
   `}
 ];
 
+/* Rough localStorage usage estimate. Browsers differ (5-10MB is typical), so this is shown
+   as an estimate against a conservative 5MB baseline rather than a precise number. */
+function estimateStorageUsage(){
+  let totalChars = 0;
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      const v = localStorage.getItem(k) || "";
+      totalChars += k.length + v.length;
+    }
+  }catch(e){ /* ignore */ }
+  const bytes = totalChars * 2; // JS strings are UTF-16
+  const CONSERVATIVE_QUOTA_BYTES = 5 * 1024 * 1024;
+  const pct = Math.min(100, Math.round((bytes / CONSERVATIVE_QUOTA_BYTES) * 100));
+  let photoBytes = 0, photoCount = 0;
+  const countPhoto = (p)=>{ if(p){ photoBytes += p.length*2; photoCount++; } };
+  (state.audits||[]).forEach(a=>{
+    (a.findings||[]).forEach(f=>countPhoto(f.photo));
+    (a.sections||[]).forEach(sec=>(sec.items||[]).forEach(it=>countPhoto(it.photo)));
+  });
+  (state.checklists||[]).forEach(c=>{
+    (c.sections||[]).forEach(sec=>(sec.items||[]).forEach(it=>countPhoto(it.photo)));
+  });
+  return { bytes, pct, photoBytes, photoCount };
+}
+function formatBytes(b){
+  if(b < 1024) return b + " B";
+  if(b < 1024*1024) return Math.round(b/1024) + " KB";
+  return (b/(1024*1024)).toFixed(1) + " MB";
+}
+
 function renderSettings(){
+  const usage = estimateStorageUsage();
+  const barColor = usage.pct >= 85 ? "var(--rust)" : usage.pct >= 60 ? "var(--amber)" : "var(--green)";
   return `
     <h2 class="serif" style="font-size:18px;margin:0 0 16px;">Settings</h2>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+        <h3 class="serif" style="font-size:15px;margin:0;">Device Storage</h3>
+        <span style="font-size:12px;color:${barColor};font-weight:600;">${usage.pct}% used (estimate)</span>
+      </div>
+      <div style="background:var(--line2);border-radius:6px;height:8px;overflow:hidden;margin-bottom:8px;">
+        <div style="width:${usage.pct}%;background:${barColor};height:100%;"></div>
+      </div>
+      <p class="muted-italic" style="font-size:12px;margin:0 0 6px;">
+        ${formatBytes(usage.bytes)} used, estimated against a conservative 5MB browser baseline — actual limits vary by browser and device.
+        ${usage.photoCount ? ` Photos account for ~${formatBytes(usage.photoBytes)} across ${usage.photoCount} attachment${usage.photoCount===1?'':'s'}.` : ''}
+      </p>
+      ${usage.pct >= 60 ? `<p style="font-size:12px;color:${barColor};margin:0;font-weight:500;">${usage.pct >= 85 ? '⚠ Storage is nearly full — export a backup soon and consider removing older photos, or new entries may fail to save.' : 'Getting full — worth exporting a backup from the Audit Register toolbar (⬇ Backup) as a precaution.'}</p>` : ''}
+    </div>
     <div class="card" style="overflow:hidden;">
       ${SETTINGS_SECTIONS.map(sec => `
         <div style="border-bottom:1px solid var(--line2);">
@@ -6095,7 +6303,23 @@ function attachHandlers(){
     }
   };
 
-  /* Excel export (Pro gated) */
+  /* client workspace switcher */
+  const openWorkspaceBtn = document.querySelector('[data-action="open-workspace-modal"]');
+  if(openWorkspaceBtn) openWorkspaceBtn.onclick=()=>{ showWorkspaceModal=true; render(); };
+  document.querySelectorAll('[data-action="close-workspace-modal"]').forEach(el=>el.onclick=()=>{ showWorkspaceModal=false; render(); });
+  document.querySelectorAll('[data-action="switch-workspace"]').forEach(el=>el.onclick=()=>{ switchWorkspace(el.getAttribute('data-workspace')); });
+  const createWorkspaceBtn = document.querySelector('[data-action="create-workspace"]');
+  if(createWorkspaceBtn) createWorkspaceBtn.onclick=()=>{
+    const val = document.getElementById('new-workspace-name').value;
+    if(!val || !val.trim()){ return; }
+    createWorkspace(val);
+  };
+  document.querySelectorAll('[data-workspace-rename]').forEach(el=>{
+    el.onchange=()=>{ renameWorkspace(el.getAttribute('data-workspace-rename'), el.value); };
+  });
+  document.querySelectorAll('[data-action="open-delete-workspace"]').forEach(el=>el.onclick=()=>{ pendingDeleteWorkspaceId = el.getAttribute('data-workspace'); render(); });
+  document.querySelectorAll('[data-action="cancel-delete-workspace"]').forEach(el=>el.onclick=()=>{ pendingDeleteWorkspaceId = null; render(); });
+  document.querySelectorAll('[data-action="confirm-delete-workspace"]').forEach(el=>el.onclick=()=>{ deleteWorkspace(el.getAttribute('data-workspace')); });
   const excelBtn = document.querySelector('[data-action="export-excel"]');
   if(excelBtn) excelBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
