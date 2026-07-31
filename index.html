@@ -477,6 +477,16 @@ if(!state.haccpChecklistLogs){ state.haccpChecklistLogs = []; }
 if(!state.foodsafeNcrs){ state.foodsafeNcrs = []; }
 if(!state.productRecalls){ state.productRecalls = []; }
 if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
+if(state.complianceScoreHistory.length && state.complianceScoreHistory[0].date){
+  const byMonth = {};
+  state.complianceScoreHistory.forEach(h=>{
+    const month = h.date.slice(0,7);
+    if(!byMonth[month] || h.date > byMonth[month]._date){
+      byMonth[month] = {month, score:h.score, metrics:{}, _date:h.date};
+    }
+  });
+  state.complianceScoreHistory = Object.values(byMonth).map(({month,score,metrics})=>({month,score,metrics}));
+}
 if(!state.competencyRecords){ state.competencyRecords = []; }
 if(!state.medicalSurveillanceRecords){ state.medicalSurveillanceRecords = []; }
 if(!state.medicalCertRecords){ state.medicalCertRecords = []; }
@@ -1628,32 +1638,43 @@ function scoreOf(audit){
 }
 
 function complianceGrade(score){
-  if(score===null) return {label:"No data yet", tone:"neutral"};
-  if(score>=95) return {label:"Excellent", tone:"green"};
-  if(score>=90) return {label:"Compliant", tone:"green"};
-  if(score>=80) return {label:"Needs Improvement", tone:"amber"};
-  if(score>=70) return {label:"At Risk", tone:"amber"};
+  if(score===null) return {label:"No Data", tone:"neutral"};
+  if(score>=90) return {label:"Excellent", tone:"green"};
+  if(score>=80) return {label:"Good", tone:"navy"};
+  if(score>=60) return {label:"Needs Attention", tone:"amber"};
   return {label:"Critical", tone:"rust"};
 }
 
-const GRADE_EMOJI = {green:"🟢", amber:"🟡", rust:"🔴", neutral:"⚪"};
+const GRADE_EMOJI = {green:"🟢", amber:"🟡", rust:"🔴", navy:"🔵", neutral:"⚪"};
 
-function recordComplianceSnapshot(score){
-  if(score===null) return;
-  const t = today();
-  const existing = state.complianceScoreHistory.find(h=>h.date===t);
-  if(existing){ existing.score = score; } else { state.complianceScoreHistory.push({date:t, score}); }
+function recordComplianceSnapshot(overallScore, metricsObj){
+  if(overallScore===null && !metricsObj) return;
+  const month = today().slice(0,7);
+  let existing = state.complianceScoreHistory.find(h=>h.month===month);
+  if(!existing){ existing = {month, score:null, metrics:{}}; state.complianceScoreHistory.push(existing); }
+  if(overallScore!==null) existing.score = overallScore;
+  if(metricsObj){ existing.metrics = existing.metrics || {}; Object.assign(existing.metrics, metricsObj); }
   saveStore(state);
 }
 function complianceTrend(){
-  const sorted = [...state.complianceScoreHistory].sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted = [...state.complianceScoreHistory].sort((a,b)=>a.month.localeCompare(b.month));
   if(sorted.length<2) return null;
-  const t = today();
-  const priorEntries = sorted.filter(h=>h.date!==t);
+  const thisMonth = today().slice(0,7);
+  const priorEntries = sorted.filter(h=>h.month!==thisMonth && h.score!=null);
   if(priorEntries.length===0) return null;
   const prev = priorEntries[priorEntries.length-1];
   const curr = sorted[sorted.length-1];
+  if(curr.score==null) return null;
   return Math.round((curr.score - prev.score)*10)/10;
+}
+function metricTrend(key, currentValue){
+  if(currentValue===null) return null;
+  const sorted = [...state.complianceScoreHistory].sort((a,b)=>a.month.localeCompare(b.month));
+  const thisMonth = today().slice(0,7);
+  const priorEntries = sorted.filter(h=>h.month!==thisMonth && h.metrics && h.metrics[key]!=null);
+  if(priorEntries.length===0) return null;
+  const prev = priorEntries[priorEntries.length-1];
+  return Math.round((currentValue - prev.metrics[key])*10)/10;
 }
 
 function renderDashboard(){
@@ -1699,6 +1720,31 @@ function renderDashboard(){
     ...state.proficiencyTests.filter(r=>r.status)
   ];
   const labScore = labTests.length ? Math.round((labTests.filter(r=>r.status==="Pass").length/labTests.length)*1000)/10 : null;
+
+  /* Management summary counts */
+  const openAudits = audits.filter(a=>a.status!=="Closed").length;
+  const pendingDocuments = state.documents.filter(d=>d.status==="Draft"||d.status==="Under Review").length;
+  const approvedSuppliers = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
+  const employeeNames = new Set();
+  state.trainingRecords.forEach(r=>{ if(r.employeeName) employeeNames.add(r.employeeName.trim().toLowerCase()); });
+  [...state.competencyRecords, ...state.medicalSurveillanceRecords, ...state.medicalCertRecords, ...state.foodHandlerDeclarations, ...state.ppeIssueLogs].forEach(r=>{ if(r.employee) employeeNames.add(r.employee.trim().toLowerCase()); });
+  const activeEmployees = employeeNames.size;
+
+  /* Alerts */
+  const supplierExpiring = state.suppliers.filter(s=>{
+    if(!s.lastAssessmentDate) return false;
+    const nextDue = new Date(s.lastAssessmentDate); nextDue.setDate(nextDue.getDate()+365);
+    const days = Math.round((nextDue-new Date())/86400000);
+    return days>=0 && days<=7;
+  });
+  const haccpVerificationOverdue = state.verificationLogs.filter(v=>v.activityType==="HACCP Plan Review" && v.nextDueDate && daysUntil(v.nextDueDate)<0);
+  const trainingExpiring = state.trainingRecords.filter(t=>trainingStatus(t)==="Expiring Soon");
+  const alerts = [];
+  if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
+  if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
+  if(haccpVerificationOverdue.length) alerts.push(`⚠️ HACCP verification overdue (${haccpVerificationOverdue.length})`);
+  if(trainingExpiring.length) alerts.push(`⚠️ ${trainingExpiring.length} training certificate${trainingExpiring.length===1?'':'s'} expiring soon`);
+
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
     {label:"CAPA Management", score:capaScore},
@@ -1716,49 +1762,91 @@ function renderDashboard(){
   const availableScores = moduleScores.filter(x=>x.score!==null);
   const overallScore = availableScores.length ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
   const overallGrade = complianceGrade(overallScore);
-  recordComplianceSnapshot(overallScore);
+  const metricSnapshot = {
+    overall:overallScore, audit:avgScore, capa:capaScore, risk:riskScore,
+    training:trainingScore, documents:documentScore, kpiMetrics:metricsScore, supplier:supplierScore,
+    haccp:haccpScore, recall:recallScore, allergen:allergenScore, cip:cipScore, sensory:sensoryScore,
+    lab:labScore
+  };
+  recordComplianceSnapshot(overallScore, metricSnapshot);
   const trend = complianceTrend();
 
+  function kpiRow(label, score, key){
+    const g = complianceGrade(score);
+    const t = metricTrend(key, score);
+    const trendHtml = t===null ? '' : `<span style="font-size:11px;color:${t>=0?'var(--green)':'var(--rust)'};margin-left:6px;">${t>=0?'↑ +':'↓ '}${t}%</span>`;
+    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+      <span>${GRADE_EMOJI[g.tone]} ${label}</span>
+      <span>${score===null?'<span class="muted-italic">no data</span>':`<strong>${score}%</strong>`}${trendHtml}</span>
+    </div>`;
+  }
+  function kpiGroup(title, rows){
+    return `
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:14px 0 4px;">${title}</div>
+      ${rows.map(r=>kpiRow(r.label, r.score, r.key)).join('')}
+    `;
+  }
+
   return `
+    <div class="flex-wrap" style="margin-bottom:16px;">
+      <button class="btn btn-primary" data-quick-action="new-audit">+ New Audit</button>
+      <button class="btn btn-ghost" data-quick-action="raise-capa">+ Raise CAPA</button>
+      <button class="btn btn-ghost" data-quick-action="report-incident">+ Report Incident</button>
+      <button class="btn btn-ghost" data-quick-action="add-risk">+ Add Risk</button>
+      <button class="btn btn-ghost" data-quick-action="upload-document">+ Upload Document</button>
+    </div>
+    <div class="stats" style="margin-bottom:16px;">
+      ${statCard("📋", "Open Audits", openAudits)}
+      ${statCard("⏳", "Overdue CAPAs", overdue.length)}
+      ${statCard("🚨", "High Risks", highRisks.length)}
+      ${statCard("📄", "Pending Documents", pendingDocuments)}
+      ${statCard("🚚", "Approved Suppliers", approvedSuppliers)}
+      ${statCard("👥", "Active Employees", activeEmployees)}
+    </div>
+    ${alerts.length ? `
+      <div class="card p4" style="margin-bottom:16px;border-color:var(--rustBg);">
+        <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Alerts</h3>
+        ${alerts.map(a=>`<div style="padding:5px 0;font-size:13px;">${a}</div>`).join('')}
+      </div>
+    ` : ''}
     <div class="card p4" style="margin-bottom:16px;">
-      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Enterprise KPI Snapshot</h3>
-      ${[
-        {label:"Overall Compliance Score", score:overallScore},
-        {label:"Audit Compliance", score:avgScore},
-        {label:"CAPA Completion", score:capaScore},
-        {label:"Training Compliance", score:trainingScore},
-        {label:"Document Control", score:documentScore},
-        {label:"Supplier Compliance", score:supplierScore},
-        {label:"Food Safety Compliance", score:foodSafetyScore},
-        {label:"Laboratory Performance", score:labScore}
-      ].map(k=>{
-        const g = complianceGrade(k.score);
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">
-          <span>${GRADE_EMOJI[g.tone]} ${k.label}</span>
-          <strong>${k.score===null?'no data':k.score+'%'}</strong>
-        </div>`;
-      }).join('')}
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+        <h3 class="serif" style="font-size:16px;margin:0;">Enterprise KPI Snapshot</h3>
+      </div>
+      ${kpiGroup("Compliance Overview", [
+        {label:"Overall Compliance Score", score:overallScore, key:"overall"},
+        {label:"Audit Compliance", score:avgScore, key:"audit"},
+        {label:"CAPA Completion", score:capaScore, key:"capa"},
+        {label:"Risk Management", score:riskScore, key:"risk"}
+      ])}
+      ${kpiGroup("Operational Performance", [
+        {label:"Training Compliance", score:trainingScore, key:"training"},
+        {label:"Document Control", score:documentScore, key:"documents"},
+        {label:"KPI Metrics On-Target", score:metricsScore, key:"kpiMetrics"},
+        {label:"Supplier Approval Rate", score:supplierScore, key:"supplier"}
+      ])}
+      ${kpiGroup("Food Safety", [
+        {label:"HACCP Compliance", score:haccpScore, key:"haccp"},
+        {label:"Product Recall Progress", score:recallScore, key:"recall"},
+        {label:"Allergen Incident Closure", score:allergenScore, key:"allergen"},
+        {label:"CIP Cleaning Compliance", score:cipScore, key:"cip"},
+        {label:"Sensory Evaluation Pass Rate", score:sensoryScore, key:"sensory"}
+      ])}
+      ${kpiGroup("Laboratory", [
+        {label:"Laboratory Performance", score:labScore, key:"lab"}
+      ])}
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Metrics with no records yet show "no data" and aren't averaged into the overall score. Trend arrows compare to your last visit in a previous month.</p>
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <h3 class="serif" style="font-size:16px;margin:0;">${GRADE_EMOJI[overallGrade.tone]} Overall Compliance Score</h3>
+        <h3 class="serif" style="font-size:16px;margin:0;">Compliance Trend</h3>
         <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'No data yet':overallScore+'% — '+overallGrade.label}${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}</span>
       </div>
-      ${moduleScores.map(m=>{
-        const g = complianceGrade(m.score);
-        return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
-          <span>${m.label}</span>
-          <span class="tag tag-${g.tone}">${m.score===null?'no data':m.score+'% — '+g.label}</span>
-        </div>`;
-      }).join('')}
-      ${state.complianceScoreHistory.length>=2 ? `<div class="top-border"><canvas id="compliance-trend-chart" height="100"></canvas></div>` : ''}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Modules with no records yet show "no data" and aren't averaged into the overall score until you start logging.</p>
+      ${state.complianceScoreHistory.filter(h=>h.score!=null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas>` : `<p class="muted-italic" style="font-size:12px;">Come back next month to start seeing your compliance trend over time.</p>`}
     </div>
     <div class="stats">
       ${statCard("📋", "Total Audits", audits.length)}
       ${statCard("⚠", "Open Findings", openFindings.length)}
-      ${statCard("⏳", "Overdue CAPAs", overdue.length)}
-      ${statCard("🚨", "High/Critical Risks", highRisks.length)}
       ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length)}
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length)}
       ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length)}
@@ -1922,10 +2010,10 @@ function renderComplianceChart(){
   if(complianceChartInstance){ complianceChartInstance.destroy(); complianceChartInstance = null; }
   const canvas = document.getElementById('compliance-trend-chart');
   if(!canvas) return;
-  const sorted = [...state.complianceScoreHistory].sort((a,b)=>a.date.localeCompare(b.date));
+  const sorted = [...state.complianceScoreHistory].filter(h=>h.score!=null).sort((a,b)=>a.month.localeCompare(b.month));
   complianceChartInstance = new Chart(canvas, {
     type: 'line',
-    data: { labels: sorted.map(h=>h.date), datasets: [{ label:'Overall Compliance %', data: sorted.map(h=>h.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3 }] },
+    data: { labels: sorted.map(h=>h.month), datasets: [{ label:'Overall Compliance %', data: sorted.map(h=>h.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3 }] },
     options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:false, max:100 }, x:{ grid:{display:false} } } }
   });
 }
@@ -4354,6 +4442,16 @@ function buildAuditPrintReport(a){
 
 /* ---------- event handling ---------- */
 function attachHandlers(){
+  document.querySelectorAll('[data-quick-action]').forEach(el=>el.onclick=()=>{
+    const action = el.dataset.quickAction;
+    if(action==="new-audit"){ tab="audits"; showNewAudit=true; }
+    else if(action==="raise-capa"){ tab="capa"; }
+    else if(action==="report-incident"){ tab="foodsafe"; foodsafeSubTab="ncr"; showNewNcr=true; }
+    else if(action==="add-risk"){ tab="risk"; showNewRisk=true; }
+    else if(action==="upload-document"){ tab="documents"; showNewDocument=true; }
+    navGroupOpen = null; navSubGroupOpen = null;
+    render();
+  });
   const toggleNavMenu = document.querySelector('[data-action="toggle-nav-menu"]');
   if(toggleNavMenu) toggleNavMenu.onclick=()=>{ navMenuOpen = !navMenuOpen; render(); };
   document.querySelectorAll('[data-navid]').forEach(el=>el.onclick=()=>{
