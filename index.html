@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>AQMS Pro Suite</title>
+<title>AuditQMS Pro Suite</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="AQMS Pro Suite">
+<meta name="apple-mobile-web-app-title" content="AuditQMS Pro Suite">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#1c2b4a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -33,7 +33,7 @@
   h1,h2,h3,.serif{font-family:'Fraunces',serif;}
   .wrap{max-width:900px;margin:0 auto;padding:0 20px;}
   header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,245,238,.95);backdrop-filter:blur(6px);z-index:10;}
-  .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;}
+  .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;flex-wrap:wrap;gap:10px;}
   .brand{display:flex;align-items:flex-start;gap:10px;}
   .logo{width:44px;height:44px;border-radius:10px;background:var(--navy);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;flex-shrink:0;}
   .brand h1{font-size:21px;font-weight:600;margin:0;color:var(--navy);}
@@ -613,7 +613,7 @@ function migrateAuditNumbers(){
 function ensureStateDefaults(){
   if(!state.companySettings){
     state.companySettings = {
-      name: "AQMS Pro Suite (Pty) Ltd",
+      name: "AuditQMS Pro Suite (Pty) Ltd",
       address: "12 Pretoria Road, Kempton Park, 1619",
       email: "Support@auditqmspro.com",
       footerText: "",
@@ -622,7 +622,7 @@ function ensureStateDefaults(){
     };
   }
   if(state.companySettings && state.companySettings.name === "SYDA MABEKA (PTY) LTD"){
-    state.companySettings.name = "AQMS Pro Suite (Pty) Ltd";
+    state.companySettings.name = "AuditQMS Pro Suite (Pty) Ltd";
     state.companySettings.address = "12 Pretoria Road, Kempton Park, 1619";
   }
   if(!state.companySettings.email){ state.companySettings.email = "Support@auditqmspro.com"; }
@@ -1721,7 +1721,7 @@ function render(){
             <div class="logo">AQ</div>
             <div><h1>AuditQMS Pro Suite</h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-ghost no-print" data-action="open-workspace-modal" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Switch client workspace">🏢 ${esc(currentWorkspaceName())}</button>
             ${CLOUD_ENABLED ? `<button class="btn btn-ghost no-print" data-action="open-cloud-modal" style="font-size:12px;padding:6px 10px;" title="Cloud backup">☁️ ${currentCloudUser ? 'Synced' : 'Sign In'}</button>` : ''}
             <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
@@ -4645,7 +4645,7 @@ function renderQualityCycle(){
     {icon:"📋", tag:"PLAN", title:"New Audit Plan — Cycle Starts Again", items:[]}
   ];
   return `
-    <h2 class="serif" style="font-size:18px;margin:0 0 6px;">AQMS Pro Suite — Continuous Improvement Cycle</h2>
+    <h2 class="serif" style="font-size:18px;margin:0 0 6px;">AuditQMS Pro Suite — Continuous Improvement Cycle</h2>
     <p class="muted-italic" style="font-size:12px;margin:0 0 16px;">The Plan–Do–Check–Act (PDCA) loop this app is built around.</p>
     <div>
       ${stages.map((s,i)=>`
@@ -4682,9 +4682,9 @@ function renderQualityCycle(){
 /* ---------- settings ---------- */
 const SETTINGS_SECTIONS = [
   { key:"about", label:"About", content: `
-    <p><strong>AQMS Pro Suite</strong> — Version ${APP_VERSION}</p>
-    <p>AQMS Pro Suite is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
-    <p>Built as a Progressive Web App (PWA), AQMS Pro Suite provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food & beverage, pharmaceutical, cosmetics, manufacturing, warehousing & logistics, laboratories, healthcare, and other compliance-driven environments.</p>
+    <p><strong>AuditQMS Pro Suite</strong> — Version ${APP_VERSION}</p>
+    <p>AuditQMS Pro Suite is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
+    <p>Built as a Progressive Web App (PWA), AuditQMS Pro Suite provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food & beverage, pharmaceutical, cosmetics, manufacturing, warehousing & logistics, laboratories, healthcare, and other compliance-driven environments.</p>
     <p><strong>Key Features</strong></p>
     <ul>
       <li>Audit Management</li><li>Dynamic Audit Templates</li><li>CAPA Management</li>
@@ -4724,10 +4724,10 @@ const SETTINGS_SECTIONS = [
       <li>National Diploma in Food Science &amp; Nutrition — Walter Sisulu University</li>
       <li>Software Engineering Bootcamp — Stellenbosch University in partnership with HyperionDev</li>
     </ul>
-    <p>AQMS Pro Suite was developed by combining practical experience in quality assurance, food safety, and compliance with modern software engineering to provide organizations with an efficient, reliable, and user-friendly digital audit management solution.</p>
+    <p>AuditQMS Pro Suite was developed by combining practical experience in quality assurance, food safety, and compliance with modern software engineering to provide organizations with an efficient, reliable, and user-friendly digital audit management solution.</p>
   `},
   { key:"company", label:"Company", content: `
-    <p><strong>Company:</strong> AQMS Pro Suite (Pty) Ltd</p>
+    <p><strong>Company:</strong> AuditQMS Pro Suite (Pty) Ltd</p>
     <p><strong>Business Address:</strong><br/>12 Pretoria Road<br/>Kempton Park<br/>1619</p>
   `},
   { key:"contact", label:"Contact", content: `
@@ -4735,15 +4735,21 @@ const SETTINGS_SECTIONS = [
     <p><a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a></p>
   `},
   { key:"privacy", label:"Privacy Policy", content: `
-    <p>AQMS Pro Suite runs entirely offline. All audit data, findings, CAPA records, and company settings are stored locally on your device using browser storage — nothing is sent to, or stored on, any server operated by AQMS Pro Suite (Pty) Ltd.</p>
-    <p>The app loads a small number of third-party resources over the internet (Google Fonts, and the Chart.js and SheetJS libraries used for analytics charts and Excel export) — these providers do not receive any of your audit data, only a standard request for the resource file itself.</p>
-    <p>Because data is stored locally, you are responsible for backing it up (via the Backup feature) and for the security of the device you use the app on. Uninstalling the app or clearing browser site data will permanently delete locally stored audits unless you've exported a backup first.</p>
-    <p>Questions about this policy can be sent to <a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a>.</p>
+    <p><strong>Local data.</strong> AuditQMS Pro Suite is offline-first by default. Audit records, findings, CAPA records, risks, documents, client workspaces, and company settings are stored locally on your device using browser storage. This data is never sent anywhere unless you choose to use Cloud Sync (below).</p>
+    <p><strong>Cloud Sync (optional).</strong> If you choose to sign in and use Cloud Sync, we collect your email address and password to create an account, and — only when you tap "Backup to Cloud" — the data for your currently active workspace is transmitted to and stored by Supabase, our database provider, hosted in the EU (Frankfurt, Germany). This is entirely optional; the app works fully offline without ever creating an account.</p>
+    <p><strong>Security.</strong> Cloud-stored data is protected by database-level access rules (Row Level Security) ensuring only your own logged-in account can read or write your data. Data is transmitted over encrypted HTTPS connections.</p>
+    <p><strong>Third-party resources.</strong> The app loads a small number of third-party resources over the internet: Google Fonts, the Chart.js and SheetJS libraries (for analytics charts and Excel export), and — only if Cloud Sync is used — Supabase. These providers do not receive your audit data unless you've enabled Cloud Sync as described above.</p>
+    <p><strong>We do not sell data.</strong> We do not sell, rent, or trade your personal information or audit data to third parties, under any circumstances.</p>
+    <p><strong>Your rights and data deletion.</strong> You may request deletion of your Cloud Sync account and any data stored under it at any time by contacting us at the email below. Locally stored data can be deleted at any time by clearing your browser's site data or uninstalling the app.</p>
+    <p><strong>Backups are your responsibility.</strong> For local data, you are responsible for maintaining backups using the app's Backup feature and for the security of your device. Uninstalling the app or clearing browser site data will permanently delete locally stored records unless you've exported a backup or used Cloud Sync first.</p>
+    <p><strong>Applicable law.</strong> This policy is governed by the laws of South Africa, including the Protection of Personal Information Act (POPIA). If you access the app from the European Union or United Kingdom, GDPR/UK GDPR may also apply to how your personal data is handled.</p>
+    <p><strong>Changes to this policy.</strong> We may update this policy as the app changes. The effective date at the top reflects the most recent update.</p>
+    <p>Questions about this policy, or requests to delete your data, can be sent to <a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a>.</p>
   `},
   { key:"version", label:"App Version", content: `
-    <p><strong>AQMS Pro Suite — Version ${APP_VERSION}</strong></p>
-    <p style="margin-top:14px;">© 2026 AQMS Pro Suite (Pty) Ltd. All rights reserved.</p>
-    <p>AQMS Pro Suite is proprietary software developed and maintained by AQMS Pro Suite (Pty) Ltd. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
+    <p><strong>AuditQMS Pro Suite — Version ${APP_VERSION}</strong></p>
+    <p style="margin-top:14px;">© 2026 AuditQMS Pro Suite (Pty) Ltd. All rights reserved.</p>
+    <p>AuditQMS Pro Suite is proprietary software developed and maintained by AuditQMS Pro Suite (Pty) Ltd. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
   `}
 ];
 
@@ -4860,7 +4866,7 @@ function buildMetricsPrintReport(){
     </div>
     ${sectionsHtml}
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
-      Generated by AQMS Pro Suite ${APP_VERSION}
+      Generated by AuditQMS Pro Suite ${APP_VERSION}
     </div>
   `;
 }
@@ -4988,7 +4994,7 @@ function buildAuditPrintReport(a){
       <div class="sig-line">Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
     </div>
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
-      ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by AQMS Pro Suite ${APP_VERSION}
+      ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by AuditQMS Pro Suite ${APP_VERSION}
     </div>
   `;
 }
@@ -6551,7 +6557,7 @@ function attachHandlers(){
         if(!data.audits) throw new Error("Invalid backup file");
         if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) { restoreFileInput.value = ""; return; }
         state = data; openAuditId=null; persist(); render();
-      }catch(e){ alert("Could not read this file — please check it's a valid AQMS backup."); }
+      }catch(e){ alert("Could not read this file — please check it's a valid AuditQMS backup."); }
       restoreFileInput.value = "";
     };
     reader.readAsText(file);
