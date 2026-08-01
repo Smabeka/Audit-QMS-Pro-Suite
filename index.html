@@ -14,6 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
     --bg:#f7f5ee; --paper:#ffffff; --line:#e2dbc9; --line2:#eee7d5; --ink:#2a2620;
@@ -33,7 +34,7 @@
   .wrap{max-width:900px;margin:0 auto;padding:0 20px;}
   header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,245,238,.95);backdrop-filter:blur(6px);z-index:10;}
   .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;}
-  .brand{display:flex;align-items:center;gap:10px;}
+  .brand{display:flex;align-items:flex-start;gap:10px;}
   .logo{width:44px;height:44px;border-radius:10px;background:var(--navy);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;flex-shrink:0;}
   .brand h1{font-size:21px;font-weight:600;margin:0;color:var(--navy);}
   .brand p{font-size:11px;color:var(--muted);margin:2px 0 0;text-transform:uppercase;letter-spacing:.12em;}
@@ -212,6 +213,104 @@ function deleteWorkspace(id){
 
 function loadStore(){ try{ const r = localStorage.getItem(workspaceStoreKey(currentWorkspaceId)); return r? JSON.parse(r): null; }catch(e){ return null; } }
 function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorkspaceId), JSON.stringify(d)); return true; }catch(e){ console.error(e); return false; } }
+
+/* ---------- Cloud Backup (Phase 1: Supabase) ----------
+   This is a manual push/pull backup, not live multi-user sync — that's a later phase.
+   To enable: create a free project at supabase.com, run the SQL setup (see project notes),
+   then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
+   the Cloud Account feature is simply hidden and the app behaves exactly as before. */
+const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";       // e.g. "https://abcdefgh.supabase.co"
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";     // Project Settings → API → anon public key
+const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
+
+let supabaseClient = null;
+if(CLOUD_ENABLED && window.supabase){
+  try{ supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+  catch(e){ console.error("Supabase init failed:", e); }
+}
+
+let currentCloudUser = null;   // { id, email } once signed in, else null
+let showCloudModal = false;
+let cloudAuthMode = "signin";  // "signin" | "signup"
+let cloudStatus = "";          // short status/result message shown in the Cloud modal
+let cloudBusy = false;
+
+async function initCloudSession(){
+  if(!supabaseClient) return;
+  try{
+    const { data } = await supabaseClient.auth.getSession();
+    if(data && data.session){ currentCloudUser = data.session.user; render(); }
+  }catch(e){ console.error(e); }
+}
+async function cloudSignUp(email, password){
+  if(!supabaseClient) return;
+  cloudBusy = true; cloudStatus = ""; render();
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  cloudBusy = false;
+  if(error){ cloudStatus = "⚠ " + error.message; }
+  else { cloudStatus = "✓ Account created. Check your email to confirm, then sign in."; }
+  render();
+}
+async function cloudSignIn(email, password){
+  if(!supabaseClient) return;
+  cloudBusy = true; cloudStatus = ""; render();
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  cloudBusy = false;
+  if(error){ cloudStatus = "⚠ " + error.message; }
+  else { currentCloudUser = data.user; cloudStatus = ""; }
+  render();
+}
+async function cloudSignOut(){
+  if(!supabaseClient) return;
+  await supabaseClient.auth.signOut();
+  currentCloudUser = null;
+  render();
+}
+/* Pushes the CURRENT workspace's data to the cloud, one row per (user, workspace).
+   This overwrites whatever was previously backed up for this workspace. */
+async function cloudBackupNow(){
+  if(!supabaseClient || !currentCloudUser) return;
+  cloudBusy = true; cloudStatus = ""; render();
+  const { error } = await supabaseClient.from("workspace_backups").upsert({
+    user_id: currentCloudUser.id,
+    workspace_id: currentWorkspaceId,
+    workspace_name: currentWorkspaceName(),
+    data: state,
+    updated_at: new Date().toISOString()
+  }, { onConflict: "user_id,workspace_id" });
+  cloudBusy = false;
+  cloudStatus = error ? ("⚠ Backup failed: " + error.message) : "✓ Backed up to cloud just now.";
+  render();
+}
+/* Pulls the cloud copy of the CURRENT workspace and replaces local data with it.
+   Destructive to local changes, so the UI confirms before calling this. */
+async function cloudRestoreNow(){
+  if(!supabaseClient || !currentCloudUser) return;
+  cloudBusy = true; cloudStatus = ""; render();
+  const { data, error } = await supabaseClient.from("workspace_backups")
+    .select("data, updated_at")
+    .eq("user_id", currentCloudUser.id)
+    .eq("workspace_id", currentWorkspaceId)
+    .maybeSingle();
+  cloudBusy = false;
+  if(error){ cloudStatus = "⚠ Restore failed: " + error.message; render(); return; }
+  if(!data){ cloudStatus = "No cloud backup found for this workspace yet."; render(); return; }
+  state = data.data;
+  ensureStateDefaults();
+  persist();
+  cloudStatus = "✓ Restored from cloud (backed up " + new Date(data.updated_at).toLocaleString() + ").";
+  render();
+}
+/* Lists which of the device's local workspaces also have a cloud backup, and when. */
+async function cloudListBackups(){
+  if(!supabaseClient || !currentCloudUser) return [];
+  const { data, error } = await supabaseClient.from("workspace_backups")
+    .select("workspace_id, workspace_name, updated_at")
+    .eq("user_id", currentCloudUser.id);
+  if(error){ console.error(error); return []; }
+  return data || [];
+}
+
 
 /* Pro unlock — change PRO_CODE to whatever code you distribute to paying users.
    Note: this is a client-side check only (anyone could view-source to find it) —
@@ -1620,10 +1719,11 @@ function render(){
         <div class="wrap headrow">
           <div class="brand">
             <div class="logo">AQ</div>
-            <div><h1>AuditQMS Pro Suite <span style="font-size:10px;color:var(--muted);font-weight:400;">${APP_VERSION}</span></h1><p>Integrated SHEQ Management Platform</p></div>
+            <div><h1>AuditQMS Pro Suite</h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <button class="btn btn-ghost no-print" data-action="open-workspace-modal" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Switch client workspace">🏢 ${esc(currentWorkspaceName())}</button>
+            ${CLOUD_ENABLED ? `<button class="btn btn-ghost no-print" data-action="open-cloud-modal" style="font-size:12px;padding:6px 10px;" title="Cloud backup">☁️ ${currentCloudUser ? 'Synced' : 'Sign In'}</button>` : ''}
             <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
             ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
             <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
@@ -1661,6 +1761,7 @@ function render(){
       ${pendingDeleteAuditId ? renderDeleteConfirmModal() : ''}
       ${showCompanyModal ? renderCompanyModal() : ''}
       ${showWorkspaceModal ? renderWorkspaceModal() : ''}
+      ${showCloudModal ? renderCloudModal() : ''}
     `;
   } catch(err){
     console.error("Render error:", err);
@@ -1745,6 +1846,47 @@ function renderWorkspaceModal(){
         </div>
         <div style="display:flex;justify-content:flex-end;">
           <button class="btn btn-ghost" data-action="close-workspace-modal">Close</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderCloudModal(){
+  if(!currentCloudUser){
+    return `
+      <div class="modal-overlay" data-action="close-cloud-modal">
+        <div class="modal-card" style="max-width:400px;" onclick="event.stopPropagation()">
+          <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">☁️ Cloud Backup</h3>
+          <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Sign in to back up this workspace's data to the cloud, so it's safe even if this device is lost, and restorable on another device.</p>
+          <div class="flex-wrap" style="margin-bottom:10px;">
+            <button class="btn ${cloudAuthMode==='signin'?'btn-primary':'btn-ghost'}" data-action="cloud-mode-signin" style="font-size:12px;">Sign In</button>
+            <button class="btn ${cloudAuthMode==='signup'?'btn-primary':'btn-ghost'}" data-action="cloud-mode-signup" style="font-size:12px;">Create Account</button>
+          </div>
+          <label class="field" style="margin-bottom:8px;">Email<input id="cloud-email" type="email" placeholder="you@example.com" /></label>
+          <label class="field" style="margin-bottom:8px;">Password<input id="cloud-password" type="password" placeholder="At least 6 characters" /></label>
+          ${cloudStatus ? `<p style="font-size:12px;margin:0 0 10px;color:${cloudStatus.startsWith('⚠')?'var(--rust)':'var(--green)'};">${esc(cloudStatus)}</p>` : ''}
+          <div style="display:flex;justify-content:flex-end;gap:8px;">
+            <button class="btn btn-ghost" data-action="close-cloud-modal">Cancel</button>
+            <button class="btn btn-primary" data-action="cloud-submit-auth" ${cloudBusy?'disabled':''}>${cloudBusy?'Working…':(cloudAuthMode==='signin'?'Sign In':'Create Account')}</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  return `
+    <div class="modal-overlay" data-action="close-cloud-modal">
+      <div class="modal-card" style="max-width:420px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">☁️ Cloud Backup</h3>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Signed in as <strong>${esc(currentCloudUser.email)}</strong>. This backs up the <strong>${esc(currentWorkspaceName())}</strong> workspace only — switch workspaces first to back up a different client.</p>
+        ${cloudStatus ? `<p style="font-size:12px;margin:0 0 10px;color:${cloudStatus.startsWith('⚠')?'var(--rust)':'var(--green)'};">${esc(cloudStatus)}</p>` : ''}
+        <div class="flex-wrap" style="margin-bottom:14px;">
+          <button class="btn btn-primary" data-action="cloud-backup-now" ${cloudBusy?'disabled':''}>${cloudBusy?'Working…':'⬆ Back Up This Workspace'}</button>
+          <button class="btn btn-ghost" data-action="cloud-restore-now" ${cloudBusy?'disabled':''}>⬇ Restore From Cloud</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;">
+          <button class="btn btn-ghost" data-action="cloud-sign-out" style="font-size:12px;color:var(--rust);">Sign Out</button>
+          <button class="btn btn-ghost" data-action="close-cloud-modal">Close</button>
         </div>
       </div>
     </div>
@@ -6316,10 +6458,35 @@ function attachHandlers(){
   };
   document.querySelectorAll('[data-workspace-rename]').forEach(el=>{
     el.onchange=()=>{ renameWorkspace(el.getAttribute('data-workspace-rename'), el.value); };
+    el.onkeydown=(e)=>{ if(e.key==="Enter"){ el.blur(); } };
   });
   document.querySelectorAll('[data-action="open-delete-workspace"]').forEach(el=>el.onclick=()=>{ pendingDeleteWorkspaceId = el.getAttribute('data-workspace'); render(); });
   document.querySelectorAll('[data-action="cancel-delete-workspace"]').forEach(el=>el.onclick=()=>{ pendingDeleteWorkspaceId = null; render(); });
   document.querySelectorAll('[data-action="confirm-delete-workspace"]').forEach(el=>el.onclick=()=>{ deleteWorkspace(el.getAttribute('data-workspace')); });
+
+  /* cloud backup */
+  const openCloudBtn = document.querySelector('[data-action="open-cloud-modal"]');
+  if(openCloudBtn) openCloudBtn.onclick=()=>{ cloudStatus=""; showCloudModal=true; render(); };
+  document.querySelectorAll('[data-action="close-cloud-modal"]').forEach(el=>el.onclick=()=>{ showCloudModal=false; render(); });
+  const cloudModeSignin = document.querySelector('[data-action="cloud-mode-signin"]');
+  if(cloudModeSignin) cloudModeSignin.onclick=()=>{ cloudAuthMode="signin"; render(); };
+  const cloudModeSignup = document.querySelector('[data-action="cloud-mode-signup"]');
+  if(cloudModeSignup) cloudModeSignup.onclick=()=>{ cloudAuthMode="signup"; render(); };
+  const cloudSubmitBtn = document.querySelector('[data-action="cloud-submit-auth"]');
+  if(cloudSubmitBtn) cloudSubmitBtn.onclick=()=>{
+    const email = document.getElementById('cloud-email').value.trim();
+    const password = document.getElementById('cloud-password').value;
+    if(!email || !password){ cloudStatus = "⚠ Enter an email and password."; render(); return; }
+    if(cloudAuthMode==="signup") cloudSignUp(email, password); else cloudSignIn(email, password);
+  };
+  const cloudSignOutBtn = document.querySelector('[data-action="cloud-sign-out"]');
+  if(cloudSignOutBtn) cloudSignOutBtn.onclick=()=>{ cloudSignOut(); };
+  const cloudBackupBtn = document.querySelector('[data-action="cloud-backup-now"]');
+  if(cloudBackupBtn) cloudBackupBtn.onclick=()=>{ cloudBackupNow(); };
+  const cloudRestoreBtn = document.querySelector('[data-action="cloud-restore-now"]');
+  if(cloudRestoreBtn) cloudRestoreBtn.onclick=()=>{
+    if(confirm("This replaces everything in the current workspace with the last cloud backup. Continue?")) cloudRestoreNow();
+  };
   const excelBtn = document.querySelector('[data-action="export-excel"]');
   if(excelBtn) excelBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
@@ -6405,6 +6572,7 @@ function attachHandlers(){
 }
 
 render();
+initCloudSession();
 
 /* auto-save safety net — quietly persists every 5s in case a change slipped through */
 setInterval(() => { saveStore(state); }, 5000);
