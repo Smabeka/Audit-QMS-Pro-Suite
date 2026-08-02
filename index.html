@@ -188,6 +188,24 @@ function createWorkspace(name){
   newWorkspaceName = "";
   render();
 }
+function createDemoWorkspace(){
+  const id = uid();
+  const list = getWorkspaces();
+  const existingDemoCount = list.filter(w=>/^Demo/.test(w.name)).length;
+  const name = existingDemoCount ? `Demo (${existingDemoCount+1})` : "Demo";
+  list.push({id, name});
+  saveWorkspaces(list);
+  saveStore(state); // flush current workspace first
+  currentWorkspaceId = id;
+  localStorage.setItem(CURRENT_WORKSPACE_KEY, id);
+  state = seedDemoWorkspaceData();
+  saveStore(state);
+  migrateAuditNumbers();
+  ensureStateDefaults();
+  showWorkspaceModal = false;
+  newWorkspaceName = "";
+  render();
+}
 function renameWorkspace(id, name){
   const trimmed = (name||"").trim();
   if(!trimmed) return;
@@ -590,6 +608,109 @@ function seedData(){
   return { audits: [a], auditSeq: 1 };
 }
 
+/* Richer, multi-month dataset used only for the optional "Demo Workspace" — gives a
+   prospect something to click through (closed CAPAs, risk register, KPI trends, a
+   standalone checklist) instead of a single bare audit. Not used for real client data. */
+function seedDemoWorkspaceData(){
+  const year = new Date().getFullYear();
+  const today = new Date();
+  const daysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); };
+  const daysAhead = (n) => { const d = new Date(today); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
+
+  const a1 = seedAudit("Q3 GMP Verification — Bakery Line 2","FSSC 22000","Production",[
+    {name:"Personnel Hygiene", items:["Hairnets and beard snoods worn correctly","No jewellery or false nails observed","Hand-wash stations stocked and functional"]},
+    {name:"CCP Monitoring", items:["Chiller temp logs complete and within range","Metal detector verification records up to date"]},
+    {name:"Housekeeping", items:["Floors and drains clean, no standing water","Waste segregated and bins covered"]}
+  ], formatAuditNumber(1, year));
+  a1.date = daysAgo(6);
+  a1.status = "In Progress";
+  a1.riskLevel = "Medium";
+  a1.auditor = "Sandiso Mabeka";
+  a1.auditee = "Bakery Line 2 Team";
+  a1.sections[1].items[1].result = "Fail";
+  a1.sections[0].items[0].result = "Pass"; a1.sections[0].items[1].result = "Pass"; a1.sections[0].items[2].result = "Pass";
+  a1.sections[1].items[0].result = "Pass";
+  a1.sections[2].items[0].result = "Pass"; a1.sections[2].items[1].result = "Pass";
+  a1.findings = [{
+    id: uid(), clause:"CCP Monitoring", desc:"Metal detector verification log missing entries for two shifts",
+    severity:"Major", owner:"Line Supervisor", dueDate:daysAhead(3),
+    actionText:"Reissue verification log, retrain shift leads, daily QA spot-check for 2 weeks", status:"Open"
+  }];
+
+  const a2 = seedAudit("Monthly Internal Audit — Store 14 (Sandton)","ISO 22000","Front of House",[
+    {name:"Food Storage", items:["FIFO labelling correctly applied","Fridge/freezer temps within range and logged"]},
+    {name:"Cleaning & Sanitation", items:["Cleaning schedule signed off daily","Sanitiser concentration verified"]},
+  ], formatAuditNumber(2, year));
+  a2.date = daysAgo(28);
+  a2.status = "Closed";
+  a2.riskLevel = "Low";
+  a2.auditor = "Sandiso Mabeka";
+  a2.auditee = "Store 14 Manager";
+  a2.sections.forEach(sec=>sec.items.forEach(it=>it.result="Pass"));
+  a2.findings = [{
+    id: uid(), clause:"Cleaning & Sanitation", desc:"Sanitiser concentration slightly below spec on one till station",
+    severity:"Minor", owner:"Store Manager", dueDate:daysAgo(10),
+    actionText:"Retrained till staff on dilution ratio; re-tested and confirmed within spec", status:"Closed"
+  }];
+
+  const a3 = seedAudit("Supplier Verification — Regional DC","ISO 9001","Supply Chain",[
+    {name:"Incoming Goods", items:["COA received and matched to batch","Cold chain integrity confirmed on arrival"]},
+  ], formatAuditNumber(3, year));
+  a3.date = daysAgo(2);
+  a3.status = "Planned";
+  a3.riskLevel = "Medium";
+  a3.auditor = "Sandiso Mabeka";
+  a3.auditee = "DC Receiving Team";
+
+  const checklist = {
+    id: uid(), template: "ISO 22000",
+    location: "Store Front — Sandton",
+    inspector: "S. Mabeka",
+    date: daysAgo(1),
+    sections: [
+      { id: uid(), name: "Opening Checks", items: [
+        { id: uid(), text:"Fridge/freezer temps logged before trading", result:"Pass", note:"" },
+        { id: uid(), text:"Handwash stations stocked (soap, towels, sanitiser)", result:"Pass", note:"" },
+        { id: uid(), text:"Prior day's cleaning log signed off", result:"Fail", note:"Missing signature — followed up with shift lead" },
+      ]},
+    ],
+  };
+
+  const risks = [
+    { id: uid(), refNo:"RA-001", date: daysAgo(20), area:"Procurement", hazard:"Single supplier dependency for packaging film",
+      riskTo:"Continuity of supply", controls:"Monthly stock buffer maintained",
+      likelihood:4, severity:4, riskScore:16, riskLevel:"Critical",
+      action:"Qualify a second supplier by Q4", owner:"Procurement Lead", dueDate:daysAhead(45), completedDate:"",
+      status:"Open", residualLikelihood:"", residualSeverity:"", residualRiskScore:null, residualRiskLevel:null },
+    { id: uid(), refNo:"RA-002", date: daysAgo(45), area:"Facilities", hazard:"Ageing chiller units at Store 14",
+      riskTo:"Cold chain / product integrity", controls:"Preventive maintenance schedule increased to monthly",
+      likelihood:3, severity:3, riskScore:9, riskLevel:"High",
+      action:"Budget for chiller replacement in next capex cycle", owner:"Facilities Manager", dueDate:daysAhead(90), completedDate:"",
+      status:"Monitoring", residualLikelihood:2, residualSeverity:3, residualRiskScore:6, residualRiskLevel:"Medium" },
+  ];
+
+  const metrics = [
+    { id: uid(), name:"CAPA Closure Rate", category:"Quality", unit:"%", target:90, direction:"higher", critical:true,
+      source:"manual", autoType:null,
+      history:[{date:daysAgo(60),value:78},{date:daysAgo(30),value:85},{date:daysAgo(1),value:92}] },
+    { id: uid(), name:"Overdue CAPAs", category:"Quality", unit:"count", target:0, direction:"lower", critical:true,
+      source:"manual", autoType:null,
+      history:[{date:daysAgo(60),value:4},{date:daysAgo(30),value:2},{date:daysAgo(1),value:1}] },
+    { id: uid(), name:"Internal Audit Compliance Score", category:"Audit", unit:"%", target:95, direction:"higher", critical:false,
+      source:"manual", autoType:null,
+      history:[{date:daysAgo(60),value:88},{date:daysAgo(30),value:91},{date:daysAgo(1),value:94}] },
+  ];
+
+  checklistSeq = 1;
+  return {
+    audits: [a1, a2, a3],
+    auditSeq: 3,
+    checklists: [checklist],
+    riskAssessments: risks,
+    metrics: metrics,
+  };
+}
+
 function migrateAuditNumbers(){
   if(state.auditSeq === undefined){
     state.auditSeq = 0;
@@ -607,6 +728,7 @@ function migrateAuditNumbers(){
     if(!a.riskLevel){ a.riskLevel = "Medium"; changed = true; }
     if(!a.history){ a.history = [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }]; changed = true; }
     if(a.auditee === undefined){ a.auditee = ""; changed = true; }
+    if(!a.signOff){ a.signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null }; changed = true; }
   });
   if(changed) saveStore(state);
 }
@@ -1821,9 +1943,12 @@ function renderWorkspaceModal(){
             </div>
           `).join('')}
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:14px;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;">
           <input id="new-workspace-name" placeholder="New client / company name…" value="${esc(newWorkspaceName)}" style="flex:1;" />
           <button class="btn btn-primary" data-action="create-workspace" style="white-space:nowrap;">+ Add Client</button>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+          <button class="btn btn-ghost" data-action="create-demo-workspace" style="font-size:12px;">✨ Create Demo Workspace (sample data)</button>
         </div>
         <div style="display:flex;justify-content:flex-end;">
           <button class="btn btn-ghost" data-action="close-workspace-modal">Close</button>
@@ -2110,12 +2235,12 @@ function renderDashboard(){
   }
 
   return `
-    <div class="flex-wrap" style="margin-bottom:16px;">
-      <button class="btn btn-primary" data-quick-action="new-audit">+ New Audit</button>
-      <button class="btn btn-ghost" data-quick-action="raise-capa">+ Raise CAPA</button>
-      <button class="btn btn-ghost" data-quick-action="upload-document">+ Upload Document</button>
-      <button class="btn btn-ghost" data-quick-action="report-incident">+ Report Incident</button>
-      <button class="btn btn-ghost" data-quick-action="add-risk">+ Add Risk</button>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
+      <button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;">+ New Audit</button>
+      <button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;">+ Raise CAPA</button>
+      <button class="btn btn-ghost" data-quick-action="upload-document" style="justify-content:center;">+ Upload Doc</button>
+      <button class="btn btn-ghost" data-quick-action="report-incident" style="justify-content:center;">+ Report Incident</button>
+      <button class="btn btn-ghost" data-quick-action="add-risk" style="justify-content:center;">+ Add Risk</button>
     </div>
     ${topPriorities.length ? `
     <div class="card p4" style="margin-bottom:16px;">
@@ -2450,6 +2575,9 @@ function renderAuditRow(a){
 function renderAuditDetail(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
+  const signOff = a.signOff || { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
+  const locked = !!signOff.auditorSignedAt;
+  const lockStyle = locked ? 'opacity:.55;pointer-events:none;' : '';
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <div class="grid2">
@@ -2475,6 +2603,8 @@ function renderAuditDetail(a){
 
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Checklist</h3>
+      ${locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 Signed off — unsign below to make further edits.</div>` : ''}
+      <div style="${lockStyle}">
       ${a.sections.map(sec => `
         <div class="section-box">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -2509,10 +2639,13 @@ function renderAuditDetail(a){
         <input placeholder="New section name (e.g. Allergen Control)" id="new-section-${a.id}" style="flex:1;" />
         <button class="btn btn-ghost" data-action="add-section" data-audit="${a.id}">+ Add Section</button>
       </div>
+      </div>
     </div>
 
     <div class="card p4">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Findings & CAPA</h3>
+      ${locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 Signed off — unsign below to make further edits.</div>` : ''}
+      <div style="${lockStyle}">
       ${a.findings.map(f => `
         <div class="finding-box">
           <div style="display:flex;justify-content:space-between;gap:8px;">
@@ -2544,6 +2677,7 @@ function renderAuditDetail(a){
         <label class="field" style="grid-column:1/-1;">Corrective Action<input id="nf-action-${a.id}" placeholder="Planned CAPA…" /></label>
         <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
       </div>
+      </div>
     </div>
 
     <div class="card p4" style="margin-top:12px;">
@@ -2554,6 +2688,35 @@ function renderAuditDetail(a){
           <span>${esc(h.text)}</span>
         </div>
       `).join('') || `<p class="muted-italic">No history yet.</p>`}
+    </div>
+
+    <div class="card p4" style="margin-top:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Sign-Off</h3>
+      <div class="grid2">
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">AUDITOR SIGN-OFF</div>
+          ${signOff.auditorSignedAt ? `
+            <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.auditorName)}</strong></div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.auditorSignedAt).toLocaleString()}</div>
+            <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="auditor">Unsign</button>
+          ` : `
+            <input placeholder="Type full name to sign" id="sign-auditor-${a.id}" style="margin-bottom:6px;" />
+            <button class="btn btn-primary" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="auditor">Sign as Auditor</button>
+          `}
+        </div>
+        <div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">APPROVAL SIGN-OFF</div>
+          ${signOff.approverSignedAt ? `
+            <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.approverName)}</strong></div>
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.approverSignedAt).toLocaleString()}</div>
+            <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="approver">Unsign</button>
+          ` : `
+            <input placeholder="Type full name to sign" id="sign-approver-${a.id}" style="margin-bottom:6px;" ${!locked?'disabled title="Auditor must sign first"':''} />
+            <button class="btn ${locked?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="approver" ${!locked?'disabled':''}>Sign as Approver</button>
+          `}
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;">Signing locks the checklist and findings against further edits. Unsign to make corrections.</div>
     </div>
   `;
 }
@@ -4987,8 +5150,12 @@ function buildAuditPrintReport(a){
     ${checklistRows}
     ${findingsRows}
     <div class="sig-row">
-      <div class="sig-line">Auditor Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
-      <div class="sig-line">Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________</div>
+      <div class="sig-line">${a.signOff && a.signOff.auditorSignedAt
+        ? `Auditor Signature: <strong>${esc(a.signOff.auditorName)}</strong> — signed electronically ${new Date(a.signOff.auditorSignedAt).toLocaleString()}`
+        : `Auditor Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________`}</div>
+      <div class="sig-line">${a.signOff && a.signOff.approverSignedAt
+        ? `Approval Signature: <strong>${esc(a.signOff.approverName)}</strong> — signed electronically ${new Date(a.signOff.approverSignedAt).toLocaleString()}`
+        : `Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________`}</div>
     </div>
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
       ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by AuditQMS Pro Suite ${APP_VERSION}
@@ -5192,6 +5359,39 @@ function attachHandlers(){
 
   document.querySelectorAll('[data-action="delete-audit"]').forEach(el=>el.onclick=()=>{
     pendingDeleteAuditId = el.dataset.audit; render();
+  });
+  document.querySelectorAll('[data-action="sign-audit"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(!a) return;
+    const role = el.dataset.role; // "auditor" | "approver"
+    const input = document.getElementById(role==="auditor" ? `sign-auditor-${a.id}` : `sign-approver-${a.id}`);
+    const name = (input && input.value || "").trim();
+    if(!name){ alert("Please type your full name to sign."); return; }
+    if(!a.signOff){ a.signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null }; }
+    if(role==="auditor"){
+      a.signOff.auditorName = name; a.signOff.auditorSignedAt = new Date().toISOString();
+      logHistory(a, `Signed off by auditor: ${name}`);
+    } else {
+      a.signOff.approverName = name; a.signOff.approverSignedAt = new Date().toISOString();
+      logHistory(a, `Approved and signed off: ${name}`);
+    }
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="unsign-audit"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(!a || !a.signOff) return;
+    const role = el.dataset.role;
+    if(!confirm("Unsigning will re-open this audit for editing. Continue?")) return;
+    if(role==="auditor"){
+      logHistory(a, `Auditor sign-off revoked (was: ${a.signOff.auditorName})`);
+      a.signOff.auditorName = ""; a.signOff.auditorSignedAt = null;
+      // revoking the auditor signature also revokes approval, since approval depended on the locked record
+      if(a.signOff.approverSignedAt){ a.signOff.approverName = ""; a.signOff.approverSignedAt = null; }
+    } else {
+      logHistory(a, `Approval sign-off revoked (was: ${a.signOff.approverName})`);
+      a.signOff.approverName = ""; a.signOff.approverSignedAt = null;
+    }
+    persist(); render();
   });
   document.querySelectorAll('[data-action="cancel-delete-audit"]').forEach(el=>el.onclick=()=>{
     pendingDeleteAuditId = null; render();
@@ -6459,6 +6659,8 @@ function attachHandlers(){
     if(!val || !val.trim()){ return; }
     createWorkspace(val);
   };
+  const createDemoBtn = document.querySelector('[data-action="create-demo-workspace"]');
+  if(createDemoBtn) createDemoBtn.onclick=()=>{ createDemoWorkspace(); };
   document.querySelectorAll('[data-workspace-rename]').forEach(el=>{
     el.onchange=()=>{ renameWorkspace(el.getAttribute('data-workspace-rename'), el.value); };
     el.onkeydown=(e)=>{ if(e.key==="Enter"){ el.blur(); } };
