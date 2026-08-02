@@ -98,6 +98,7 @@
     #app > *:not(#print-report){display:none !important;}
     #print-report{display:block !important;}
     #print-report table{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:14px;}
+    #print-report tr{page-break-inside:avoid;}
     #print-report th,#print-report td{border:1px solid #ccc;padding:6px 8px;text-align:left;}
     #print-report th{background:#eef1f6;}
     #print-report h1{font-size:20px;margin:0 0 2px;}
@@ -858,13 +859,18 @@ function downloadCsv(headers, rows, filename){
   URL.revokeObjectURL(url);
 }
 
-function compressImageToDataURL(file, maxWidth, quality, cb){
+/* Compresses/resizes a photo client-side before storing as base64, to stay well within
+   localStorage limits. Caps the LONGEST edge (whichever of width/height is larger) at
+   maxDim px and re-encodes as JPEG at `quality`. Fixed: previously only checked width,
+   so portrait-shaped photos with width < maxDim could skip compression entirely. */
+function compressImageToDataURL(file, maxDim, quality, cb){
   const reader = new FileReader();
   reader.onload = (e) => {
     const img = new Image();
     img.onload = () => {
       let w = img.width, h = img.height;
-      if(w > maxWidth){ h = Math.round(h * (maxWidth/w)); w = maxWidth; }
+      if(w > h && w > maxDim){ h = Math.round(h * (maxDim/w)); w = maxDim; }
+      else if(h >= w && h > maxDim){ w = Math.round(w * (maxDim/h)); h = maxDim; }
       const canvas = document.createElement("canvas");
       canvas.width = w; canvas.height = h;
       const ctx = canvas.getContext("2d");
@@ -876,31 +882,6 @@ function compressImageToDataURL(file, maxWidth, quality, cb){
   };
   reader.onerror = () => { alert("Could not read this file — please try a different photo."); };
   reader.readAsDataURL(file);
-}
-
-/* Compresses/resizes a photo client-side before storing as base64, to stay well within
-   localStorage limits. Caps the longest edge at maxDim px and re-encodes as JPEG at `quality`. */
-function compressImageFile(file, maxDim=1000, quality=0.7){
-  return new Promise((resolve, reject)=>{
-    if(!file.type || !file.type.startsWith("image/")){ reject(new Error("Not an image file")); return; }
-    const reader = new FileReader();
-    reader.onload = (e)=>{
-      const img = new Image();
-      img.onload = ()=>{
-        let w = img.width, h = img.height;
-        if(w>h && w>maxDim){ h = Math.round(h*maxDim/w); w = maxDim; }
-        else if(h>=w && h>maxDim){ w = Math.round(w*maxDim/h); h = maxDim; }
-        const canvas = document.createElement("canvas");
-        canvas.width = w; canvas.height = h;
-        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.onerror = () => reject(new Error("Could not read image"));
-      img.src = e.target.result;
-    };
-    reader.onerror = () => reject(new Error("Could not read file"));
-    reader.readAsDataURL(file);
-  });
 }
 function photoAttachControl(dataAttrName, idPath, hasPhoto){
   return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:6px;">📷 ${hasPhoto?'Replace':'Add'} Photo<input type="file" accept="image/*" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
@@ -2132,9 +2113,9 @@ function renderDashboard(){
     <div class="flex-wrap" style="margin-bottom:16px;">
       <button class="btn btn-primary" data-quick-action="new-audit">+ New Audit</button>
       <button class="btn btn-ghost" data-quick-action="raise-capa">+ Raise CAPA</button>
+      <button class="btn btn-ghost" data-quick-action="upload-document">+ Upload Document</button>
       <button class="btn btn-ghost" data-quick-action="report-incident">+ Report Incident</button>
       <button class="btn btn-ghost" data-quick-action="add-risk">+ Add Risk</button>
-      <button class="btn btn-ghost" data-quick-action="upload-document">+ Upload Document</button>
     </div>
     ${topPriorities.length ? `
     <div class="card p4" style="margin-bottom:16px;">
@@ -4945,19 +4926,35 @@ function buildMicroCertificatePrintReport(recordId){
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
+
+  // Hardcoded (non-theme) colors so the report always prints light, regardless of dark mode
+  const PRINT_TONES = {
+    rust:  { fg:"#9b3f28", bg:"#f6e4dd" },
+    amber: { fg:"#8a5a10", bg:"#faedd4" },
+    green: { fg:"#3f6b2e", bg:"#e6ede0" },
+    navy:  { fg:"#1c2b4a", bg:"#e4e9f2" },
+  };
+  const printBadge = (label, tone) => {
+    const c = PRINT_TONES[tone] || PRINT_TONES.navy;
+    return `<span style="display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;font-weight:600;color:${c.fg};background:${c.bg};">${esc(label)}</span>`;
+  };
+  const printPhoto = (dataUrl) => dataUrl
+    ? `<img src="${dataUrl}" style="max-width:110px;max-height:110px;border-radius:4px;display:block;object-fit:cover;border:1px solid #ccc;" />`
+    : '—';
+
   const checklistRows = a.sections.map(sec => `
     <div class="section-title">${esc(sec.name)}</div>
-    <table><thead><tr><th>Item</th><th>Result</th><th>Note</th></tr></thead>
+    <table><thead><tr><th>Item</th><th>Result</th><th>Note</th><th>Photo</th></tr></thead>
     <tbody>
-      ${sec.items.map(it=>`<tr><td>${esc(it.text)}</td><td>${it.result||'—'}</td><td>${esc(it.note)||''}</td></tr>`).join('')}
+      ${sec.items.map(it=>`<tr><td>${esc(it.text)}</td><td>${it.result||'—'}</td><td>${esc(it.note)||''}</td><td>${printPhoto(it.photo)}</td></tr>`).join('')}
     </tbody></table>
   `).join('');
 
   const findingsRows = a.findings.length ? `
     <div class="section-title">Findings & CAPA</div>
-    <table><thead><tr><th>Description</th><th>Department</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th></tr></thead>
+    <table><thead><tr><th>Description</th><th>Department</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th><th>Photo</th></tr></thead>
     <tbody>
-      ${a.findings.map(f=>`<tr><td>${esc(f.desc)}</td><td>${esc(f.clause)}</td><td>${f.severity}</td><td>${esc(f.owner)||'—'}</td><td>${f.dueDate||'—'}</td><td>${esc(f.actionText)||'—'}</td><td>${f.status}</td></tr>`).join('')}
+      ${a.findings.map(f=>`<tr><td>${esc(f.desc)}</td><td>${esc(f.clause)}</td><td>${printBadge(f.severity, sevTone[f.severity])}</td><td>${esc(f.owner)||'—'}</td><td>${f.dueDate||'—'}</td><td>${esc(f.actionText)||'—'}</td><td>${printBadge(f.status, statusTone[f.status])}</td><td>${printPhoto(f.photo)}</td></tr>`).join('')}
     </tbody></table>
   ` : `<div class="section-title">Findings & CAPA</div><p>No findings logged.</p>`;
 
