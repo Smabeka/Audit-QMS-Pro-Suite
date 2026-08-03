@@ -589,7 +589,8 @@ function seedAudit(title, standard, area, sections, auditNumber, auditType){
     id: uid(), auditNumber: auditNumber || null, title, standard, area, auditor:"", auditee:"", date: today(), status:"Planned",
     riskLevel: "Medium", auditType: auditType || "Internal", history: [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }],
     sections: sections.map(s => ({ id: uid(), name: s.name, items: s.items.map(text => ({id:uid(), text, result:null, note:""})) })),
-    findings: []
+    findings: [],
+    auditPlan: { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] }
   };
 }
 
@@ -729,6 +730,7 @@ function migrateAuditNumbers(){
     if(!a.history){ a.history = [{ id: uid(), date: new Date().toISOString(), text: "Audit created" }]; changed = true; }
     if(a.auditee === undefined){ a.auditee = ""; changed = true; }
     if(!a.signOff){ a.signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null }; changed = true; }
+    if(!a.auditPlan){ a.auditPlan = { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: a.standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] }; changed = true; }
   });
   if(changed) saveStore(state);
 }
@@ -820,7 +822,15 @@ let pendingDeleteWorkspaceId = null;
 let tab = "dashboard";
 let jumpTo = null;
 let showNewAudit = false;
+let auditPlanOpenIds = {};
 let openAuditId = null;
+function clearOpenDetailViews(){
+  openAuditId=null; openRiskId=null; openDocumentId=null; openTrainingId=null; openHaccpId=null;
+  openRecallId=null; openSupplierId=null; openAllergenProductId=null; openCipId=null; openSensoryId=null;
+  openBatchId=null; openTempProductId=null; openNcrId=null;
+  if(typeof openMetricId!=="undefined") openMetricId=null;
+  if(typeof openChecklistId!=="undefined") openChecklistId=null;
+}
 let capaFilter = "All";
 let savedFlashTimer = null;
 let auditSearch = "";
@@ -1801,7 +1811,7 @@ function renderMainNav(){
     <button data-action="toggle-nav-menu" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:6px 0;">
       <span style="font-size:16px;">${navMenuOpen?'✕':'☰'}</span> Platform Modules
     </button>
-    <span style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(activeBreadcrumb())}</span>
+    <button data-action="breadcrumb-back" style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none;border:none;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;" title="Back to list">${esc(activeBreadcrumb())}</button>
   </div>`;
   if(navMenuOpen){
     html += `<div class="card" style="margin-top:8px;max-height:60vh;overflow-y:auto;">
@@ -2576,6 +2586,7 @@ function renderAuditDetail(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
   const signOff = a.signOff || { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
+  const ap = a.auditPlan || { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: a.standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] };
   const locked = !!signOff.auditorSignedAt;
   const lockStyle = locked ? 'opacity:.55;pointer-events:none;' : '';
   return `
@@ -2599,6 +2610,43 @@ function renderAuditDetail(a){
           <button class="btn btn-danger" data-action="delete-audit" data-audit="${a.id}">Delete Audit</button>
         </div>
       </div>
+    </div>
+
+    <div class="card p4" style="margin-bottom:12px;">
+      <button data-action="toggle-audit-plan" data-audit="${a.id}" style="display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;padding:0;cursor:pointer;color:inherit;">
+        <h3 class="serif" style="font-size:16px;margin:0;">📑 Audit Plan</h3>
+        <span style="font-size:12px;color:var(--muted);">${auditPlanOpenIds[a.id]?'▲ Hide':'▼ Show'}</span>
+      </button>
+      ${auditPlanOpenIds[a.id] ? `
+      <div style="margin-top:12px;${lockStyle}">
+        <div class="grid2">
+          <label class="field">Organization<input data-audit-plan-field="${a.id}:organization" value="${esc(ap.organization)}" placeholder="e.g. Famous Brands — Store 12" /></label>
+          <label class="field">Address<input data-audit-plan-field="${a.id}:address" value="${esc(ap.address)}" placeholder="Site address" /></label>
+          <label class="field">Visit Number<input data-audit-plan-field="${a.id}:visitNumber" value="${esc(ap.visitNumber)}" placeholder="e.g. V1" /></label>
+          <label class="field">Standard(s)<input data-audit-plan-field="${a.id}:standards" value="${esc(ap.standards)}" placeholder="e.g. ISO 9001:2015" /></label>
+          <label class="field">Lead Auditor<input data-audit-plan-field="${a.id}:leadAuditor" value="${esc(ap.leadAuditor)}" placeholder="Lead auditor name" /></label>
+          <label class="field">Team Member(s)<input data-audit-plan-field="${a.id}:teamMembers" value="${esc(ap.teamMembers)}" placeholder="e.g. None, or names" /></label>
+          <label class="field">Audit Language<input data-audit-plan-field="${a.id}:auditLanguage" value="${esc(ap.auditLanguage)}" placeholder="e.g. English" /></label>
+        </div>
+        <label class="field" style="margin-top:8px;">Audit Scope<textarea data-audit-plan-field="${a.id}:scope" rows="2" placeholder="e.g. Warehousing and distribution of chilled products">${esc(ap.scope)}</textarea></label>
+        <label class="field" style="margin-top:8px;">Audit Objectives<textarea data-audit-plan-field="${a.id}:objectives" rows="2" placeholder="e.g. Determine conformity with audit criteria...">${esc(ap.objectives)}</textarea></label>
+
+        <div style="margin-top:14px;">
+          <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Itinerary</div>
+          ${(ap.itinerary||[]).map((row,idx)=>`
+            <div class="flex-wrap" style="margin-bottom:6px;">
+              <input data-itinerary-field="${a.id}:${idx}:date" value="${esc(row.date)}" placeholder="Date" style="width:110px;" />
+              <input data-itinerary-field="${a.id}:${idx}:time" value="${esc(row.time)}" placeholder="Time" style="width:80px;" />
+              <input data-itinerary-field="${a.id}:${idx}:auditor" value="${esc(row.auditor)}" placeholder="Auditor" style="width:100px;" />
+              <input data-itinerary-field="${a.id}:${idx}:activity" value="${esc(row.activity)}" placeholder="Activity / Process" style="flex:1;min-width:140px;" />
+              <input data-itinerary-field="${a.id}:${idx}:keyContact" value="${esc(row.keyContact)}" placeholder="Key Contact" style="width:110px;" />
+              <button class="x-btn" data-action="remove-itinerary-row" data-audit="${a.id}" data-row="${idx}">✕</button>
+            </div>
+          `).join('') || `<p class="muted-italic" style="font-size:12px;">No itinerary rows yet.</p>`}
+          <button class="btn btn-ghost" style="font-size:12px;" data-action="add-itinerary-row" data-audit="${a.id}">+ Add Itinerary Row</button>
+        </div>
+      </div>
+      ` : ''}
     </div>
 
     <div class="card p4" style="margin-bottom:12px;">
@@ -5105,6 +5153,28 @@ function buildAuditPrintReport(a){
     ? `<img src="${dataUrl}" style="max-width:110px;max-height:110px;border-radius:4px;display:block;object-fit:cover;border:1px solid #ccc;" />`
     : '—';
 
+  const ap = a.auditPlan || {};
+  const hasPlanDetails = ap.organization || ap.visitNumber || ap.leadAuditor || ap.scope || (ap.itinerary && ap.itinerary.length);
+  const auditPlanSection = hasPlanDetails ? `
+    <div class="section-title">Audit Plan</div>
+    <table>
+      <tbody>
+        <tr><th>Organization</th><td>${esc(ap.organization)||'—'}</td><th>Visit Number</th><td>${esc(ap.visitNumber)||'—'}</td></tr>
+        <tr><th>Address</th><td colspan="3">${esc(ap.address)||'—'}</td></tr>
+        <tr><th>Lead Auditor</th><td>${esc(ap.leadAuditor)||'—'}</td><th>Team Member(s)</th><td>${esc(ap.teamMembers)||'—'}</td></tr>
+        <tr><th>Standard(s)</th><td>${esc(ap.standards)||'—'}</td><th>Audit Language</th><td>${esc(ap.auditLanguage)||'—'}</td></tr>
+        <tr><th>Scope</th><td colspan="3">${esc(ap.scope)||'—'}</td></tr>
+        <tr><th>Objectives</th><td colspan="3">${esc(ap.objectives)||'—'}</td></tr>
+      </tbody>
+    </table>
+    ${(ap.itinerary && ap.itinerary.length) ? `
+      <table><thead><tr><th>Date</th><th>Time</th><th>Auditor</th><th>Activity</th><th>Key Contact</th></tr></thead>
+      <tbody>
+        ${ap.itinerary.map(row=>`<tr><td>${esc(row.date)}</td><td>${esc(row.time)}</td><td>${esc(row.auditor)}</td><td>${esc(row.activity)}</td><td>${esc(row.keyContact)}</td></tr>`).join('')}
+      </tbody></table>
+    ` : ''}
+  ` : '';
+
   const checklistRows = a.sections.map(sec => `
     <div class="section-title">${esc(sec.name)}</div>
     <table><thead><tr><th>Item</th><th>Result</th><th>Note</th><th>Photo</th></tr></thead>
@@ -5147,6 +5217,7 @@ function buildAuditPrintReport(a){
         <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
       </tbody>
     </table>
+    ${auditPlanSection}
     ${checklistRows}
     ${findingsRows}
     <div class="sig-row">
@@ -5177,10 +5248,11 @@ function attachHandlers(){
   });
   const toggleNavMenu = document.querySelector('[data-action="toggle-nav-menu"]');
   if(toggleNavMenu) toggleNavMenu.onclick=()=>{ navMenuOpen = !navMenuOpen; render(); };
+  const breadcrumbBackBtn = document.querySelector('[data-action="breadcrumb-back"]');
+  if(breadcrumbBackBtn) breadcrumbBackBtn.onclick=()=>{ clearOpenDetailViews(); render(); };
   document.querySelectorAll('[data-navid]').forEach(el=>el.onclick=()=>{
-    const prevTab = tab;
     navHandleClick(el.dataset.navid);
-    if(tab!==prevTab && tab!=="audits") openAuditId=null;
+    clearOpenDetailViews();
     render();
   });
 
@@ -5360,6 +5432,40 @@ function attachHandlers(){
   document.querySelectorAll('[data-action="delete-audit"]').forEach(el=>el.onclick=()=>{
     pendingDeleteAuditId = el.dataset.audit; render();
   });
+  document.querySelectorAll('[data-action="toggle-audit-plan"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.audit; auditPlanOpenIds[id] = !auditPlanOpenIds[id]; render();
+  });
+  document.querySelectorAll('[data-audit-plan-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.auditPlanField.split(':');
+      const a = state.audits.find(x=>x.id===id);
+      if(!a.auditPlan){ a.auditPlan = { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards:"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] }; }
+      a.auditPlan[field] = el.value;
+      persist();
+    };
+  });
+  document.querySelectorAll('[data-itinerary-field]').forEach(el=>{
+    el.onchange = () => {
+      const [auditId, idx, field] = el.dataset.itineraryField.split(':');
+      const a = state.audits.find(x=>x.id===auditId);
+      if(a.auditPlan && a.auditPlan.itinerary && a.auditPlan.itinerary[idx]){
+        a.auditPlan.itinerary[idx][field] = el.value;
+        persist();
+      }
+    };
+  });
+  document.querySelectorAll('[data-action="add-itinerary-row"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(!a.auditPlan) a.auditPlan = { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards:"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] };
+    if(!a.auditPlan.itinerary) a.auditPlan.itinerary = [];
+    a.auditPlan.itinerary.push({ date:"", time:"", auditor:"", activity:"", keyContact:"" });
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="remove-itinerary-row"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const idx = parseInt(el.dataset.row, 10);
+    if(a.auditPlan && a.auditPlan.itinerary){ a.auditPlan.itinerary.splice(idx, 1); persist(); render(); }
+  });
   document.querySelectorAll('[data-action="sign-audit"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     if(!a) return;
@@ -5462,11 +5568,25 @@ function attachHandlers(){
       item.photo = dataUrl; persist(); render();
     });
   });
+  document.querySelectorAll('[data-finding-photo]').forEach(el=>el.onchange=()=>{
+    const file = el.files[0]; if(!file) return;
+    const [auditId, findingId] = el.dataset.findingPhoto.split(':');
+    compressImageToDataURL(file, 1000, 0.7, (dataUrl) => {
+      const a = state.audits.find(x=>x.id===auditId);
+      const f = a.findings.find(x=>x.id===findingId);
+      f.photo = dataUrl; persist(); render();
+    });
+  });
   document.querySelectorAll('[data-action="remove-item-photo"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const sec = a.sections.find(s=>s.id===el.dataset.section);
     const item = sec.items.find(i=>i.id===el.dataset.item);
     item.photo = null; persist(); render();
+  });
+  document.querySelectorAll('[data-action="remove-finding-photo"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a.findings.find(x=>x.id===el.dataset.finding);
+    f.photo = null; persist(); render();
   });
 
   document.querySelectorAll('[data-action="remove-item"]').forEach(el=>el.onclick=()=>{
