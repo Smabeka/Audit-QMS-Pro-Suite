@@ -525,8 +525,8 @@ const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"na
 const RISK_LEVELS = ["Low","Medium","High","Critical"];
 const riskTone = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
 
-const DOCUMENT_STATUSES = ["Draft","Under Review","Approved","Obsolete"];
-const docStatusTone = {Draft:"amber","Under Review":"navy",Approved:"green",Obsolete:"rust"};
+const DOCUMENT_STATUSES = ["Draft","Under Review","Approved","Published","Obsolete"];
+const docStatusTone = {Draft:"amber","Under Review":"navy",Approved:"green",Published:"green",Obsolete:"rust"};
 const DOCUMENT_CATEGORIES = ["Policy","Procedure (SOP)","Work Instruction","Form/Record","HACCP Plan","Specification","External Standard","Other"];
 
 const trainingStatusTone = {Valid:"green","Expiring Soon":"amber",Overdue:"rust","No Expiry":"green"};
@@ -592,6 +592,34 @@ function seedAudit(title, standard, area, sections, auditNumber, auditType){
     findings: [],
     auditPlan: { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] }
   };
+}
+
+function getOrCreateEmpFindingsAudit(){
+  let a = state.audits.find(x=>x.isEmpFindingsAudit);
+  if(a) return a;
+  a = seedAudit("Environmental Monitoring — Corrective Actions", "", "Hygiene Monitoring", [], null, "Internal");
+  a.isEmpFindingsAudit = true;
+  a.status = "In Progress";
+  state.audits.push(a);
+  return a;
+}
+function getOrCreateComplaintFindingsAudit(){
+  let a = state.audits.find(x=>x.isComplaintFindingsAudit);
+  if(a) return a;
+  a = seedAudit("Customer Complaints — Corrective Actions", "", "Customer Quality", [], null, "Internal");
+  a.isComplaintFindingsAudit = true;
+  a.status = "In Progress";
+  state.audits.push(a);
+  return a;
+}
+function getOrCreateOosFindingsAudit(){
+  let a = state.audits.find(x=>x.isOosFindingsAudit);
+  if(a) return a;
+  a = seedAudit("Laboratory OOS — Corrective Actions", "", "Laboratory Quality", [], null, "Internal");
+  a.isOosFindingsAudit = true;
+  a.status = "In Progress";
+  state.audits.push(a);
+  return a;
 }
 
 function seedData(){
@@ -754,8 +782,22 @@ function ensureStateDefaults(){
   if(state.companySettings.nextManagementReviewDate===undefined){ state.companySettings.nextManagementReviewDate = ""; }
   if(!state.riskAssessments){ state.riskAssessments = []; }
   if(!state.metrics){ state.metrics = []; }
+  if(!state.metricsAutoSeeded){
+    const autoDefaults = [
+      { name:"CAPA Closure Rate (%)", category:"Process", unit:"%", target:90, direction:"higher", critical:true, source:"auto", autoType:"capa_closure_rate" },
+      { name:"Overdue CAPAs (count)", category:"Process", unit:"count", target:0, direction:"lower", critical:true, source:"auto", autoType:"overdue_capas" },
+      { name:"Open High/Critical Risks (count)", category:"Risk", unit:"count", target:0, direction:"lower", critical:true, source:"auto", autoType:"open_high_critical_risks" }
+    ];
+    autoDefaults.forEach(d=>{
+      if(!state.metrics.some(m=>m.autoType===d.autoType)){
+        state.metrics.push({ id: uid(), history: [], ...d });
+      }
+    });
+    state.metricsAutoSeeded = true;
+  }
   if(!state.checklists){ state.checklists = []; }
   if(!state.documents){ state.documents = []; }
+  state.documents.forEach(d=>{ if(!d.acknowledgments){ d.acknowledgments = []; } });
   if(!state.trainingRecords){ state.trainingRecords = []; }
   if(!state.haccpPoints){ state.haccpPoints = []; }
   if(!state.suppliers){ state.suppliers = []; }
@@ -1041,6 +1083,9 @@ function renderComingSoon(icon, title, blurb, plannedItems){
 /* ---------- Generic CRUD log modules (People Compliance / FoodSafe / Traceability sub-modules) ---------- */
 function batchOptionsList(){
   return ["None / Not in system", ...state.batches.map(b=>`${b.batchNo} — ${b.product}`)];
+}
+function supplierOptionsList(){
+  return ["None / Not linked", ...state.suppliers.map(s=>s.name)];
 }
 function capaOptionsList(){
   return ["None / Not linked", ...state.audits.flatMap(a=>a.findings.map(f=>`${f.desc} (${a.title})`))];
@@ -1334,17 +1379,19 @@ const GENERIC_MODULES = [
     rowTag:r=>({label:r.status||"Pending", tone:{Pass:"green",Fail:"rust",Pending:"navy"}[r.status]||"neutral"})
   },
   { key:"emp", stateArr:"empSwabs", icon:"🧼", title:"Environmental Monitoring (EMP)",
-    blurb:"Log environmental swab results across your hygiene zones.",
+    blurb:"Log environmental and personnel hygiene swab results.",
     sortField:"date",
     fields:[
       {id:"date", label:"Swab Date", type:"date", default:"today"},
       {id:"swabId", label:"Swab ID"},
-      {id:"zone", label:"Zone", type:"select", options:["Zone 1 - Food Contact","Zone 2 - Near Food Contact","Zone 3 - Room/Area","Zone 4 - Remote"]},
-      {id:"location", label:"Location", placeholder:"e.g. Slicer blade, drain 3"},
-      {id:"organism", label:"Organism / Test", type:"select", options:["ATP","Total Plate Count","Listeria spp.","Salmonella","Coliforms","Other"]},
+      {id:"zone", label:"Zone", type:"select", options:["Zone 1 - Food Contact","Zone 2 - Near Food Contact","Zone 3 - Room/Area","Zone 4 - Remote","Personnel - Hand Swab"]},
+      {id:"location", label:"Location / Person", placeholder:"e.g. Slicer blade, drain 3, or staff member name"},
+      {id:"organism", label:"Organism / Test", type:"select", options:["ATP","Total Plate Count","Escherichia coli","Staphylococcus aureus","Listeria spp.","Salmonella","Coliforms","Other"]},
       {id:"result", label:"Result"},
       {id:"specLimit", label:"Spec Limit"},
       {id:"status", label:"Status", type:"select", options:["Pass","Fail","Pending"]},
+      {id:"labRefNumber", label:"Lab Reference Number", placeholder:"e.g. 2025-11-18-158"},
+      {id:"labSampleId", label:"Laboratory Sample ID", placeholder:"e.g. BD78908"},
       {id:"correctiveAction", label:"Corrective Action", full:true}
     ],
     rowTitle:r=>r.swabId||"Swab",
@@ -1375,11 +1422,12 @@ const GENERIC_MODULES = [
       {id:"sampleId", label:"Sample ID", required:true},
       {id:"dateCollected", label:"Date Collected", type:"date", default:"today"},
       {id:"product", label:"Product"},
-      {id:"batchLot", label:"Batch / Lot No."},
+      {id:"batchLot", label:"Linked Batch / Lot", type:"select", optionsFn:batchOptionsList},
       {id:"sampleType", label:"Sample Type", type:"select", options:["Raw Material","In-Process","Finished Product","Environmental","Water"]},
       {id:"samplingPoint", label:"Sampling Point", placeholder:"e.g. Line 2 outlet"},
       {id:"collectedBy", label:"Collected By"},
-      {id:"status", label:"Status", type:"select", options:["Registered","Submitted to Lab","Testing In Progress","Completed"]}
+      {id:"status", label:"Status", type:"select", options:["Registered","Submitted to Lab","Testing In Progress","Completed"]},
+      {id:"result", label:"Result", type:"select", options:["Pending","Pass","Out of Specification"]}
     ],
     rowTitle:r=>r.sampleId||"Sample",
     rowSub:r=>`${r.product||'—'} · ${r.sampleType||'—'} · ${r.dateCollected||'—'}`,
@@ -1483,12 +1531,13 @@ const GENERIC_MODULES = [
     blurb:"Log corrective action requests raised against suppliers for quality issues.",
     sortField:"dateRaised",
     fields:[
-      {id:"supplierName", label:"Supplier", required:true},
+      {id:"supplierName", label:"Supplier", required:true, type:"select", optionsFn:supplierOptionsList},
       {id:"dateRaised", label:"Date Raised", type:"date", default:"today"},
       {id:"issue", label:"Issue / Non-Conformance", full:true},
       {id:"correctiveAction", label:"Corrective Action Requested", full:true},
       {id:"status", label:"Status", type:"select", options:["Open","In Progress","Closed"]},
-      {id:"closureDate", label:"Closure Date", type:"date"}
+      {id:"closureDate", label:"Closure Date", type:"date"},
+      {id:"qaApprovedBy", label:"QA Approved By (required to close)"},
     ],
     rowTitle:r=>r.supplierName||"Supplier",
     rowSub:r=>`${r.issue||'—'} · Raised ${r.dateRaised||'—'}`,
@@ -2114,7 +2163,7 @@ function renderDashboard(){
   const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
   const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
   const totalDocs = state.documents.length;
-  const docsInGoodStanding = state.documents.filter(d=>d.status==="Approved" && documentReviewStatus(d)!=="Overdue").length;
+  const docsInGoodStanding = state.documents.filter(d=>(d.status==="Approved"||d.status==="Published") && documentReviewStatus(d)!=="Overdue").length;
   const documentScore = totalDocs>0 ? Math.round((docsInGoodStanding/totalDocs)*1000)/10 : null;
   const totalTraining = state.trainingRecords.length;
   const trainingInGoodStanding = state.trainingRecords.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
@@ -2704,6 +2753,7 @@ function renderAuditDetail(a){
             <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
             <span>${esc(f.clause)}</span>
             ${f.autoGenerated?`<span class="tag tag-navy">⚡ Auto-CAPA</span>`:''}
+            ${f.linkedRiskId?`<span class="tag tag-navy">🔗 Risk Logged</span>`:''}
             ${f.owner?`<span>👤 ${esc(f.owner)}</span>`:''}
             ${f.dueDate?`<span style="${daysUntil(f.dueDate)<0 && f.status!=='Closed' ? 'color:var(--rust);font-weight:600;':''}">📅 ${f.dueDate}${daysUntil(f.dueDate)<0 && f.status!=='Closed'?' (overdue)':''}</span>`:''}
           </div>
@@ -2713,6 +2763,7 @@ function renderAuditDetail(a){
           <div class="flex-wrap" style="margin-top:8px;">
             ${["Open","In Progress","Closed"].map(s=>`<button class="status-pill ${f.status===s?'active':''}" data-set-finding-status="${a.id}:${f.id}:${s}">${s}</button>`).join('')}
           </div>
+          ${f.status==="Closed" && f.verifiedBy ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">✓ Verified by <strong>${esc(f.verifiedBy)}</strong> — ${new Date(f.verifiedAt).toLocaleString()}</div>` : ''}
         </div>
       `).join('')}
       <div class="grid2 top-border">
@@ -3054,7 +3105,24 @@ function renderDocumentDetail(d){
       <label class="field">Approval Sign-Off Date<input type="date" data-document-field="${d.id}:approvedDate" value="${d.approvedDate||''}" /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-document-field="${d.id}:notes" value="${esc(d.notes)}" /></label>
     </div>
-    <div style="display:flex;justify-content:flex-end;">
+    <div class="top-border" style="padding-top:12px;margin-top:4px;">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Employee Acknowledgments</div>
+      ${(d.acknowledgments||[]).length ? `
+        <div style="margin-bottom:10px;">
+          ${d.acknowledgments.map((ack,idx)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+              <span>✓ <strong>${esc(ack.name)}</strong> — ${ack.date}</span>
+              <button class="x-btn" data-action="remove-doc-ack" data-document="${d.id}" data-ack="${idx}">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      ` : `<p class="muted-italic" style="font-size:12px;">No acknowledgments recorded yet.</p>`}
+      <div class="flex-wrap">
+        <input placeholder="Employee name" id="ack-name-${d.id}" style="flex:1;min-width:140px;" />
+        <button class="btn btn-ghost" style="font-size:12px;" data-action="add-doc-ack" data-document="${d.id}">+ Record Acknowledgment</button>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px;">
       <button class="btn btn-danger" data-action="delete-document" data-document="${d.id}">Delete Document</button>
     </div>
   `;
@@ -5341,7 +5409,122 @@ function attachHandlers(){
       if(!cfg) return;
       const rec = state[cfg.stateArr].find(x=>x.id===id);
       if(!rec) return;
+      if(k==="supplier-scar" && field==="status"){
+        if(el.value==="Closed" && rec.status!=="Closed"){
+          const approver = (rec.qaApprovedBy||"").trim() || prompt("QA approval required to close this SCAR.\n\nEnter QA approver name:");
+          if(!approver || !approver.trim()){ el.value = rec.status; return; } // cancelled — revert dropdown, do not close
+          rec.qaApprovedBy = approver.trim();
+          rec.closureDate = rec.closureDate || today();
+          rec.status = "Closed";
+          logActivity(`SCAR for ${rec.supplierName||'supplier'} closed — QA approved by ${rec.qaApprovedBy}`);
+          const supplier = state.suppliers.find(s=>s.name===rec.supplierName);
+          if(supplier){
+            const otherOpenScars = state.supplierScars.some(s=>s.id!==rec.id && s.supplierName===rec.supplierName && s.status!=="Closed");
+            if(!otherOpenScars && supplier.approvalStatus!=="Approved"){
+              supplier.approvalStatus = "Approved";
+              logActivity(`Supplier ${supplier.name} restored to Approved — all SCARs closed`);
+            }
+          }
+          persist(); render(); return;
+        } else {
+          rec.status = el.value;
+          const supplier = state.suppliers.find(s=>s.name===rec.supplierName);
+          if(supplier && supplier.approvalStatus==="Approved"){
+            supplier.approvalStatus = "Conditional";
+            logActivity(`Supplier ${supplier.name} moved to Conditional — open SCAR raised`);
+          }
+        }
+        persist(); render(); return;
+      }
       rec[field] = el.value;
+      if(k==="lab-sample-register" && field==="result" && el.value==="Out of Specification" && !rec.linkedFindingId){
+        const oosAudit = getOrCreateOosFindingsAudit();
+        const desc = `Out-of-Specification result — Sample ${rec.sampleId||'(unlabeled)'}${rec.product?`, ${rec.product}`:''}${rec.batchLot?` — ${rec.batchLot}`:''}`;
+        const finding = {
+          id: uid(),
+          clause: rec.sampleType || "Laboratory Testing",
+          category: "OOS",
+          desc,
+          severity: "Critical",
+          owner: "",
+          dueDate: "",
+          actionText: "Investigate root cause; hold batch pending release decision.",
+          status: "Open",
+          autoGenerated: true,
+          sourceSampleId: rec.id
+        };
+        oosAudit.findings.push(finding);
+        rec.linkedFindingId = finding.id;
+        logHistory(oosAudit, `CAPA auto-generated from OOS result: "${desc.slice(0,60)}${desc.length>60?'…':''}"`);
+        logActivity(`CAPA auto-generated from an Out-of-Specification lab result (${rec.sampleId||rec.id})`);
+        if(rec.batchLot && rec.batchLot!=="None / Not in system"){
+          const batchNo = rec.batchLot.split(' — ')[0];
+          const batch = state.batches.find(b=>b.batchNo===batchNo);
+          if(batch && batch.status!=="Quarantine" && batch.status!=="Rejected"){
+            batch.status = "Quarantine";
+            rec.linkedBatchId = batch.id;
+            logActivity(`Batch ${batch.batchNo} auto-quarantined — OOS result pending investigation`);
+          }
+        }
+      }
+      if(k==="emp" && field==="status" && el.value==="Fail" && !rec.linkedFindingId){
+        const empAudit = getOrCreateEmpFindingsAudit();
+        const finding = {
+          id: uid(),
+          clause: rec.zone || "Environmental Monitoring",
+          category: "EMP",
+          desc: `Failed swab — ${rec.organism||'test'} at ${rec.location||'unspecified location'}${rec.result?` (result: ${rec.result})`:''}`,
+          severity: "Medium",
+          owner: "",
+          dueDate: "",
+          actionText: rec.correctiveAction || "",
+          status: "Open",
+          autoGenerated: true,
+          sourceEmpId: rec.id
+        };
+        empAudit.findings.push(finding);
+        rec.linkedFindingId = finding.id;
+        logHistory(empAudit, `CAPA auto-generated from failed EMP swab: "${finding.desc.slice(0,60)}${finding.desc.length>60?'…':''}"`);
+        logActivity(`CAPA auto-generated from a failed EMP swab (${rec.swabId||rec.id})`);
+      }
+      if(k==="customer-complaints" && field==="severity" && (el.value==="High"||el.value==="Critical") && !rec.linkedFindingId){
+        const complaintAudit = getOrCreateComplaintFindingsAudit();
+        const desc = `Customer complaint — ${rec.classification||'Unclassified'}${rec.natureOfComplaint?`: ${rec.natureOfComplaint}`:''}${rec.product?` (Product: ${rec.product})`:''}`;
+        const finding = {
+          id: uid(),
+          clause: rec.classification || "Customer Complaint",
+          category: "Complaint",
+          desc,
+          severity: el.value==="Critical" ? "Critical" : "Major",
+          owner: "",
+          dueDate: "",
+          actionText: rec.correctiveAction || "",
+          status: "Open",
+          autoGenerated: true,
+          sourceComplaintId: rec.id
+        };
+        complaintAudit.findings.push(finding);
+        rec.linkedFindingId = finding.id;
+        rec.capaReference = `${desc} (${complaintAudit.title})`;
+        logHistory(complaintAudit, `CAPA auto-generated from ${el.value} severity complaint: "${desc.slice(0,60)}${desc.length>60?'…':''}"`);
+        logActivity(`CAPA auto-generated from a ${el.value} severity customer complaint`);
+        if(el.value==="Critical"){
+          const likelihood = 3;
+          const sevScore = 5;
+          const riskScore = likelihood * sevScore;
+          const risk = {
+            id: uid(), refNo: "", date: today(), area: rec.classification || "",
+            hazard: `Customer complaint: ${desc}`, riskTo: "Customer / brand reputation", controls: "",
+            likelihood, severity: sevScore, riskScore, riskLevel: riskLevelFromScore(riskScore),
+            action: rec.correctiveAction || "", owner: "", dueDate: "", completedDate: "", status: "Open",
+            residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null,
+            sourceFindingId: finding.id
+          };
+          state.riskAssessments.unshift(risk);
+          rec.linkedRiskId = risk.id;
+          logActivity(`Risk assessment auto-logged from Critical customer complaint`);
+        }
+      }
       persist(); render();
     };
   });
@@ -5629,7 +5812,16 @@ function attachHandlers(){
     const [auditId, findingId, status] = el.dataset.setFindingStatus.split(':');
     const a = state.audits.find(x=>x.id===auditId);
     const f = a.findings.find(x=>x.id===findingId);
-    if(f.status !== status) logHistory(a, `Finding "${f.desc.slice(0,50)}${f.desc.length>50?'…':''}" status: ${f.status} → ${status}`);
+    if(status==="Closed" && f.status!=="Closed"){
+      const verifier = prompt("Verification required to close this finding.\n\nEnter QA verifier name:");
+      if(!verifier || !verifier.trim()) return; // cancelled — do not close
+      f.verifiedBy = verifier.trim();
+      f.verifiedAt = new Date().toISOString();
+      logHistory(a, `Finding "${f.desc.slice(0,50)}${f.desc.length>50?'…':''}" verified & closed by ${f.verifiedBy}`);
+    } else if(f.status !== status){
+      logHistory(a, `Finding "${f.desc.slice(0,50)}${f.desc.length>50?'…':''}" status: ${f.status} → ${status}`);
+    }
+    if(status!=="Closed"){ f.verifiedBy = null; f.verifiedAt = null; } // reopening clears prior verification
     f.status = status; persist(); render();
   });
 
@@ -5638,18 +5830,42 @@ function attachHandlers(){
     const desc = document.getElementById(`nf-desc-${auditId}`).value.trim();
     if(!desc) return;
     const a = state.audits.find(x=>x.id===auditId);
+    const severity = document.getElementById(`nf-severity-${auditId}`).value;
+    const owner = document.getElementById(`nf-owner-${auditId}`).value;
+    const dueDate = document.getElementById(`nf-due-${auditId}`).value;
+    const actionText = document.getElementById(`nf-action-${auditId}`).value;
+    const clause = document.getElementById(`nf-clause-${auditId}`).value;
+    const findingId = uid();
+    let linkedRiskId = null;
+    if(severity==="Major" || severity==="Critical"){
+      const likelihood = 3; // audit findings don't carry an inherent likelihood rating, so a moderate default is used
+      const sevScore = severity==="Critical" ? 5 : 4;
+      const riskScore = likelihood * sevScore;
+      const risk = {
+        id: uid(), refNo: "", date: today(), area: clause || a.area || "",
+        hazard: `Audit finding: ${desc}`, riskTo: "Product / process quality", controls: "",
+        likelihood, severity: sevScore, riskScore, riskLevel: riskLevelFromScore(riskScore),
+        action: actionText, owner, dueDate, completedDate: "", status: "Open",
+        residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null,
+        sourceFindingId: findingId
+      };
+      state.riskAssessments.unshift(risk);
+      linkedRiskId = risk.id;
+      logActivity(`Risk assessment auto-logged from audit finding: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
+    }
     a.findings.push({
-      id: uid(),
-      clause: document.getElementById(`nf-clause-${auditId}`).value,
+      id: findingId,
+      clause,
       category: document.getElementById(`nf-category-${auditId}`).value,
       desc,
-      severity: document.getElementById(`nf-severity-${auditId}`).value,
-      owner: document.getElementById(`nf-owner-${auditId}`).value,
-      dueDate: document.getElementById(`nf-due-${auditId}`).value,
-      actionText: document.getElementById(`nf-action-${auditId}`).value,
-      status: "Open"
+      severity,
+      owner,
+      dueDate,
+      actionText,
+      status: "Open",
+      linkedRiskId
     });
-    logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"`);
+    logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"${linkedRiskId?' — linked risk assessment auto-created':''}`);
     logActivity(`CAPA created: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
     persist(); render();
   });
@@ -5787,6 +6003,21 @@ function attachHandlers(){
     if(!confirm("Delete this document record? This cannot be undone.")) return;
     state.documents = state.documents.filter(d=>d.id!==el.dataset.document);
     openDocumentId = null; persist(); render();
+  });
+  document.querySelectorAll('[data-action="add-doc-ack"]').forEach(el=>el.onclick=()=>{
+    const d = state.documents.find(x=>x.id===el.dataset.document);
+    const input = document.getElementById(`ack-name-${d.id}`);
+    const name = (input && input.value || "").trim();
+    if(!name) return;
+    if(!d.acknowledgments) d.acknowledgments = [];
+    d.acknowledgments.push({ name, date: today() });
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="remove-doc-ack"]').forEach(el=>el.onclick=()=>{
+    const d = state.documents.find(x=>x.id===el.dataset.document);
+    const idx = parseInt(el.dataset.ack, 10);
+    if(d.acknowledgments) d.acknowledgments.splice(idx, 1);
+    persist(); render();
   });
   const documentsCsvBtn = document.querySelector('[data-action="export-documents-csv"]');
   if(documentsCsvBtn) documentsCsvBtn.onclick=()=>{
