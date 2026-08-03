@@ -188,24 +188,6 @@ function createWorkspace(name){
   newWorkspaceName = "";
   render();
 }
-function createDemoWorkspace(){
-  const id = uid();
-  const list = getWorkspaces();
-  const existingDemoCount = list.filter(w=>/^Demo/.test(w.name)).length;
-  const name = existingDemoCount ? `Demo (${existingDemoCount+1})` : "Demo";
-  list.push({id, name});
-  saveWorkspaces(list);
-  saveStore(state); // flush current workspace first
-  currentWorkspaceId = id;
-  localStorage.setItem(CURRENT_WORKSPACE_KEY, id);
-  state = seedDemoWorkspaceData();
-  saveStore(state);
-  migrateAuditNumbers();
-  ensureStateDefaults();
-  showWorkspaceModal = false;
-  newWorkspaceName = "";
-  render();
-}
 function renameWorkspace(id, name){
   const trimmed = (name||"").trim();
   if(!trimmed) return;
@@ -360,7 +342,7 @@ const STANDARDS = [
   "Security","Material Safety Data (MSDS)","Microbiological Analysis","Transport & Fleet Management"
 ];
 const AUDIT_TYPES = ["Internal","External"];
-const COPQ_CATEGORIES = ["Scrap & Rework","Customer Returns","Complaint Handling","Downtime & Delays","Recall Costs","Other"];
+const COPQ_CATEGORIES = ["Scrap & Rework","Customer Returns","Complaint Handling","Downtime & Delays","Recall Costs","Product Disposal","Product Recall","Microbiological Failure","Other"];
 const CLAUSE_OPTIONS = ["4. Context of the Organization","5. Leadership","6. Planning","7. Support","8. Operation","9. Performance Evaluation","10. Improvement"];
 const TEMPLATES = {
   "ISO 9001:2015":[
@@ -521,6 +503,17 @@ const DEPARTMENTS = [
 const FINDING_CATEGORIES = ["Hygiene","Documentation","Equipment","Pest Control","Storage","Personnel","Cleaning","Traceability","Monthly Management Review","Operation Review Meetings","Weekly Operation Review","Daily Operation Review","Training Matrix","Other"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
+function nextFindingRefNo(audit){
+  const n = (audit.findings ? audit.findings.length : 0) + 1;
+  return `F-${String(n).padStart(3,'0')}`;
+}
+const CONCLUSION_OPTIONS = ["Pass","Pass with Corrective Actions","Fail"];
+function suggestConclusionResult(audit){
+  const open = (audit.findings||[]).filter(f=>f.status!=="Closed");
+  if(open.some(f=>f.severity==="Critical")) return "Fail";
+  if(open.some(f=>f.severity==="Major")) return "Pass with Corrective Actions";
+  return "Pass";
+}
 
 const RISK_LEVELS = ["Low","Medium","High","Critical"];
 const riskTone = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
@@ -637,109 +630,6 @@ function seedData(){
   return { audits: [a], auditSeq: 1 };
 }
 
-/* Richer, multi-month dataset used only for the optional "Demo Workspace" — gives a
-   prospect something to click through (closed CAPAs, risk register, KPI trends, a
-   standalone checklist) instead of a single bare audit. Not used for real client data. */
-function seedDemoWorkspaceData(){
-  const year = new Date().getFullYear();
-  const today = new Date();
-  const daysAgo = (n) => { const d = new Date(today); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); };
-  const daysAhead = (n) => { const d = new Date(today); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); };
-
-  const a1 = seedAudit("Q3 GMP Verification — Bakery Line 2","FSSC 22000","Production",[
-    {name:"Personnel Hygiene", items:["Hairnets and beard snoods worn correctly","No jewellery or false nails observed","Hand-wash stations stocked and functional"]},
-    {name:"CCP Monitoring", items:["Chiller temp logs complete and within range","Metal detector verification records up to date"]},
-    {name:"Housekeeping", items:["Floors and drains clean, no standing water","Waste segregated and bins covered"]}
-  ], formatAuditNumber(1, year));
-  a1.date = daysAgo(6);
-  a1.status = "In Progress";
-  a1.riskLevel = "Medium";
-  a1.auditor = "Sandiso Mabeka";
-  a1.auditee = "Bakery Line 2 Team";
-  a1.sections[1].items[1].result = "Fail";
-  a1.sections[0].items[0].result = "Pass"; a1.sections[0].items[1].result = "Pass"; a1.sections[0].items[2].result = "Pass";
-  a1.sections[1].items[0].result = "Pass";
-  a1.sections[2].items[0].result = "Pass"; a1.sections[2].items[1].result = "Pass";
-  a1.findings = [{
-    id: uid(), clause:"CCP Monitoring", desc:"Metal detector verification log missing entries for two shifts",
-    severity:"Major", owner:"Line Supervisor", dueDate:daysAhead(3),
-    actionText:"Reissue verification log, retrain shift leads, daily QA spot-check for 2 weeks", status:"Open"
-  }];
-
-  const a2 = seedAudit("Monthly Internal Audit — Store 14 (Sandton)","ISO 22000","Front of House",[
-    {name:"Food Storage", items:["FIFO labelling correctly applied","Fridge/freezer temps within range and logged"]},
-    {name:"Cleaning & Sanitation", items:["Cleaning schedule signed off daily","Sanitiser concentration verified"]},
-  ], formatAuditNumber(2, year));
-  a2.date = daysAgo(28);
-  a2.status = "Closed";
-  a2.riskLevel = "Low";
-  a2.auditor = "Sandiso Mabeka";
-  a2.auditee = "Store 14 Manager";
-  a2.sections.forEach(sec=>sec.items.forEach(it=>it.result="Pass"));
-  a2.findings = [{
-    id: uid(), clause:"Cleaning & Sanitation", desc:"Sanitiser concentration slightly below spec on one till station",
-    severity:"Minor", owner:"Store Manager", dueDate:daysAgo(10),
-    actionText:"Retrained till staff on dilution ratio; re-tested and confirmed within spec", status:"Closed"
-  }];
-
-  const a3 = seedAudit("Supplier Verification — Regional DC","ISO 9001","Supply Chain",[
-    {name:"Incoming Goods", items:["COA received and matched to batch","Cold chain integrity confirmed on arrival"]},
-  ], formatAuditNumber(3, year));
-  a3.date = daysAgo(2);
-  a3.status = "Planned";
-  a3.riskLevel = "Medium";
-  a3.auditor = "Sandiso Mabeka";
-  a3.auditee = "DC Receiving Team";
-
-  const checklist = {
-    id: uid(), template: "ISO 22000",
-    location: "Store Front — Sandton",
-    inspector: "S. Mabeka",
-    date: daysAgo(1),
-    sections: [
-      { id: uid(), name: "Opening Checks", items: [
-        { id: uid(), text:"Fridge/freezer temps logged before trading", result:"Pass", note:"" },
-        { id: uid(), text:"Handwash stations stocked (soap, towels, sanitiser)", result:"Pass", note:"" },
-        { id: uid(), text:"Prior day's cleaning log signed off", result:"Fail", note:"Missing signature — followed up with shift lead" },
-      ]},
-    ],
-  };
-
-  const risks = [
-    { id: uid(), refNo:"RA-001", date: daysAgo(20), area:"Procurement", hazard:"Single supplier dependency for packaging film",
-      riskTo:"Continuity of supply", controls:"Monthly stock buffer maintained",
-      likelihood:4, severity:4, riskScore:16, riskLevel:"Critical",
-      action:"Qualify a second supplier by Q4", owner:"Procurement Lead", dueDate:daysAhead(45), completedDate:"",
-      status:"Open", residualLikelihood:"", residualSeverity:"", residualRiskScore:null, residualRiskLevel:null },
-    { id: uid(), refNo:"RA-002", date: daysAgo(45), area:"Facilities", hazard:"Ageing chiller units at Store 14",
-      riskTo:"Cold chain / product integrity", controls:"Preventive maintenance schedule increased to monthly",
-      likelihood:3, severity:3, riskScore:9, riskLevel:"High",
-      action:"Budget for chiller replacement in next capex cycle", owner:"Facilities Manager", dueDate:daysAhead(90), completedDate:"",
-      status:"Monitoring", residualLikelihood:2, residualSeverity:3, residualRiskScore:6, residualRiskLevel:"Medium" },
-  ];
-
-  const metrics = [
-    { id: uid(), name:"CAPA Closure Rate", category:"Quality", unit:"%", target:90, direction:"higher", critical:true,
-      source:"manual", autoType:null,
-      history:[{date:daysAgo(60),value:78},{date:daysAgo(30),value:85},{date:daysAgo(1),value:92}] },
-    { id: uid(), name:"Overdue CAPAs", category:"Quality", unit:"count", target:0, direction:"lower", critical:true,
-      source:"manual", autoType:null,
-      history:[{date:daysAgo(60),value:4},{date:daysAgo(30),value:2},{date:daysAgo(1),value:1}] },
-    { id: uid(), name:"Internal Audit Compliance Score", category:"Audit", unit:"%", target:95, direction:"higher", critical:false,
-      source:"manual", autoType:null,
-      history:[{date:daysAgo(60),value:88},{date:daysAgo(30),value:91},{date:daysAgo(1),value:94}] },
-  ];
-
-  checklistSeq = 1;
-  return {
-    audits: [a1, a2, a3],
-    auditSeq: 3,
-    checklists: [checklist],
-    riskAssessments: risks,
-    metrics: metrics,
-  };
-}
-
 function migrateAuditNumbers(){
   if(state.auditSeq === undefined){
     state.auditSeq = 0;
@@ -781,6 +671,7 @@ function ensureStateDefaults(){
   if(!state.companySettings.email){ state.companySettings.email = "Support@auditqmspro.com"; }
   if(state.companySettings.nextManagementReviewDate===undefined){ state.companySettings.nextManagementReviewDate = ""; }
   if(!state.riskAssessments){ state.riskAssessments = []; }
+  state.riskAssessments.forEach(r=>{ if(!r.category){ r.category = "Health & Safety"; } });
   if(!state.metrics){ state.metrics = []; }
   if(!state.metricsAutoSeeded){
     const autoDefaults = [
@@ -851,6 +742,11 @@ function ensureStateDefaults(){
   if(!state.copqEntries){ state.copqEntries = []; }
   if(!state.csatEntries){ state.csatEntries = []; }
   state.audits.forEach(a=>{ if(!a.auditType){ a.auditType = "Internal"; } });
+  state.audits.forEach(a=>{
+    if(!a.conclusion){ a.conclusion = { result: "", summary: "" }; }
+    if(!a.approvals){ a.approvals = { preparedBy: a.auditor||"", reviewedBy: "", approvedBy: "" }; }
+    (a.findings||[]).forEach((f,idx)=>{ if(!f.refNo){ f.refNo = `F-${String(idx+1).padStart(3,'0')}`; } if(f.clauseRef===undefined){ f.clauseRef = ""; } });
+  });
   state.sensoryEvaluations.forEach(e=>{ if(!e.category){ e.category = "Product Quality"; } });
   checklistSeq = state.checklists.length;
 }
@@ -905,6 +801,15 @@ function riskLevelFromScore(score){
   return "Low";
 }
 const riskLevelColor = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
+function csatStatus(avg){
+  if(avg===null||avg===undefined) return null;
+  if(avg>=4.5) return {emoji:"🟢", label:"Excellent", tone:"green"};
+  if(avg>=3.0) return {emoji:"🟡", label:"Good", tone:"amber"};
+  return {emoji:"🔴", label:"Needs Improvement", tone:"rust"};
+}
+
+const RISK_CATEGORIES = ["Health & Safety","Quality","Food Safety","Environmental","Business"];
+const riskCategoryColor = {"Health & Safety":"rust","Quality":"navy","Food Safety":"amber","Environmental":"green","Business":"neutral"};
 
 /* ---------- KPI metrics ---------- */
 const AUTO_METRIC_OPTIONS = [
@@ -2006,9 +1911,6 @@ function renderWorkspaceModal(){
           <input id="new-workspace-name" placeholder="New client / company name…" value="${esc(newWorkspaceName)}" style="flex:1;" />
           <button class="btn btn-primary" data-action="create-workspace" style="white-space:nowrap;">+ Add Client</button>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
-          <button class="btn btn-ghost" data-action="create-demo-workspace" style="font-size:12px;">✨ Create Demo Workspace (sample data)</button>
-        </div>
         <div style="display:flex;justify-content:flex-end;">
           <button class="btn btn-ghost" data-action="close-workspace-modal">Close</button>
         </div>
@@ -2106,7 +2008,7 @@ function scoreOf(audit){
 }
 
 function complianceGrade(score){
-  if(score===null) return {label:"No Data", tone:"neutral"};
+  if(score===null) return {label:"No Data Yet", tone:"neutral"};
   if(score>=90) return {label:"Excellent", tone:"green"};
   if(score>=80) return {label:"Good", tone:"navy"};
   if(score>=60) return {label:"Needs Attention", tone:"amber"};
@@ -2252,7 +2154,7 @@ function renderDashboard(){
     const navId = KPI_NAV_TARGETS[key];
     const inner = `
       <span>${GRADE_EMOJI[g.tone]} ${label}</span>
-      <span>${score===null?'<span class="muted-italic">no data</span>':`<strong>${score}%</strong>`}${trendHtml}</span>
+      <span>${score===null?'<span class="muted-italic">no data yet</span>':`<strong>${score}%</strong>`}${trendHtml}</span>
     `;
     if(navId){
       return `<button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button>`;
@@ -2365,7 +2267,7 @@ function renderDashboard(){
       ${kpiGroup("Laboratory", [
         {label:"Laboratory Performance", score:labScore, key:"lab"}
       ])}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Metrics with no records yet show "no data" and aren't averaged into the overall score. Trend arrows compare to your last visit in a previous month.</p>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Metrics with no records yet show "no data yet" and aren't averaged into the overall score. Trend arrows compare to your last visit in a previous month.</p>
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
@@ -2483,12 +2385,13 @@ function renderDashboard(){
         `;
 
         const recentCsat = [...state.csatEntries].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,3);
+        const csatBucket = csatStatus(csatAvg);
         const csatHtml = `
           <div style="padding:8px 0;font-size:13px;">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
               <div>Customer Satisfaction</div>
               <div class="flex-wrap">
-                <span class="tag tag-${csatAvg===null?'neutral':(csatAvg>=4?'green':csatAvg>=3?'amber':'rust')}">${csatAvg===null ? 'not tracked yet' : `${csatAvg.toFixed(1)} / 5 · ${state.csatEntries.length} response(s)`}</span>
+                <span class="tag tag-${csatBucket?csatBucket.tone:'neutral'}">${csatAvg===null ? 'not tracked yet' : `${csatBucket.emoji} ${csatAvg.toFixed(1)} / 5 · ${csatBucket.label} · ${state.csatEntries.length} response(s)`}</span>
                 <button class="btn btn-ghost" style="padding:2px 8px;font-size:12px;" data-action="toggle-csat-form">${dashShowCsatForm?'Cancel':'+ Log Score'}</button>
               </div>
             </div>
@@ -2674,7 +2577,7 @@ function renderAuditDetail(a){
           <label class="field">Visit Number<input data-audit-plan-field="${a.id}:visitNumber" value="${esc(ap.visitNumber)}" placeholder="e.g. V1" /></label>
           <label class="field">Standard(s)<input data-audit-plan-field="${a.id}:standards" value="${esc(ap.standards)}" placeholder="e.g. ISO 9001:2015" /></label>
           <label class="field">Lead Auditor<input data-audit-plan-field="${a.id}:leadAuditor" value="${esc(ap.leadAuditor)}" placeholder="Lead auditor name" /></label>
-          <label class="field">Team Member(s)<input data-audit-plan-field="${a.id}:teamMembers" value="${esc(ap.teamMembers)}" placeholder="e.g. None, or names" /></label>
+          <label class="field">Audit Team (comma-separated)<input data-audit-plan-field="${a.id}:teamMembers" value="${esc(ap.teamMembers)}" placeholder="e.g. John Smith, Jane Doe" /></label>
           <label class="field">Audit Language<input data-audit-plan-field="${a.id}:auditLanguage" value="${esc(ap.auditLanguage)}" placeholder="e.g. English" /></label>
         </div>
         <label class="field" style="margin-top:8px;">Audit Scope<textarea data-audit-plan-field="${a.id}:scope" rows="2" placeholder="e.g. Warehousing and distribution of chilled products">${esc(ap.scope)}</textarea></label>
@@ -2746,12 +2649,13 @@ function renderAuditDetail(a){
       ${a.findings.map(f => `
         <div class="finding-box">
           <div style="display:flex;justify-content:space-between;gap:8px;">
-            <div style="font-size:14px;flex:1;">${esc(f.desc)}</div>
+            <div style="font-size:14px;flex:1;"><strong style="color:var(--muted);font-weight:600;">${esc(f.refNo)||'—'}</strong> — ${esc(f.desc)}</div>
             <button class="x-btn" data-action="remove-finding" data-audit="${a.id}" data-finding="${f.id}">✕</button>
           </div>
           <div class="flex-wrap" style="font-size:12px;color:var(--muted);margin:6px 0;">
             <span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>
             <span>${esc(f.clause)}</span>
+            ${f.clauseRef ? `<span class="tag tag-navy">${esc(f.clauseRef)}</span>` : ''}
             ${f.autoGenerated?`<span class="tag tag-navy">⚡ Auto-CAPA</span>`:''}
             ${f.linkedRiskId?`<span class="tag tag-navy">🔗 Risk Logged</span>`:''}
             ${f.owner?`<span>👤 ${esc(f.owner)}</span>`:''}
@@ -2772,10 +2676,31 @@ function renderAuditDetail(a){
         <label class="field">Severity<select id="nf-severity-${a.id}">${SEVERITIES.map(s=>`<option>${s}</option>`).join('')}</select></label>
         <label class="field">Owner<input id="nf-owner-${a.id}" /></label>
         <label class="field">CAPA Due Date<input type="date" id="nf-due-${a.id}" /></label>
+        <label class="field" style="grid-column:1/-1;">Clause Reference (optional)<input id="nf-clauseref-${a.id}" placeholder="e.g. FSSC 22000 Clause 8.5.2" /></label>
         <label class="field" style="grid-column:1/-1;">Finding Description<input id="nf-desc-${a.id}" placeholder="What was observed…" /></label>
         <label class="field" style="grid-column:1/-1;">Corrective Action<input id="nf-action-${a.id}" placeholder="Planned CAPA…" /></label>
         <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
       </div>
+      </div>
+    </div>
+
+    <div class="card p4" style="margin-top:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📋 Audit Conclusion</h3>
+      <div class="grid2">
+        <label class="field" style="grid-column:1/-1;">Overall Result<select data-audit-conclusion-field="${a.id}:result">
+          <option value="" ${!(a.conclusion&&a.conclusion.result)?'selected':''}>— Not yet concluded (suggested: ${suggestConclusionResult(a)}) —</option>
+          ${CONCLUSION_OPTIONS.map(o=>`<option ${a.conclusion&&a.conclusion.result===o?'selected':''}>${o}</option>`).join('')}
+        </select></label>
+        <label class="field" style="grid-column:1/-1;">Summary<input data-audit-conclusion-field="${a.id}:summary" value="${esc(a.conclusion&&a.conclusion.summary)}" placeholder="e.g. The audit identified one major non-conformance relating to CCP monitoring. Corrective actions have been assigned and verification is required before audit closure." /></label>
+      </div>
+    </div>
+
+    <div class="card p4" style="margin-top:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">✍ Approval</h3>
+      <div class="grid3">
+        <label class="field">Prepared by<input data-audit-approvals-field="${a.id}:preparedBy" value="${esc(a.approvals&&a.approvals.preparedBy)}" placeholder="e.g. Sandiso Mabeka" /></label>
+        <label class="field">Reviewed by<input data-audit-approvals-field="${a.id}:reviewedBy" value="${esc(a.approvals&&a.approvals.reviewedBy)}" placeholder="e.g. QA Manager" /></label>
+        <label class="field">Approved by<input data-audit-approvals-field="${a.id}:approvedBy" value="${esc(a.approvals&&a.approvals.approvedBy)}" placeholder="e.g. Technical Manager" /></label>
       </div>
     </div>
 
@@ -2856,6 +2781,7 @@ function renderCapa(){
 let showNewRisk = false;
 let openRiskId = null;
 let riskLevelFilter = "All";
+let riskCategoryFilter = "All";
 let showNewDocument = false;
 let openDocumentId = null;
 let documentStatusFilter = "All";
@@ -2892,16 +2818,20 @@ let haccpChecklistAnswers = {};
 
 function renderRiskRegister(){
   const all = state.riskAssessments;
-  const filtered = all.filter(r => riskLevelFilter==="All" || r.riskLevel===riskLevelFilter);
+  const filtered = all.filter(r => (riskLevelFilter==="All" || r.riskLevel===riskLevelFilter) && (riskCategoryFilter==="All" || (r.category||"Health & Safety")===riskCategoryFilter));
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">Risk Register (HIRA)</h2>
+      <h2 class="serif" style="font-size:18px;margin:0;">Enterprise Risk Register</h2>
       <div class="flex-wrap">
         <button class="btn btn-ghost" data-action="export-risk-csv">⬇ CSV</button>
-        <button class="btn btn-primary" data-action="toggle-new-risk">+ New Risk Assessment</button>
+        <button class="btn btn-primary" data-action="toggle-new-risk">+ New Risk</button>
       </div>
     </div>
     <div class="card p4" style="margin-bottom:16px;">
+      <div class="flex-wrap" style="margin-bottom:10px;">
+        <span style="font-size:12px;color:var(--muted);">Filter by Category:</span>
+        ${["All",...RISK_CATEGORIES].map(f=>`<button class="status-pill ${riskCategoryFilter===f?'active':''}" data-risk-category-filter="${f}">${f}</button>`).join('')}
+      </div>
       <div class="flex-wrap">
         <span style="font-size:12px;color:var(--muted);">Filter by Risk Level:</span>
         ${["All","Low","Medium","High","Critical"].map(f=>`<button class="status-pill ${riskLevelFilter===f?'active':''}" data-risk-filter="${f}">${f}</button>`).join('')}
@@ -2909,7 +2839,7 @@ function renderRiskRegister(){
     </div>
     ${showNewRisk ? renderNewRiskForm() : ''}
     <div>
-      ${filtered.length===0 ? `<p class="muted-italic">No risk assessments logged yet.</p>` : filtered.map(r=>renderRiskRow(r)).join('')}
+      ${filtered.length===0 ? `<p class="muted-italic">No risks logged yet.</p>` : filtered.map(r=>renderRiskRow(r)).join('')}
     </div>
   `;
 }
@@ -2919,8 +2849,9 @@ function renderNewRiskForm(){
     <div class="card p4 grid2" style="margin-bottom:16px;">
       <label class="field">Ref No.<input id="nr-ref" placeholder="e.g. HIRA-004" /></label>
       <label class="field">Date<input type="date" id="nr-date" value="${today()}" /></label>
-      <label class="field" style="grid-column:1/-1;">Area / Task<input id="nr-area" placeholder="e.g. Loading Bay" /></label>
-      <label class="field" style="grid-column:1/-1;">Hazard Description<input id="nr-hazard" placeholder="What could cause harm and how…" /></label>
+      <label class="field">Risk Category<select id="nr-category">${RISK_CATEGORIES.map(c=>`<option ${c==="Health & Safety"?'selected':''}>${c}</option>`).join('')}</select></label>
+      <label class="field">Area / Task<input id="nr-area" placeholder="e.g. Loading Bay" /></label>
+      <label class="field" style="grid-column:1/-1;">Risk Description<input id="nr-hazard" placeholder="What could cause harm and how…" /></label>
       <label class="field" style="grid-column:1/-1;">Who/What at Risk<input id="nr-risk-to" placeholder="e.g. Warehouse staff, visitors" /></label>
       <label class="field" style="grid-column:1/-1;">Existing Controls<input id="nr-controls" placeholder="Controls currently in place…" /></label>
       <label class="field">Likelihood (1–5)<select id="nr-likelihood">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>
@@ -2950,6 +2881,7 @@ function renderRiskRow(r){
           </div>
         </div>
         <div class="flex-wrap">
+          <span class="tag tag-${riskCategoryColor[r.category]||'neutral'}">${esc(r.category)||'Health & Safety'}</span>
           <span class="tag tag-${riskLevelColor[r.riskLevel]||'neutral'}">${r.riskLevel} risk</span>
           ${r.residualRiskLevel ? `<span class="tag tag-neutral">residual: ${r.residualRiskLevel}</span>` : ''}
         </div>
@@ -2964,8 +2896,9 @@ function renderRiskDetail(r){
     <div class="grid2" style="margin-bottom:12px;">
       <label class="field">Ref No.<input data-risk-field="${r.id}:refNo" value="${esc(r.refNo)}" /></label>
       <label class="field">Date<input type="date" data-risk-field="${r.id}:date" value="${r.date}" /></label>
-      <label class="field" style="grid-column:1/-1;">Area / Task<input data-risk-field="${r.id}:area" value="${esc(r.area)}" /></label>
-      <label class="field" style="grid-column:1/-1;">Hazard Description<input data-risk-field="${r.id}:hazard" value="${esc(r.hazard)}" /></label>
+      <label class="field">Risk Category<select data-risk-field="${r.id}:category">${RISK_CATEGORIES.map(c=>`<option ${c===(r.category||"Health & Safety")?'selected':''}>${c}</option>`).join('')}</select></label>
+      <label class="field">Area / Task<input data-risk-field="${r.id}:area" value="${esc(r.area)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Risk Description<input data-risk-field="${r.id}:hazard" value="${esc(r.hazard)}" /></label>
       <label class="field" style="grid-column:1/-1;">Who/What at Risk<input data-risk-field="${r.id}:riskTo" value="${esc(r.riskTo)}" /></label>
       <label class="field" style="grid-column:1/-1;">Existing Controls<input data-risk-field="${r.id}:controls" value="${esc(r.controls)}" /></label>
     </div>
@@ -4471,7 +4404,7 @@ function renderMetricRow(m, value, status){
             <div class="serif" style="font-size:18px;color:var(--navy);">${value===null?'—':value}<span style="font-size:11px;color:var(--muted);"> ${esc(m.unit)}</span></div>
             <div style="font-size:11px;color:var(--muted);">target ${m.target} ${esc(m.unit)}${delta!==null?` · ${delta>=0?'+':''}${delta}`:''}</div>
           </div>
-          ${status ? `<span class="tag tag-${status==='On Target'?'green':'rust'}">${status==='On Target'?'on target':'off target'}</span>` : `<span class="tag tag-neutral">no data</span>`}
+          ${status ? `<span class="tag tag-${status==='On Target'?'green':'rust'}">${status==='On Target'?'on target':'off target'}</span>` : `<span class="tag tag-neutral">no data yet</span>`}
         </div>
       </button>
       ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderMetricDetail(m, value)}</div>` : ''}
@@ -5096,7 +5029,7 @@ function buildMetricsPrintReport(){
         <td>${esc(x.m.name)}${x.m.critical?' <span style="color:#9b3f28;">⚠</span>':''}</td>
         <td>${x.value===null?'—':x.value+' '+esc(x.m.unit||'')}</td>
         <td>${x.m.target} ${esc(x.m.unit||'')}</td>
-        <td style="color:${statusColor};font-weight:600;">${x.status||'No data'}</td>
+        <td style="color:${statusColor};font-weight:600;">${x.status||'No data yet'}</td>
         <td>${trend===null?'—':(trend>=0?'+':'')+trend}</td>
       </tr>`;
     }).join('');
@@ -5205,6 +5138,14 @@ function buildMicroCertificatePrintReport(recordId){
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
+  const conforming = items.filter(i=>i.result==="Pass").length;
+  const nonConforming = items.filter(i=>i.result==="Fail").length;
+  const observations = a.sections.flatMap(s=>s.items).filter(i=>i.result==="NA").length;
+  const findingCounts = { Critical:0, Major:0, Minor:0 };
+  a.findings.forEach(f=>{ if(findingCounts[f.severity]!==undefined) findingCounts[f.severity]++; });
+  const conclusionResult = (a.conclusion && a.conclusion.result) ? a.conclusion.result : suggestConclusionResult(a);
+  const overallResultLabel = conclusionResult ? conclusionResult.toUpperCase() : "NOT SCORED";
+  const overallResultTone = conclusionResult==="Fail" ? "rust" : conclusionResult==="Pass with Corrective Actions" ? "amber" : "green";
 
   // Hardcoded (non-theme) colors so the report always prints light, regardless of dark mode
   const PRINT_TONES = {
@@ -5221,15 +5162,30 @@ function buildAuditPrintReport(a){
     ? `<img src="${dataUrl}" style="max-width:110px;max-height:110px;border-radius:4px;display:block;object-fit:cover;border:1px solid #ccc;" />`
     : '—';
 
+  const execSummary = `
+    <div class="section-title">Executive Summary</div>
+    <table>
+      <tbody>
+        <tr><th>Overall Result</th><td colspan="3">${printBadge(overallResultLabel, overallResultTone)}</td></tr>
+        <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
+        <tr><th>Checklist Items</th><td colspan="3">✓ Conforming: ${conforming} &nbsp;&nbsp; ✕ Non-conforming: ${nonConforming} &nbsp;&nbsp; Observations: ${observations}</td></tr>
+        <tr><th>Findings</th><td colspan="3">Critical: ${findingCounts.Critical} &nbsp;&nbsp; Major: ${findingCounts.Major} &nbsp;&nbsp; Minor: ${findingCounts.Minor}</td></tr>
+        <tr><th>CAPAs Created</th><td colspan="3">${a.findings.length}</td></tr>
+      </tbody>
+    </table>
+  `;
+
   const ap = a.auditPlan || {};
   const hasPlanDetails = ap.organization || ap.visitNumber || ap.leadAuditor || ap.scope || (ap.itinerary && ap.itinerary.length);
+  const teamList = (ap.teamMembers||"").split(",").map(s=>s.trim()).filter(Boolean);
+  const teamHtml = teamList.length ? teamList.map(n=>esc(n)).join("<br/>") : '—';
   const auditPlanSection = hasPlanDetails ? `
     <div class="section-title">Audit Plan</div>
     <table>
       <tbody>
         <tr><th>Organization</th><td>${esc(ap.organization)||'—'}</td><th>Visit Number</th><td>${esc(ap.visitNumber)||'—'}</td></tr>
         <tr><th>Address</th><td colspan="3">${esc(ap.address)||'—'}</td></tr>
-        <tr><th>Lead Auditor</th><td>${esc(ap.leadAuditor)||'—'}</td><th>Team Member(s)</th><td>${esc(ap.teamMembers)||'—'}</td></tr>
+        <tr><th>Lead Auditor</th><td>${esc(ap.leadAuditor)||'—'}</td><th>Audit Team</th><td>${teamHtml}</td></tr>
         <tr><th>Standard(s)</th><td>${esc(ap.standards)||'—'}</td><th>Audit Language</th><td>${esc(ap.auditLanguage)||'—'}</td></tr>
         <tr><th>Scope</th><td colspan="3">${esc(ap.scope)||'—'}</td></tr>
         <tr><th>Objectives</th><td colspan="3">${esc(ap.objectives)||'—'}</td></tr>
@@ -5245,19 +5201,44 @@ function buildAuditPrintReport(a){
 
   const checklistRows = a.sections.map(sec => `
     <div class="section-title">${esc(sec.name)}</div>
-    <table><thead><tr><th>Item</th><th>Result</th><th>Note</th><th>Photo</th></tr></thead>
+    <table><thead><tr><th>Item</th><th>Clause</th><th>Result</th><th>Note</th><th>Photo</th></tr></thead>
     <tbody>
-      ${sec.items.map(it=>`<tr><td>${esc(it.text)}</td><td>${it.result||'—'}</td><td>${esc(it.note)||''}</td><td>${printPhoto(it.photo)}</td></tr>`).join('')}
+      ${sec.items.map(it=>`<tr><td>${esc(it.text)}</td><td>${esc(sec.name)}</td><td>${it.result||'—'}</td><td>${esc(it.note)||''}</td><td>${printPhoto(it.photo)}</td></tr>`).join('')}
     </tbody></table>
   `).join('');
 
   const findingsRows = a.findings.length ? `
     <div class="section-title">Findings & CAPA</div>
-    <table><thead><tr><th>Description</th><th>Department</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th><th>Photo</th></tr></thead>
+    <table><thead><tr><th>Finding</th><th>Description</th><th>Department</th><th>Clause Reference</th><th>Severity</th><th>Owner</th><th>Due</th><th>CAPA</th><th>Status</th><th>Photo</th></tr></thead>
     <tbody>
-      ${a.findings.map(f=>`<tr><td>${esc(f.desc)}</td><td>${esc(f.clause)}</td><td>${printBadge(f.severity, sevTone[f.severity])}</td><td>${esc(f.owner)||'—'}</td><td>${f.dueDate||'—'}</td><td>${esc(f.actionText)||'—'}</td><td>${printBadge(f.status, statusTone[f.status])}</td><td>${printPhoto(f.photo)}</td></tr>`).join('')}
+      ${a.findings.map(f=>`<tr><td>${esc(f.refNo)||'—'}</td><td>${esc(f.desc)}</td><td>${esc(f.clause)}</td><td>${esc(f.clauseRef)||'—'}</td><td>${printBadge(f.severity, sevTone[f.severity])}</td><td>${esc(f.owner)||'—'}</td><td>${f.dueDate||'—'}</td><td>${esc(f.actionText)||'—'}</td><td>${printBadge(f.status, statusTone[f.status])}</td><td>${printPhoto(f.photo)}</td></tr>`).join('')}
     </tbody></table>
   ` : `<div class="section-title">Findings & CAPA</div><p>No findings logged.</p>`;
+
+  const conclusionCheckbox = (label) => `${conclusionResult===label ? '☑' : '☐'} ${label}`;
+  const conclusionSection = `
+    <div class="section-title">Audit Conclusion</div>
+    <table>
+      <tbody>
+        <tr><th>Overall Result</th><td colspan="3">
+          ${conclusionCheckbox("Pass")} &nbsp;&nbsp;&nbsp; ${conclusionCheckbox("Pass with Corrective Actions")} &nbsp;&nbsp;&nbsp; ${conclusionCheckbox("Fail")}
+        </td></tr>
+      </tbody>
+    </table>
+    <p>${esc(a.conclusion && a.conclusion.summary) || 'No conclusion summary recorded.'}</p>
+  `;
+
+  const approvals = a.approvals || {};
+  const approvalSection = `
+    <div class="section-title">Approval</div>
+    <table>
+      <tbody>
+        <tr><th>Prepared by</th><td>${esc(approvals.preparedBy)||'—'}</td></tr>
+        <tr><th>Reviewed by</th><td>${esc(approvals.reviewedBy)||'—'}</td></tr>
+        <tr><th>Approved by</th><td>${esc(approvals.approvedBy)||'—'}</td></tr>
+      </tbody>
+    </table>
+  `;
 
   const c = state.companySettings || {};
   const logoHtml = c.logoDataUrl
@@ -5285,9 +5266,12 @@ function buildAuditPrintReport(a){
         <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
       </tbody>
     </table>
+    ${execSummary}
     ${auditPlanSection}
     ${checklistRows}
     ${findingsRows}
+    ${conclusionSection}
+    ${approvalSection}
     <div class="sig-row">
       <div class="sig-line">${a.signOff && a.signOff.auditorSignedAt
         ? `Auditor Signature: <strong>${esc(a.signOff.auditorName)}</strong> — signed electronically ${new Date(a.signOff.auditorSignedAt).toLocaleString()}`
@@ -5442,7 +5426,9 @@ function attachHandlers(){
         const desc = `Out-of-Specification result — Sample ${rec.sampleId||'(unlabeled)'}${rec.product?`, ${rec.product}`:''}${rec.batchLot?` — ${rec.batchLot}`:''}`;
         const finding = {
           id: uid(),
+          refNo: nextFindingRefNo(oosAudit),
           clause: rec.sampleType || "Laboratory Testing",
+          clauseRef: "",
           category: "OOS",
           desc,
           severity: "Critical",
@@ -5471,7 +5457,9 @@ function attachHandlers(){
         const empAudit = getOrCreateEmpFindingsAudit();
         const finding = {
           id: uid(),
+          refNo: nextFindingRefNo(empAudit),
           clause: rec.zone || "Environmental Monitoring",
+          clauseRef: "",
           category: "EMP",
           desc: `Failed swab — ${rec.organism||'test'} at ${rec.location||'unspecified location'}${rec.result?` (result: ${rec.result})`:''}`,
           severity: "Medium",
@@ -5492,7 +5480,9 @@ function attachHandlers(){
         const desc = `Customer complaint — ${rec.classification||'Unclassified'}${rec.natureOfComplaint?`: ${rec.natureOfComplaint}`:''}${rec.product?` (Product: ${rec.product})`:''}`;
         const finding = {
           id: uid(),
+          refNo: nextFindingRefNo(complaintAudit),
           clause: rec.classification || "Customer Complaint",
+          clauseRef: "",
           category: "Complaint",
           desc,
           severity: el.value==="Critical" ? "Critical" : "Major",
@@ -5513,7 +5503,7 @@ function attachHandlers(){
           const sevScore = 5;
           const riskScore = likelihood * sevScore;
           const risk = {
-            id: uid(), refNo: "", date: today(), area: rec.classification || "",
+            id: uid(), refNo: "", date: today(), category: "Business", area: rec.classification || "",
             hazard: `Customer complaint: ${desc}`, riskTo: "Customer / brand reputation", controls: "",
             likelihood, severity: sevScore, riskScore, riskLevel: riskLevelFromScore(riskScore),
             action: rec.correctiveAction || "", owner: "", dueDate: "", completedDate: "", status: "Open",
@@ -5627,6 +5617,24 @@ function attachHandlers(){
       persist();
     };
   });
+  document.querySelectorAll('[data-audit-conclusion-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.auditConclusionField.split(':');
+      const a = state.audits.find(x=>x.id===id);
+      if(!a.conclusion){ a.conclusion = { result:"", summary:"" }; }
+      a.conclusion[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-audit-approvals-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.auditApprovalsField.split(':');
+      const a = state.audits.find(x=>x.id===id);
+      if(!a.approvals){ a.approvals = { preparedBy:"", reviewedBy:"", approvedBy:"" }; }
+      a.approvals[field] = el.value;
+      persist();
+    };
+  });
   document.querySelectorAll('[data-itinerary-field]').forEach(el=>{
     el.onchange = () => {
       const [auditId, idx, field] = el.dataset.itineraryField.split(':');
@@ -5713,10 +5721,12 @@ function attachHandlers(){
       if(!existing){
         const finding = {
           id: uid(),
+          refNo: nextFindingRefNo(a),
           clause: sec.name,
+          clauseRef: "",
           category: a.standard || "",
           desc: item.text + (item.note ? ` — ${item.note}` : ""),
-          severity: "Medium",
+          severity: "Major",
           owner: "",
           dueDate: "",
           actionText: "",
@@ -5835,6 +5845,8 @@ function attachHandlers(){
     const dueDate = document.getElementById(`nf-due-${auditId}`).value;
     const actionText = document.getElementById(`nf-action-${auditId}`).value;
     const clause = document.getElementById(`nf-clause-${auditId}`).value;
+    const clauseRefEl = document.getElementById(`nf-clauseref-${auditId}`);
+    const clauseRef = clauseRefEl ? clauseRefEl.value.trim() : "";
     const findingId = uid();
     let linkedRiskId = null;
     if(severity==="Major" || severity==="Critical"){
@@ -5842,7 +5854,7 @@ function attachHandlers(){
       const sevScore = severity==="Critical" ? 5 : 4;
       const riskScore = likelihood * sevScore;
       const risk = {
-        id: uid(), refNo: "", date: today(), area: clause || a.area || "",
+        id: uid(), refNo: "", date: today(), category: "Quality", area: clause || a.area || "",
         hazard: `Audit finding: ${desc}`, riskTo: "Product / process quality", controls: "",
         likelihood, severity: sevScore, riskScore, riskLevel: riskLevelFromScore(riskScore),
         action: actionText, owner, dueDate, completedDate: "", status: "Open",
@@ -5855,7 +5867,9 @@ function attachHandlers(){
     }
     a.findings.push({
       id: findingId,
+      refNo: nextFindingRefNo(a),
       clause,
+      clauseRef,
       category: document.getElementById(`nf-category-${auditId}`).value,
       desc,
       severity,
@@ -5888,6 +5902,7 @@ function attachHandlers(){
       id: uid(),
       refNo: document.getElementById('nr-ref').value,
       date: document.getElementById('nr-date').value || today(),
+      category: document.getElementById('nr-category').value,
       area: document.getElementById('nr-area').value,
       hazard,
       riskTo: document.getElementById('nr-risk-to').value,
@@ -5909,6 +5924,9 @@ function attachHandlers(){
   });
   document.querySelectorAll('[data-risk-filter]').forEach(el=>el.onclick=()=>{
     riskLevelFilter = el.dataset.riskFilter; render();
+  });
+  document.querySelectorAll('[data-risk-category-filter]').forEach(el=>el.onclick=()=>{
+    riskCategoryFilter = el.dataset.riskCategoryFilter; render();
   });
   document.querySelectorAll('[data-risk-field]').forEach(el=>{
     el.onchange = () => {
@@ -5941,9 +5959,9 @@ function attachHandlers(){
   });
   const riskCsvBtn = document.querySelector('[data-action="export-risk-csv"]');
   if(riskCsvBtn) riskCsvBtn.onclick=()=>{
-    const headers = ["Ref No","Date","Area/Task","Hazard","Who/What at Risk","Existing Controls","Likelihood","Severity","Risk Score","Risk Level","Action Required","Responsible","Target Date","Status","Residual Risk Level"];
+    const headers = ["Ref No","Date","Category","Area/Task","Risk Description","Who/What at Risk","Existing Controls","Likelihood","Severity","Risk Score","Risk Level","Action Required","Responsible","Target Date","Status","Residual Risk Level"];
     const rows = state.riskAssessments.map(r=>[
-      r.refNo||'', r.date, r.area||'', r.hazard, r.riskTo||'', r.controls||'', r.likelihood, r.severity, r.riskScore, r.riskLevel,
+      r.refNo||'', r.date, r.category||'Health & Safety', r.area||'', r.hazard, r.riskTo||'', r.controls||'', r.likelihood, r.severity, r.riskScore, r.riskLevel,
       r.action||'', r.owner||'', r.dueDate||'', r.status, r.residualRiskLevel||''
     ]);
     const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
@@ -7010,8 +7028,6 @@ function attachHandlers(){
     if(!val || !val.trim()){ return; }
     createWorkspace(val);
   };
-  const createDemoBtn = document.querySelector('[data-action="create-demo-workspace"]');
-  if(createDemoBtn) createDemoBtn.onclick=()=>{ createDemoWorkspace(); };
   document.querySelectorAll('[data-workspace-rename]').forEach(el=>{
     el.onchange=()=>{ renameWorkspace(el.getAttribute('data-workspace-rename'), el.value); };
     el.onkeydown=(e)=>{ if(e.key==="Enter"){ el.blur(); } };
@@ -7052,7 +7068,7 @@ function attachHandlers(){
       "Auditor": a.auditor, "Auditee": a.auditee, "Date": a.date, "Status": a.status, "Compliance %": scoreOf(a)
     }));
     const findingRows = state.audits.flatMap(a=>a.findings.map(f=>({
-      "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Department": f.clause, "Description": f.desc,
+      "Finding #": f.refNo||'', "Audit Number": a.auditNumber||'', "Audit Title": a.title, "Department": f.clause, "Clause Reference": f.clauseRef||'', "Description": f.desc,
       "Severity": f.severity, "Owner": f.owner, "Due Date": f.dueDate, "CAPA": f.actionText, "Status": f.status
     })));
     const wb = XLSX.utils.book_new();
@@ -7065,9 +7081,9 @@ function attachHandlers(){
   const csvBtn = document.querySelector('[data-action="export-csv"]');
   if(csvBtn) csvBtn.onclick=()=>{
     if(!isPro()){ showProModal=true; render(); return; }
-    const headers = ["Audit Number","Audit Title","Department","Description","Severity","Owner","Due Date","CAPA","Status"];
+    const headers = ["Finding #","Audit Number","Audit Title","Department","Clause Reference","Description","Severity","Owner","Due Date","CAPA","Status"];
     const rows = state.audits.flatMap(a=>a.findings.map(f=>[
-      a.auditNumber||'', a.title, f.clause, f.desc, f.severity, f.owner||'', f.dueDate||'', f.actionText||'', f.status
+      f.refNo||'', a.auditNumber||'', a.title, f.clause, f.clauseRef||'', f.desc, f.severity, f.owner||'', f.dueDate||'', f.actionText||'', f.status
     ]));
     const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
     const csv = [headers.map(csvEscape).join(','), ...rows.map(r=>r.map(csvEscape).join(','))].join('\n');
