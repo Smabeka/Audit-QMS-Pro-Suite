@@ -3003,8 +3003,22 @@ function renderAuditDetail(a){
           <label class="field">Visit Number<input data-audit-plan-field="${a.id}:visitNumber" value="${esc(ap.visitNumber)}" placeholder="e.g. V1" /></label>
           <label class="field">Standard(s)<input data-audit-plan-field="${a.id}:standards" value="${esc(ap.standards)}" placeholder="e.g. ISO 9001:2015" /></label>
           <label class="field">Lead Auditor<input data-audit-plan-field="${a.id}:leadAuditor" value="${esc(ap.leadAuditor)}" placeholder="Lead auditor name" /></label>
-          <label class="field">Audit Team (comma-separated)<input data-audit-plan-field="${a.id}:teamMembers" value="${esc(ap.teamMembers)}" placeholder="e.g. John Smith, Jane Doe" /></label>
           <label class="field">Audit Language<input data-audit-plan-field="${a.id}:auditLanguage" value="${esc(ap.auditLanguage)}" placeholder="e.g. English" /></label>
+        </div>
+        <div class="field" style="margin-top:8px;">
+          <span>Audit Team</span>
+          <div class="flex-wrap" style="margin-top:6px;">
+            ${(ap.teamMembers||"").split(",").map(s=>s.trim()).filter(Boolean).map(name => `
+              <span class="tag tag-navy" style="display:inline-flex;align-items:center;gap:5px;">
+                ${esc(name)}
+                <button data-action="remove-team-member" data-audit="${a.id}" data-member="${esc(name)}" style="background:none;border:none;cursor:pointer;color:inherit;font-weight:700;padding:0;line-height:1;">✕</button>
+              </span>
+            `).join('') || `<span class="muted-italic" style="font-size:12px;">No team members added yet.</span>`}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px;">
+            <input id="add-team-member-${a.id}" placeholder="Add team member name…" style="flex:1;" />
+            <button class="btn btn-ghost" data-action="add-team-member" data-audit="${a.id}" style="white-space:nowrap;">+ Add</button>
+          </div>
         </div>
         <label class="field" style="margin-top:8px;">Audit Scope<textarea data-audit-plan-field="${a.id}:scope" rows="2" placeholder="e.g. Warehousing and distribution of chilled products">${esc(ap.scope)}</textarea></label>
         <label class="field" style="margin-top:8px;">Audit Objectives<textarea data-audit-plan-field="${a.id}:objectives" rows="2" placeholder="e.g. Determine conformity with audit criteria...">${esc(ap.objectives)}</textarea></label>
@@ -6152,6 +6166,35 @@ function attachHandlers(){
       a.auditPlan[field] = el.value;
       persist();
     };
+  });
+  document.querySelectorAll('[data-action="add-team-member"]').forEach(el=>el.onclick=()=>{
+    const auditId = el.dataset.audit;
+    const a = state.audits.find(x=>x.id===auditId);
+    if(!a) return;
+    if(!a.auditPlan){ a.auditPlan = { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards:"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] }; }
+    const input = document.getElementById(`add-team-member-${auditId}`);
+    const name = (input.value||"").replace(/,/g,'').trim();
+    if(!name) return;
+    const existing = (a.auditPlan.teamMembers||"").split(",").map(s=>s.trim()).filter(Boolean);
+    if(!existing.includes(name)) existing.push(name);
+    a.auditPlan.teamMembers = existing.join(", ");
+    persist(); render();
+  });
+  document.querySelectorAll('#app input[id^="add-team-member-"]').forEach(el=>{
+    el.onkeydown = (e) => {
+      if(e.key==="Enter"){
+        e.preventDefault();
+        const btn = document.querySelector(`[data-action="add-team-member"][data-audit="${el.id.replace('add-team-member-','')}"]`);
+        if(btn) btn.click();
+      }
+    };
+  });
+  document.querySelectorAll('[data-action="remove-team-member"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(!a || !a.auditPlan) return;
+    const existing = (a.auditPlan.teamMembers||"").split(",").map(s=>s.trim()).filter(Boolean);
+    a.auditPlan.teamMembers = existing.filter(n=>n!==el.dataset.member).join(", ");
+    persist(); render();
   });
   document.querySelectorAll('[data-audit-conclusion-field]').forEach(el=>{
     el.onchange = () => {
