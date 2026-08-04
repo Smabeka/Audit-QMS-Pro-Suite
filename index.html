@@ -671,7 +671,20 @@ function ensureStateDefaults(){
   if(!state.companySettings.email){ state.companySettings.email = "Support@auditqmspro.com"; }
   if(state.companySettings.nextManagementReviewDate===undefined){ state.companySettings.nextManagementReviewDate = ""; }
   if(!state.riskAssessments){ state.riskAssessments = []; }
-  state.riskAssessments.forEach(r=>{ if(!r.category){ r.category = "Health & Safety"; } });
+  state.riskAssessments.forEach(r=>{
+    if(!r.category){ r.category = "Health & Safety"; }
+    if(!r.status){ r.status = "Open"; }
+    if(r.riskOwner===undefined){ r.riskOwner = r.owner || ""; }
+    if(r.actionOwner===undefined){ r.actionOwner = ""; }
+    if(r.rootCause===undefined){ r.rootCause = ""; }
+    if(r.reviewDate===undefined){ r.reviewDate = ""; }
+    if(!r.evidence){ r.evidence = []; }
+    if(r.linkedFindingRef===undefined){ r.linkedFindingRef = ""; }
+    if(r.linkedSupplierRef===undefined){ r.linkedSupplierRef = ""; }
+    if(r.linkedDocumentRef===undefined){ r.linkedDocumentRef = ""; }
+    if(r.linkedIncidentRef===undefined){ r.linkedIncidentRef = ""; }
+    if(r.linkedComplaintRef===undefined){ r.linkedComplaintRef = ""; }
+  });
   if(!state.metrics){ state.metrics = []; }
   if(!state.metricsAutoSeeded){
     const autoDefaults = [
@@ -741,6 +754,18 @@ function ensureStateDefaults(){
   });
   if(!state.copqEntries){ state.copqEntries = []; }
   if(!state.csatEntries){ state.csatEntries = []; }
+  if(!state.mgmtReviewMeetings){ state.mgmtReviewMeetings = []; }
+  state.mgmtReviewMeetings.forEach(m=>{
+    if(!m.actionItems){ m.actionItems = []; }
+    if(m.approval===undefined){ m.approval = { approvedBy:"", approvedDate:"" }; }
+    if(m.attendees===undefined){ m.attendees = ""; }
+    if(m.agenda===undefined){ m.agenda = ""; }
+    if(m.minutes===undefined){ m.minutes = ""; }
+    if(m.decisions===undefined){ m.decisions = ""; }
+    if(m.status===undefined){ m.status = "Scheduled"; }
+  });
+  if(!state.ofis){ state.ofis = []; }
+  state.ofis.forEach((o,idx)=>{ if(!o.refNo){ o.refNo = `OFI-${String(idx+1).padStart(3,'0')}`; } });
   state.audits.forEach(a=>{ if(!a.auditType){ a.auditType = "Internal"; } });
   state.audits.forEach(a=>{
     if(!a.conclusion){ a.conclusion = { result: "", summary: "" }; }
@@ -801,6 +826,7 @@ function riskLevelFromScore(score){
   return "Low";
 }
 const riskLevelColor = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
+const riskLevelEmoji = {Low:"🟢",Medium:"🟡",High:"🟠",Critical:"🔴"};
 function csatStatus(avg){
   if(avg===null||avg===undefined) return null;
   if(avg>=4.5) return {emoji:"🟢", label:"Excellent", tone:"green"};
@@ -810,6 +836,19 @@ function csatStatus(avg){
 
 const RISK_CATEGORIES = ["Health & Safety","Quality","Food Safety","Environmental","Business"];
 const riskCategoryColor = {"Health & Safety":"rust","Quality":"navy","Food Safety":"amber","Environmental":"green","Business":"neutral"};
+const OFI_STATUSES = ["Open","In Progress","Implemented","Closed"];
+const OFI_STATUS_TONE = {Open:"rust","In Progress":"amber",Implemented:"navy",Closed:"green"};
+const OFI_SOURCES = ["Audit Finding","Customer Complaint","Risk Assessment","Employee Suggestion","Management Review","Other"];
+const MEETING_STATUSES = ["Scheduled","Held","Minutes Pending","Closed"];
+const meetingStatusTone = {Scheduled:"navy",Held:"amber","Minutes Pending":"amber",Closed:"green"};
+function nextOfiRefNo(){
+  return `OFI-${String((state.ofis?state.ofis.length:0)+1).padStart(3,'0')}`;
+}
+function actionItemStatusTone(status){ return status==="Closed" ? "green" : (status==="In Progress" ? "amber" : "rust"); }
+const RISK_STATUSES = ["Open","In Progress","Mitigated","Closed","Accepted"];
+const riskStatusTone = {Open:"rust","In Progress":"amber",Mitigated:"navy",Closed:"green",Accepted:"neutral"};
+const RISK_NEEDS_ATTENTION_STATUSES = ["Open","In Progress"];
+const RISK_ROOT_CAUSES = ["","Poor Housekeeping","Equipment Failure","Human Error","Supplier Issue","Process Deviation","Other"];
 
 /* ---------- KPI metrics ---------- */
 const AUTO_METRIC_OPTIONS = [
@@ -888,7 +927,7 @@ function computeAutoMetricValue(autoType){
     case "audit_findings_closed_count":
       return allFindings.filter(f=>f.status==="Closed").length;
     case "open_high_critical_risks":
-      return state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed").length;
+      return state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status)).length;
     default:
       return null;
   }
@@ -993,7 +1032,16 @@ function supplierOptionsList(){
   return ["None / Not linked", ...state.suppliers.map(s=>s.name)];
 }
 function capaOptionsList(){
-  return ["None / Not linked", ...state.audits.flatMap(a=>a.findings.map(f=>`${f.desc} (${a.title})`))];
+  return ["None / Not linked", ...state.audits.flatMap(a=>a.findings.map(f=>`${f.refNo?f.refNo+' — ':''}${f.desc} (${a.title})`))];
+}
+function documentOptionsList(){
+  return ["None / Not linked", ...state.documents.map(d=>`${d.docNumber?d.docNumber+' — ':''}${d.title}`)];
+}
+function incidentOptionsList(){
+  return ["None / Not linked", ...state.foodsafeNcrs.map(n=>`${n.description} (${n.date})`)];
+}
+function complaintOptionsList(){
+  return ["None / Not linked", ...state.complaintRecords.map(c=>`${c.natureOfComplaint||c.classification||'Complaint'} — ${c.complainantName||'Unnamed'} (${c.dateReceived||''})`)];
 }
 function recallOptionsList(){
   return ["None / Not applicable", ...state.productRecalls.map(r=>`${r.product} — ${r.status}`)];
@@ -1632,6 +1680,7 @@ const NAV_TREE = [
   },
   { id:"nav-capa", icon:"⚠️", label:"CAPA", isActive(){ return tab==="capa"; }, action(){ tab="capa"; } },
   { id:"nav-risk", icon:"📈", label:"Risk Management", isActive(){ return tab==="risk"; }, action(){ tab="risk"; } },
+  { id:"nav-mgmt-review", icon:"👔", label:"Management Review", isActive(){ return tab==="mgmt-review"; }, action(){ tab="mgmt-review"; } },
   { id:"nav-documents", icon:"📄", label:"Document Control", isActive(){ return tab==="documents"; }, action(){ tab="documents"; } },
   { id:"nav-people", icon:"👥", label:"People Compliance", children:[
       { id:"nav-people-training", label:"Employee Training", isActive(){ return tab==="training"; }, action(){ tab="training"; } },
@@ -1822,6 +1871,7 @@ function render(){
         : tab==="audit-planning" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="audit-planning"))
         : tab==="calibration" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="calibration"))
         : tab==="supplier-scar" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="supplier-scar"))
+        : tab==="mgmt-review" ? renderManagementReview()
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
@@ -2055,7 +2105,7 @@ function renderDashboard(){
   const critical = openFindings.filter(f=>f.severity==="Critical"||f.severity==="Major");
   const scored = audits.map(scoreOf).filter(s=>s!==null);
   const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
-  const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && r.status!=="Closed");
+  const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
 
   /* Overall Compliance Score — built from every module that exists in this app today. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
@@ -2317,7 +2367,7 @@ function renderDashboard(){
     </div>
     <div class="card p4" style="margin-top:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 4px;">📌 Executive Summary</h3>
-      <p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Rows marked "not tracked yet" don't have any entries logged yet.</p>
+      <p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Quick glance only — see Management Review for the full report.</p>
       ${(() => {
         const c = state.companySettings || {};
         const mgmtDue = c.nextManagementReviewDate ? daysUntil(c.nextManagementReviewDate) : null;
@@ -2332,13 +2382,33 @@ function renderDashboard(){
         const copqTotal = state.copqEntries.reduce((sum,e)=>sum+(Number(e.amount)||0),0);
         const csatAvg = state.csatEntries.length ? (state.csatEntries.reduce((sum,e)=>sum+(Number(e.score)||0),0)/state.csatEntries.length) : null;
 
+        // Objectives Achievement — % of tracked KPI metrics currently On Target
+        const metricsWithValues = state.metrics.map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
+        const metricsOnTarget = metricsWithValues.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
+        const objectivesAchievement = metricsWithValues.length ? Math.round((metricsOnTarget/metricsWithValues.length)*100) : null;
+
+        // Process Performance — % of "Process" category metrics currently On Target, shown as a status bucket
+        const processMetrics = metricsWithValues.filter(x=>(x.m.category||"")==="Process");
+        const processOnTarget = processMetrics.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
+        const processPct = processMetrics.length ? Math.round((processOnTarget/processMetrics.length)*100) : null;
+        const processBucket = processPct===null ? null : (processPct>=90 ? {emoji:"🟢",label:"On Target",tone:"green"} : processPct>=70 ? {emoji:"🟡",label:"Needs Attention",tone:"amber"} : {emoji:"🔴",label:"Off Target",tone:"rust"});
+
+        // Business Risks — High/Critical risks in the Business category that still need attention
+        const businessHighRisks = state.riskAssessments.filter(r=>r.category==="Business" && (r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+
+        // Regulatory Compliance — based on open Critical/Major findings from External audits and open Critical risks
+        const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
+        const openCriticalRisks = state.riskAssessments.filter(r=>r.riskLevel==="Critical" && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+        const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || openCriticalRisks.length>0)
+          ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
+          : externalOpenCriticalFindings.length>0
+            ? {emoji:"🟡", label:"At Risk", tone:"amber"}
+            : {emoji:"🟢", label:"Compliant", tone:"green"};
+
         const staticRows = [
           { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint:"Set in ⚙ Company settings" },
-          { label:"Customer Complaints", value: `${custComplaints.length} logged · ${custComplaintsOpen} need action`, tone: custComplaintsOpen>0?'amber':'green', hint:"From Sensory Evaluation → Customer Complaints" },
-          { label:"Internal Audits Completed", value: internalAudits.length ? `${internalClosed} / ${internalAudits.length}` : null, tone: internalAudits.length && internalClosed===internalAudits.length?'green':'navy', hint:null },
-          { label:"External Audit Status", value: externalAudits.length ? `${externalClosed} / ${externalAudits.length} completed · Latest: ${latestExternal.status}` : null, tone: latestExternal?statusTone[latestExternal.status]:null, hint: externalAudits.length ? null : "No external audits logged — set Audit Type to External when creating/editing an audit" },
-          { label:"Compliance Trend (Last 12 Months)", value: overallScore===null?null:`${overallScore}%${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}`, tone: overallGrade.tone, hint:null },
-          { label:"Supplier Performance Trend", value: totalSuppliers ? `${Math.round((supplierApproved/totalSuppliers)*100)}% approved` : null, tone: supplierScore===null?null:complianceGrade(supplierScore).tone, hint:"Approval rate shown — trend over time not tracked yet" }
+          { label:"Overall Compliance Trend (12 Months)", value: overallScore===null?null:`${overallScore}%${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}`, tone: overallGrade.tone, hint:null },
+          { label:"Business Risks Needing Attention", value: `${businessHighRisks.length} High/Critical Risk(s)`, tone: businessHighRisks.length>0?'rust':'green', hint:null }
         ];
         const staticHtml = staticRows.map(r=>`
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
@@ -2348,7 +2418,9 @@ function renderDashboard(){
             </div>
             <span class="tag tag-${r.tone||'neutral'}">${r.value===null ? 'not tracked yet' : esc(r.value)}</span>
           </div>
-        `).join('');
+        `).join('') + `
+          <button class="btn btn-ghost" style="width:100%;justify-content:center;margin-top:10px;" data-action="goto-mgmt-review">📋 Open full Management Review report →</button>
+        `;
 
         const recentCopq = [...state.copqEntries].sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,3);
         const copqHtml = `
@@ -2424,6 +2496,360 @@ function renderDashboard(){
     </div>
   `;
 }
+function renderManagementReview(){
+  const subTabs = [
+    {id:"summary", label:"📌 Executive Report"},
+    {id:"performance", label:"🎯 Performance"},
+    {id:"audits", label:"📋 Audit Results"},
+    {id:"customer", label:"😊 Customer Focus"},
+    {id:"risk", label:"⚠ Risk & Compliance"},
+    {id:"improvement", label:"💡 Continual Improvement"},
+    {id:"meetings", label:"📝 Meeting Records"}
+  ];
+  const bodies = {
+    summary: renderMgmtReviewSummary,
+    performance: renderMgmtReviewPerformance,
+    audits: renderMgmtReviewAudits,
+    customer: renderMgmtReviewCustomer,
+    risk: renderMgmtReviewRisk,
+    improvement: renderMgmtReviewImprovement,
+    meetings: renderMgmtReviewMeetings
+  };
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <h2 class="serif" style="font-size:18px;margin:0;">👔 Management Review</h2>
+      <button class="btn btn-ghost" data-action="print-mgmt-review">🖨 Print / Export Report</button>
+    </div>
+    <div class="flex-wrap" style="margin-bottom:16px;">
+      ${subTabs.map(t=>`<button class="status-pill ${mgmtReviewSubTab===t.id?'active':''}" data-mgmt-review-tab="${t.id}">${t.label}</button>`).join('')}
+    </div>
+    ${(bodies[mgmtReviewSubTab] || renderMgmtReviewSummary)()}
+  `;
+}
+
+/* Shared aggregates used across Management Review sub-tabs */
+function mgmtReviewCore(){
+  const audits = state.audits;
+  const allFindings = audits.flatMap(a=>a.findings.map(f=>({...f, auditTitle:a.title, auditId:a.id, auditType:a.auditType||"Internal"})));
+  const openFindings = allFindings.filter(f=>f.status!=="Closed");
+  const overdueFindings = openFindings.filter(f=>f.dueDate && daysUntil(f.dueDate)<0);
+  const scored = audits.map(scoreOf).filter(s=>s!==null);
+  const overallScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
+  const internalAudits = audits.filter(a=>(a.auditType||"Internal")==="Internal");
+  const externalAudits = audits.filter(a=>a.auditType==="External");
+  const capaTotal = allFindings.length;
+  const capaClosed = allFindings.filter(f=>f.status==="Closed").length;
+  const capaCompletionPct = capaTotal ? Math.round((capaClosed/capaTotal)*100) : null;
+  const businessHighRisks = state.riskAssessments.filter(r=>r.category==="Business" && (r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+  const openRisks = state.riskAssessments.filter(r=>RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+  const criticalOpenRisks = openRisks.filter(r=>r.riskLevel==="Critical");
+  const custComplaints = state.sensoryEvaluations.filter(e=>(e.category||"Product Quality")==="Customer Complaint");
+  const custComplaintsOpen = custComplaints.filter(e=>e.actionRequired).length;
+  const csatAvg = state.csatEntries.length ? (state.csatEntries.reduce((sum,e)=>sum+(Number(e.score)||0),0)/state.csatEntries.length) : null;
+  const copqTotal = state.copqEntries.reduce((sum,e)=>sum+(Number(e.amount)||0),0);
+  const totalSuppliers = state.suppliers.length;
+  const supplierApproved = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
+  const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
+  const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || criticalOpenRisks.length>0)
+    ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
+    : externalOpenCriticalFindings.length>0 ? {emoji:"🟡", label:"At Risk", tone:"amber"}
+    : {emoji:"🟢", label:"Compliant", tone:"green"};
+  const metricsWithValues = state.metrics.map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
+  const metricsOnTarget = metricsWithValues.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
+  const objectivesAchievement = metricsWithValues.length ? Math.round((metricsOnTarget/metricsWithValues.length)*100) : null;
+  return {
+    audits, allFindings, openFindings, overdueFindings, overallScore, internalAudits, externalAudits,
+    capaTotal, capaClosed, capaCompletionPct, businessHighRisks, openRisks, criticalOpenRisks,
+    custComplaints, custComplaintsOpen, csatAvg, copqTotal, totalSuppliers, supplierApproved,
+    regulatoryBucket, metricsWithValues, metricsOnTarget, objectivesAchievement
+  };
+}
+
+function mrRow(label, value, tone, hint){
+  return `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+      <div><div>${esc(label)}</div>${hint?`<div class="muted-italic" style="font-size:11px;">${esc(hint)}</div>`:''}</div>
+      <span class="tag tag-${tone||'neutral'}">${value===null||value===undefined ? 'not tracked yet' : esc(String(value))}</span>
+    </div>
+  `;
+}
+
+function renderMgmtReviewSummary(){
+  const d = mgmtReviewCore();
+  const overallGrade = complianceGrade(d.overallScore);
+  return `
+    <div class="card p4">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📌 Executive Summary</h3>
+      ${mrRow("Overall Compliance Score", d.overallScore===null?null:`${d.overallScore}%`, overallGrade.tone, "Average score across all scored audits")}
+      ${mrRow("Audit Compliance", `${d.internalAudits.filter(a=>a.status==="Closed").length}/${d.internalAudits.length} Internal · ${d.externalAudits.filter(a=>a.status==="Closed").length}/${d.externalAudits.length} External closed`, "navy", null)}
+      ${mrRow("CAPA Completion", d.capaCompletionPct===null?null:`${d.capaCompletionPct}% (${d.capaClosed}/${d.capaTotal} closed)`, d.capaCompletionPct===null?null:(d.capaCompletionPct>=90?'green':d.capaCompletionPct>=70?'amber':'rust'), null)}
+      ${mrRow("Risk Management Status", `${d.openRisks.length} open · ${d.criticalOpenRisks.length} critical`, d.criticalOpenRisks.length>0?'rust':(d.openRisks.length>0?'amber':'green'), null)}
+    </div>
+  `;
+}
+
+function renderMgmtReviewPerformance(){
+  const d = mgmtReviewCore();
+  const processMetrics = d.metricsWithValues.filter(x=>(x.m.category||"")==="Process");
+  const processOnTarget = processMetrics.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
+  const processPct = processMetrics.length ? Math.round((processOnTarget/processMetrics.length)*100) : null;
+  return `
+    <div class="card p4" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">🎯 Objectives Achievement</h3>
+      ${mrRow("KPI Metrics On Target", d.objectivesAchievement===null?null:`${d.objectivesAchievement}% (${d.metricsOnTarget}/${d.metricsWithValues.length})`, d.objectivesAchievement===null?null:(d.objectivesAchievement>=90?'green':d.objectivesAchievement>=70?'amber':'rust'), "Trend history isn't tracked yet — this reflects current standing")}
+    </div>
+    <div class="card p4" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📈 Process Performance</h3>
+      ${mrRow("Process Metrics On Target", processPct===null?null:`${processPct}% (${processOnTarget}/${processMetrics.length})`, processPct===null?null:(processPct>=90?'green':processPct>=70?'amber':'rust'), "Metrics categorized as 'Process' in KPI Metrics")}
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📊 KPI Performance (All Metrics)</h3>
+      ${state.metrics.length===0 ? `<p class="muted-italic">No KPI metrics set up yet.</p>` : `
+        <table style="width:100%;font-size:13px;border-collapse:collapse;">
+          <thead><tr style="text-align:left;border-bottom:1px solid var(--line2);"><th style="padding:6px 4px;">Metric</th><th>Category</th><th>Current</th><th>Target</th><th>Status</th></tr></thead>
+          <tbody>
+            ${state.metrics.map(m=>{
+              const value = metricCurrentValue(m);
+              const status = metricStatus(m, value);
+              return `<tr style="border-bottom:1px solid var(--line2);">
+                <td style="padding:6px 4px;">${esc(m.name)}</td>
+                <td>${esc(m.category)||'—'}</td>
+                <td>${value===null?'—':value+' '+esc(m.unit||'')}</td>
+                <td>${m.target} ${esc(m.unit||'')}</td>
+                <td>${status?`<span class="tag tag-${status==='On Target'?'green':'rust'}">${status}</span>`:`<span class="tag tag-neutral">no data yet</span>`}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>
+  `;
+}
+
+function renderMgmtReviewAudits(){
+  const d = mgmtReviewCore();
+  const closedFindings = d.allFindings.filter(f=>f.status==="Closed");
+  const sevCounts = {Critical:0,Major:0,Minor:0};
+  d.allFindings.forEach(f=>{ if(sevCounts[f.severity]!==undefined) sevCounts[f.severity]++; });
+  return `
+    <div class="card p4" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📋 Audit Results</h3>
+      ${mrRow("Internal Audits", d.internalAudits.length ? `${d.internalAudits.filter(a=>a.status==='Closed').length}/${d.internalAudits.length} closed` : null, "navy", null)}
+      ${mrRow("External Audits", d.externalAudits.length ? `${d.externalAudits.filter(a=>a.status==='Closed').length}/${d.externalAudits.length} closed` : null, "navy", "Set Audit Type to External when creating/editing an audit")}
+      ${mrRow("Audit Findings", `${d.allFindings.length} total · Critical: ${sevCounts.Critical} · Major: ${sevCounts.Major} · Minor: ${sevCounts.Minor}`, sevCounts.Critical>0?'rust':(sevCounts.Major>0?'amber':'green'), null)}
+      ${mrRow("Follow-up Actions Overdue", `${d.overdueFindings.length} overdue`, d.overdueFindings.length>0?'rust':'green', null)}
+    </div>
+    ${d.overdueFindings.length ? `
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Overdue Follow-up Actions</h3>
+        ${d.overdueFindings.map(f=>`
+          <div class="audit-row" style="border-bottom:1px solid var(--line2);">
+            <div style="min-width:0;"><div style="font-size:13px;">${esc(f.refNo)||''} — ${esc(f.desc)}</div><div class="audit-sub">${esc(f.auditTitle)}</div></div>
+            <span class="tag tag-rust">overdue ${Math.abs(daysUntil(f.dueDate))}d</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderMgmtReviewCustomer(){
+  const d = mgmtReviewCore();
+  const csatBucket = csatStatus(d.csatAvg);
+  const returnsEntries = state.copqEntries.filter(e=>e.category==="Customer Returns");
+  const returnsTotal = returnsEntries.reduce((sum,e)=>sum+(Number(e.amount)||0),0);
+  const copqByCategory = {};
+  state.copqEntries.forEach(e=>{ copqByCategory[e.category] = (copqByCategory[e.category]||0) + (Number(e.amount)||0); });
+  return `
+    <div class="card p4" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">😊 Customer Focus</h3>
+      ${mrRow("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`, d.custComplaintsOpen>0?'amber':'green', "From Sensory Evaluation → Customer Complaints")}
+      ${mrRow("Customer Satisfaction", d.csatAvg===null?null:`${csatBucket.emoji} ${d.csatAvg.toFixed(1)} / 5 · ${csatBucket.label}`, csatBucket?csatBucket.tone:null, `${state.csatEntries.length} response(s) logged`)}
+      ${mrRow("Product Returns", returnsEntries.length ? `R ${returnsTotal.toLocaleString()} · ${returnsEntries.length} entries` : null, returnsEntries.length?'amber':'green', "From COPQ → Customer Returns category")}
+      ${mrRow("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()} · ${state.copqEntries.length} entries` : null, state.copqEntries.length?'rust':'green', null)}
+    </div>
+    ${state.copqEntries.length ? `
+      <div class="card p4">
+        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">COPQ by Category</h3>
+        ${Object.entries(copqByCategory).sort((a,b)=>b[1]-a[1]).map(([cat,amt])=>`
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;border-bottom:1px solid var(--line2);">
+            <span>${esc(cat)}</span><strong>R ${amt.toLocaleString()}</strong>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+}
+
+function renderMgmtReviewRisk(){
+  const d = mgmtReviewCore();
+  const foodSafetyRisks = state.riskAssessments.filter(r=>r.category==="Food Safety");
+  const foodSafetyOpen = foodSafetyRisks.filter(r=>RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+  return `
+    <div class="card p4" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Risk & Compliance</h3>
+      ${mrRow("Business Risks", `${d.businessHighRisks.length} High/Critical Risk(s) needing attention`, d.businessHighRisks.length>0?'rust':'green', "From Risk Register → Business category")}
+      ${mrRow("Regulatory Compliance Status", `${d.regulatoryBucket.emoji} ${d.regulatoryBucket.label}`, d.regulatoryBucket.tone, "Based on open External audit findings and Critical risks")}
+      ${mrRow("Supplier Performance", d.totalSuppliers ? `${Math.round((d.supplierApproved/d.totalSuppliers)*100)}% approved (${d.supplierApproved}/${d.totalSuppliers})` : null, d.totalSuppliers?'navy':null, `${state.supplierScars.length} SCAR(s) logged`)}
+      ${mrRow("Food Safety Performance", `${foodSafetyOpen.length} open risk(s) of ${foodSafetyRisks.length} logged`, foodSafetyOpen.length>0?'amber':'green', "From Risk Register → Food Safety category")}
+    </div>
+  `;
+}
+
+function renderMgmtReviewImprovement(){
+  const allActionItems = state.mgmtReviewMeetings.flatMap(m=>m.actionItems.map(ai=>({...ai, meetingDate:m.date})));
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0;">💡 Opportunities for Improvement</h3>
+      <button class="btn btn-primary" data-action="toggle-new-ofi">+ New OFI</button>
+    </div>
+    ${showNewOfi ? renderNewOfiForm() : ''}
+    <div style="margin-bottom:16px;">
+      ${state.ofis.length===0 ? `<p class="muted-italic">No opportunities for improvement logged yet.</p>` : state.ofis.map(o=>renderOfiRow(o)).join('')}
+    </div>
+    <div class="card p4">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✅ Decisions and Action Items</h3>
+      <p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Aggregated from Meeting Records — add or edit action items there.</p>
+      ${allActionItems.length===0 ? `<p class="muted-italic">No action items logged yet.</p>` : allActionItems.map(ai=>`
+        <div class="audit-row" style="border-bottom:1px solid var(--line2);">
+          <div style="min-width:0;"><div style="font-size:13px;">${esc(ai.text)}</div><div class="audit-sub">${esc(ai.owner)||'Unassigned'} · From meeting ${ai.meetingDate||''}${ai.dueDate?` · Due ${ai.dueDate}`:''}</div></div>
+          <span class="tag tag-${actionItemStatusTone(ai.status)}">${esc(ai.status)||'Open'}</span>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function renderNewOfiForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Date Raised<input type="date" id="nofi-date" value="${today()}" /></label>
+      <label class="field">Source<select id="nofi-source">${OFI_SOURCES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Description<input id="nofi-desc" placeholder="What could be improved…" /></label>
+      <label class="field">Owner<input id="nofi-owner" placeholder="e.g. QA Manager" /></label>
+      <label class="field">Target Date<input type="date" id="nofi-target" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-ofi">Cancel</button>
+        <button class="btn btn-primary" data-action="create-ofi">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderOfiRow(o){
+  const open = openOfiId === o.id;
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-ofi="${o.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">${esc(o.description)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(o.refNo)}</span></div>
+            <div class="audit-sub">${esc(o.source)||'—'} · ${o.date||''}</div>
+          </div>
+        </div>
+        <span class="tag tag-${OFI_STATUS_TONE[o.status]||'neutral'}">${esc(o.status)||'Open'}</span>
+      </button>
+      ${open ? `
+        <div style="border-top:1px solid var(--line2);padding:16px;">
+          <div class="grid2" style="margin-bottom:12px;">
+            <label class="field">Source<select data-ofi-field="${o.id}:source">${OFI_SOURCES.map(s=>`<option ${s===o.source?'selected':''}>${s}</option>`).join('')}</select></label>
+            <label class="field">Owner<input data-ofi-field="${o.id}:owner" value="${esc(o.owner)}" /></label>
+            <label class="field" style="grid-column:1/-1;">Description<input data-ofi-field="${o.id}:description" value="${esc(o.description)}" /></label>
+            <label class="field">Target Date<input type="date" data-ofi-field="${o.id}:targetDate" value="${o.targetDate||''}" /></label>
+            <label class="field">Status<select data-ofi-field="${o.id}:status">${OFI_STATUSES.map(s=>`<option ${s===o.status?'selected':''}>${s}</option>`).join('')}</select></label>
+          </div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button class="btn btn-danger" data-action="delete-ofi" data-ofi="${o.id}">Delete OFI</button>
+          </div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function renderMgmtReviewMeetings(){
+  return `
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <h3 class="serif" style="font-size:16px;margin:0;">📝 Management Review Meetings</h3>
+      <button class="btn btn-primary" data-action="toggle-new-meeting">+ Schedule Meeting</button>
+    </div>
+    ${showNewMeeting ? renderNewMeetingForm() : ''}
+    ${state.mgmtReviewMeetings.length===0 ? `<p class="muted-italic">No management review meetings logged yet.</p>` : state.mgmtReviewMeetings.map(m=>renderMeetingRow(m)).join('')}
+  `;
+}
+
+function renderNewMeetingForm(){
+  return `
+    <div class="card p4 grid2" style="margin-bottom:16px;">
+      <label class="field">Date<input type="date" id="nm-date" value="${today()}" /></label>
+      <label class="field">Status<select id="nm-status">${MEETING_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Attendees (comma-separated)<input id="nm-attendees" placeholder="e.g. Sandiso Mabeka, QA Manager, Technical Manager" /></label>
+      <label class="field" style="grid-column:1/-1;">Agenda<input id="nm-agenda" placeholder="Topics to cover…" /></label>
+      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost" data-action="cancel-new-meeting">Cancel</button>
+        <button class="btn btn-primary" data-action="create-meeting">Create</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderMeetingRow(m){
+  const open = openMeetingId === m.id;
+  const attendeeCount = (m.attendees||"").split(",").map(s=>s.trim()).filter(Boolean).length;
+  return `
+    <div class="card" style="margin-bottom:10px;overflow:hidden;">
+      <button class="audit-row" data-toggle-meeting="${m.id}">
+        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+          <span style="color:#a39a86;">${open?'▾':'›'}</span>
+          <div style="min-width:0;">
+            <div class="audit-title">Management Review — ${m.date}</div>
+            <div class="audit-sub">${attendeeCount} attendee(s) · ${m.actionItems.length} action item(s)</div>
+          </div>
+        </div>
+        <span class="tag tag-${meetingStatusTone[m.status]||'neutral'}">${esc(m.status)||'Scheduled'}</span>
+      </button>
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderMeetingDetail(m)}</div>` : ''}
+    </div>
+  `;
+}
+
+function renderMeetingDetail(m){
+  return `
+    <div class="grid2" style="margin-bottom:12px;">
+      <label class="field">Date<input type="date" data-meeting-field="${m.id}:date" value="${m.date}" /></label>
+      <label class="field">Status<select data-meeting-field="${m.id}:status">${MEETING_STATUSES.map(s=>`<option ${s===m.status?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Attendance (comma-separated)<input data-meeting-field="${m.id}:attendees" value="${esc(m.attendees)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Agenda<input data-meeting-field="${m.id}:agenda" value="${esc(m.agenda)}" /></label>
+      <label class="field" style="grid-column:1/-1;">Meeting Minutes<input data-meeting-field="${m.id}:minutes" value="${esc(m.minutes)}" placeholder="Summary of discussion…" /></label>
+      <label class="field" style="grid-column:1/-1;">Decisions<input data-meeting-field="${m.id}:decisions" value="${esc(m.decisions)}" placeholder="Decisions made…" /></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Action Tracker</h3>
+      ${m.actionItems.length ? m.actionItems.map(ai=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);flex-wrap:wrap;">
+          <input data-meeting-action-field="${m.id}:${ai.id}:text" value="${esc(ai.text)}" style="flex:2;min-width:120px;" placeholder="Action…" />
+          <input data-meeting-action-field="${m.id}:${ai.id}:owner" value="${esc(ai.owner)}" style="flex:1;min-width:90px;" placeholder="Owner" />
+          <input type="date" data-meeting-action-field="${m.id}:${ai.id}:dueDate" value="${ai.dueDate||''}" style="flex:1;min-width:120px;" />
+          <select data-meeting-action-field="${m.id}:${ai.id}:status" style="flex:1;min-width:100px;">${["Open","In Progress","Closed"].map(s=>`<option ${s===ai.status?'selected':''}>${s}</option>`).join('')}</select>
+          <button class="x-btn" data-action="remove-meeting-action" data-meeting="${m.id}" data-item="${ai.id}">✕</button>
+        </div>
+      `).join('') : `<p class="muted-italic" style="font-size:12px;">No action items yet.</p>`}
+      <button class="btn btn-ghost" style="margin-top:8px;font-size:12px;" data-action="add-meeting-action" data-meeting="${m.id}">+ Add Action Item</button>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✍ Management Approval</h3>
+      <div class="grid2">
+        <label class="field">Approved by<input data-meeting-approval-field="${m.id}:approvedBy" value="${esc(m.approval.approvedBy)}" placeholder="e.g. Technical Manager" /></label>
+        <label class="field">Approved Date<input type="date" data-meeting-approval-field="${m.id}:approvedDate" value="${m.approval.approvedDate||''}" /></label>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;">
+      <button class="btn btn-danger" data-action="delete-meeting" data-meeting="${m.id}">Delete Meeting</button>
+    </div>
+  `;
+}
+
 let complianceChartInstance = null;
 let foodsafeTempChartInstance = null;
 function renderFoodSafeTempTrendChart(){
@@ -2782,6 +3208,11 @@ let showNewRisk = false;
 let openRiskId = null;
 let riskLevelFilter = "All";
 let riskCategoryFilter = "All";
+let mgmtReviewSubTab = "summary";
+let showNewMeeting = false;
+let openMeetingId = null;
+let showNewOfi = false;
+let openOfiId = null;
 let showNewDocument = false;
 let openDocumentId = null;
 let documentStatusFilter = "All";
@@ -2854,11 +3285,19 @@ function renderNewRiskForm(){
       <label class="field" style="grid-column:1/-1;">Risk Description<input id="nr-hazard" placeholder="What could cause harm and how…" /></label>
       <label class="field" style="grid-column:1/-1;">Who/What at Risk<input id="nr-risk-to" placeholder="e.g. Warehouse staff, visitors" /></label>
       <label class="field" style="grid-column:1/-1;">Existing Controls<input id="nr-controls" placeholder="Controls currently in place…" /></label>
+      <label class="field">Root Cause (optional)<select id="nr-root-cause">${RISK_ROOT_CAUSES.map(c=>`<option value="${esc(c)}">${c||'—'}</option>`).join('')}</select></label>
+      <div></div>
       <label class="field">Likelihood (1–5)<select id="nr-likelihood">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>
       <label class="field">Severity (1–5)<select id="nr-severity">${[1,2,3,4,5].map(n=>`<option value="${n}">${n}</option>`).join('')}</select></label>
+      <div class="field" style="grid-column:1/-1;">
+        <span>Risk Score (live)</span>
+        <span id="nr-live-score" class="tag tag-green" style="margin-top:4px;width:fit-content;">1 — 🟢 Low</span>
+      </div>
       <label class="field" style="grid-column:1/-1;">Action Required<input id="nr-action" placeholder="Additional controls needed…" /></label>
-      <label class="field">Responsible Person<input id="nr-owner" /></label>
+      <label class="field">Risk Owner (accountable)<input id="nr-risk-owner" placeholder="e.g. QA Manager" /></label>
+      <label class="field">Action Owner (completes mitigation)<input id="nr-action-owner" placeholder="e.g. Line Supervisor" /></label>
       <label class="field">Target Date<input type="date" id="nr-due" /></label>
+      <label class="field">Next Review Date<input type="date" id="nr-review-date" /></label>
       <div class="muted-italic" style="grid-column:1/-1;font-size:12px;">Risk Level is calculated automatically from Likelihood × Severity (1–3 Low, 4–7 Medium, 8–14 High, 15–25 Critical).</div>
       <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn btn-ghost" data-action="cancel-new-risk">Cancel</button>
@@ -2883,6 +3322,7 @@ function renderRiskRow(r){
         <div class="flex-wrap">
           <span class="tag tag-${riskCategoryColor[r.category]||'neutral'}">${esc(r.category)||'Health & Safety'}</span>
           <span class="tag tag-${riskLevelColor[r.riskLevel]||'neutral'}">${r.riskLevel} risk</span>
+          <span class="tag tag-${riskStatusTone[r.status]||'neutral'}">${esc(r.status)||'Open'}</span>
           ${r.residualRiskLevel ? `<span class="tag tag-neutral">residual: ${r.residualRiskLevel}</span>` : ''}
         </div>
       </button>
@@ -2901,6 +3341,7 @@ function renderRiskDetail(r){
       <label class="field" style="grid-column:1/-1;">Risk Description<input data-risk-field="${r.id}:hazard" value="${esc(r.hazard)}" /></label>
       <label class="field" style="grid-column:1/-1;">Who/What at Risk<input data-risk-field="${r.id}:riskTo" value="${esc(r.riskTo)}" /></label>
       <label class="field" style="grid-column:1/-1;">Existing Controls<input data-risk-field="${r.id}:controls" value="${esc(r.controls)}" /></label>
+      <label class="field">Root Cause (optional)<select data-risk-field="${r.id}:rootCause">${RISK_ROOT_CAUSES.map(c=>`<option value="${esc(c)}" ${c===(r.rootCause||"")?'selected':''}>${c||'—'}</option>`).join('')}</select></label>
     </div>
     <div class="card p4 top-border" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Existing Risk</h3>
@@ -2912,10 +3353,12 @@ function renderRiskDetail(r){
     </div>
     <div class="grid2" style="margin-bottom:12px;">
       <label class="field" style="grid-column:1/-1;">Action Required<input data-risk-field="${r.id}:action" value="${esc(r.action)}" /></label>
-      <label class="field">Responsible Person<input data-risk-field="${r.id}:owner" value="${esc(r.owner)}" /></label>
+      <label class="field">Risk Owner (accountable)<input data-risk-field="${r.id}:riskOwner" value="${esc(r.riskOwner||r.owner)}" /></label>
+      <label class="field">Action Owner (completes mitigation)<input data-risk-field="${r.id}:actionOwner" value="${esc(r.actionOwner)}" /></label>
       <label class="field">Target Date<input type="date" data-risk-field="${r.id}:dueDate" value="${r.dueDate||''}" /></label>
       <label class="field">Date Completed<input type="date" data-risk-field="${r.id}:completedDate" value="${r.completedDate||''}" /></label>
-      <label class="field">Status<select data-risk-field="${r.id}:status">${["Open","In Progress","Closed"].map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Next Review Date<input type="date" data-risk-field="${r.id}:reviewDate" value="${r.reviewDate||''}" /></label>
+      <label class="field">Status<select data-risk-field="${r.id}:status">${RISK_STATUSES.map(s=>`<option ${s===r.status?'selected':''}>${s}</option>`).join('')}</select></label>
     </div>
     <div class="card p4 top-border" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Residual Risk (After Action Taken)</h3>
@@ -2923,6 +3366,28 @@ function renderRiskDetail(r){
         <label class="field">Residual Likelihood (1–5)<select data-risk-field="${r.id}:residualLikelihood"><option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==r.residualLikelihood?'selected':''}>${n}</option>`).join('')}</select></label>
         <label class="field">Residual Severity (1–5)<select data-risk-field="${r.id}:residualSeverity"><option value="">—</option>${[1,2,3,4,5].map(n=>`<option value="${n}" ${n==r.residualSeverity?'selected':''}>${n}</option>`).join('')}</select></label>
         <div class="field"><span>Residual Risk Level</span>${r.residualRiskLevel ? `<span class="tag tag-${riskLevelColor[r.residualRiskLevel]||'neutral'}" style="margin-top:4px;">${r.residualRiskScore} — ${r.residualRiskLevel}</span>` : `<span class="muted-italic" style="margin-top:4px;">Not yet set</span>`}</div>
+      </div>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Reassess after controls are implemented to confirm they actually reduced the risk.</p>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📎 Evidence / Attachments</h3>
+      ${(r.evidence||[]).length ? (r.evidence||[]).map(ev=>`
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);">
+          ${ev.type==='image' ? `<img src="${ev.dataUrl}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;" />` : `<span style="font-size:22px;">📄</span>`}
+          <a href="${ev.dataUrl}" target="_blank" rel="noopener" style="font-size:12px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(ev.name)}</a>
+          <button class="x-btn" data-action="remove-risk-evidence" data-risk="${r.id}" data-evidence="${ev.id}">✕</button>
+        </div>
+      `).join('') : `<p class="muted-italic" style="font-size:12px;">No evidence attached yet.</p>`}
+      <label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:8px;">📎 Add Photo, PDF, or Report<input type="file" accept="image/*,application/pdf" data-risk-evidence="${r.id}" style="display:none;" /></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">🔗 Related Records</h3>
+      <div class="grid2">
+        <label class="field">Related Audit Finding / CAPA<select data-risk-field="${r.id}:linkedFindingRef">${capaOptionsList().map(o=>`<option ${o===(r.linkedFindingRef||"None / Not linked")?'selected':''}>${esc(o)}</option>`).join('')}</select></label>
+        <label class="field">Related Supplier<select data-risk-field="${r.id}:linkedSupplierRef">${supplierOptionsList().map(o=>`<option ${o===(r.linkedSupplierRef||"None / Not linked")?'selected':''}>${esc(o)}</option>`).join('')}</select></label>
+        <label class="field">Related Document<select data-risk-field="${r.id}:linkedDocumentRef">${documentOptionsList().map(o=>`<option ${o===(r.linkedDocumentRef||"None / Not linked")?'selected':''}>${esc(o)}</option>`).join('')}</select></label>
+        <label class="field">Related Incident (NCR)<select data-risk-field="${r.id}:linkedIncidentRef">${incidentOptionsList().map(o=>`<option ${o===(r.linkedIncidentRef||"None / Not linked")?'selected':''}>${esc(o)}</option>`).join('')}</select></label>
+        <label class="field" style="grid-column:1/-1;">Related Customer Complaint<select data-risk-field="${r.id}:linkedComplaintRef">${complaintOptionsList().map(o=>`<option ${o===(r.linkedComplaintRef||"None / Not linked")?'selected':''}>${esc(o)}</option>`).join('')}</select></label>
       </div>
     </div>
     <div style="display:flex;justify-content:flex-end;">
@@ -5135,6 +5600,75 @@ function buildMicroCertificatePrintReport(recordId){
   `;
 }
 
+function buildMgmtReviewPrintReport(){
+  const d = mgmtReviewCore();
+  const overallGrade = complianceGrade(d.overallScore);
+  const csatBucket = csatStatus(d.csatAvg);
+  const c = state.companySettings || {};
+  const logoHtml = c.logoDataUrl
+    ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
+    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>`;
+  const brandName = c.name ? esc(c.name) : "AuditQMS Pro Suite";
+  const row = (label, value) => `<tr><th>${esc(label)}</th><td>${value===null||value===undefined?'—':esc(String(value))}</td></tr>`;
+  const latestMeeting = state.mgmtReviewMeetings[0];
+
+  document.getElementById('print-report').innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+      ${logoHtml}
+      <div>
+        <h1>${brandName}</h1>
+        <div class="meta">Management Review Report — Generated ${new Date().toLocaleString()}</div>
+      </div>
+    </div>
+    <div class="section-title">Executive Summary</div>
+    <table><tbody>
+      ${row("Overall Compliance Score", d.overallScore===null?null:`${d.overallScore}% (${overallGrade.label})`)}
+      ${row("Audit Compliance", `${d.internalAudits.filter(a=>a.status==='Closed').length}/${d.internalAudits.length} Internal · ${d.externalAudits.filter(a=>a.status==='Closed').length}/${d.externalAudits.length} External closed`)}
+      ${row("CAPA Completion", d.capaCompletionPct===null?null:`${d.capaCompletionPct}% (${d.capaClosed}/${d.capaTotal} closed)`)}
+      ${row("Risk Management Status", `${d.openRisks.length} open · ${d.criticalOpenRisks.length} critical`)}
+    </tbody></table>
+    <div class="section-title">Performance</div>
+    <table><tbody>
+      ${row("Objectives Achievement", d.objectivesAchievement===null?null:`${d.objectivesAchievement}% of KPI metrics on target`)}
+    </tbody></table>
+    <div class="section-title">Audit Results</div>
+    <table><tbody>
+      ${row("Internal Audits", `${d.internalAudits.length} total`)}
+      ${row("External Audits", `${d.externalAudits.length} total`)}
+      ${row("Open Findings", `${d.openFindings.length}`)}
+      ${row("Overdue Follow-up Actions", `${d.overdueFindings.length}`)}
+    </tbody></table>
+    <div class="section-title">Customer Focus</div>
+    <table><tbody>
+      ${row("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`)}
+      ${row("Customer Satisfaction", d.csatAvg===null?null:`${d.csatAvg.toFixed(1)} / 5 (${csatBucket.label})`)}
+      ${row("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()}` : null)}
+    </tbody></table>
+    <div class="section-title">Risk & Compliance</div>
+    <table><tbody>
+      ${row("Business Risks", `${d.businessHighRisks.length} High/Critical`)}
+      ${row("Regulatory Compliance", `${d.regulatoryBucket.label}`)}
+      ${row("Supplier Performance", d.totalSuppliers ? `${Math.round((d.supplierApproved/d.totalSuppliers)*100)}% approved` : null)}
+    </tbody></table>
+    <div class="section-title">Continual Improvement</div>
+    <table><tbody>
+      ${row("Open OFIs", `${state.ofis.filter(o=>o.status!=='Closed').length} of ${state.ofis.length} total`)}
+    </tbody></table>
+    <div class="section-title">Latest Meeting Record</div>
+    ${latestMeeting ? `
+      <table><tbody>
+        ${row("Date", latestMeeting.date)}
+        ${row("Attendees", latestMeeting.attendees)}
+        ${row("Decisions", latestMeeting.decisions)}
+        ${row("Approved by", latestMeeting.approval.approvedBy)}
+      </tbody></table>
+    ` : `<p>No meetings logged yet.</p>`}
+    <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
+      Generated by AuditQMS Pro Suite ${APP_VERSION}
+    </div>
+  `;
+}
+
 function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
@@ -5309,6 +5843,8 @@ function attachHandlers(){
   });
 
   /* Executive Summary — COPQ & CSAT quick log */
+  const gotoMgmtReview = document.querySelector('[data-action="goto-mgmt-review"]');
+  if(gotoMgmtReview) gotoMgmtReview.onclick=()=>{ tab="mgmt-review"; render(); };
   const toggleCopq = document.querySelector('[data-action="toggle-copq-form"]');
   if(toggleCopq) toggleCopq.onclick=()=>{ dashShowCopqForm=!dashShowCopqForm; render(); };
   const createCopq = document.querySelector('[data-action="create-copq"]');
@@ -5891,6 +6427,24 @@ function attachHandlers(){
   /* risk register */
   const toggleNewRisk = document.querySelector('[data-action="toggle-new-risk"]'); if(toggleNewRisk) toggleNewRisk.onclick=()=>{ showNewRisk=!showNewRisk; render(); };
   const cancelNewRisk = document.querySelector('[data-action="cancel-new-risk"]'); if(cancelNewRisk) cancelNewRisk.onclick=()=>{ showNewRisk=false; render(); };
+  const nrLikelihoodEl = document.getElementById('nr-likelihood');
+  const nrSeverityEl = document.getElementById('nr-severity');
+  if(nrLikelihoodEl && nrSeverityEl){
+    const updateLiveScore = () => {
+      const l = Number(nrLikelihoodEl.value), s = Number(nrSeverityEl.value);
+      const score = l * s;
+      const level = riskLevelFromScore(score);
+      const liveEl = document.getElementById('nr-live-score');
+      if(liveEl){
+        liveEl.textContent = `${score} — ${riskLevelEmoji[level]||''} ${level}`;
+        liveEl.className = `tag tag-${riskLevelColor[level]||'neutral'}`;
+        liveEl.style.width = 'fit-content'; liveEl.style.marginTop = '4px';
+      }
+    };
+    nrLikelihoodEl.addEventListener('input', updateLiveScore);
+    nrSeverityEl.addEventListener('input', updateLiveScore);
+    updateLiveScore();
+  }
   const createRisk = document.querySelector('[data-action="create-risk"]');
   if(createRisk) createRisk.onclick=()=>{
     const hazard = document.getElementById('nr-hazard').value.trim();
@@ -5898,6 +6452,10 @@ function attachHandlers(){
     const likelihood = Number(document.getElementById('nr-likelihood').value);
     const severity = Number(document.getElementById('nr-severity').value);
     const riskScore = likelihood * severity;
+    const riskOwnerEl = document.getElementById('nr-risk-owner');
+    const actionOwnerEl = document.getElementById('nr-action-owner');
+    const rootCauseEl = document.getElementById('nr-root-cause');
+    const reviewDateEl = document.getElementById('nr-review-date');
     const risk = {
       id: uid(),
       refNo: document.getElementById('nr-ref').value,
@@ -5907,13 +6465,18 @@ function attachHandlers(){
       hazard,
       riskTo: document.getElementById('nr-risk-to').value,
       controls: document.getElementById('nr-controls').value,
+      rootCause: rootCauseEl ? rootCauseEl.value : "",
       likelihood, severity, riskScore, riskLevel: riskLevelFromScore(riskScore),
       action: document.getElementById('nr-action').value,
-      owner: document.getElementById('nr-owner').value,
+      riskOwner: riskOwnerEl ? riskOwnerEl.value : "",
+      actionOwner: actionOwnerEl ? actionOwnerEl.value : "",
       dueDate: document.getElementById('nr-due').value,
+      reviewDate: reviewDateEl ? reviewDateEl.value : "",
       completedDate: "",
       status: "Open",
-      residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null
+      residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null,
+      evidence: [],
+      linkedFindingRef: "", linkedSupplierRef: "", linkedDocumentRef: "", linkedIncidentRef: "", linkedComplaintRef: ""
     };
     state.riskAssessments.unshift(risk);
     logActivity(`Risk assessment logged: ${hazard.slice(0,40)}${hazard.length>40?'…':''}`);
@@ -5952,6 +6515,34 @@ function attachHandlers(){
       persist(); render();
     };
   });
+  document.querySelectorAll('[data-risk-evidence]').forEach(el=>el.onchange=()=>{
+    const file = el.files[0]; if(!file) return;
+    const riskId = el.dataset.riskEvidence;
+    const r = state.riskAssessments.find(x=>x.id===riskId);
+    if(!r) return;
+    if(!r.evidence){ r.evidence = []; }
+    if(file.type === "application/pdf"){
+      if(file.size > 4*1024*1024){ alert("PDF is too large (max 4MB). Please choose a smaller file."); return; }
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        r.evidence.push({ id: uid(), name: file.name, type: "pdf", dataUrl: e.target.result });
+        persist(); render();
+      };
+      reader.onerror = () => { alert("Could not read this file — please try again."); };
+      reader.readAsDataURL(file);
+    } else {
+      compressImageToDataURL(file, 1000, 0.7, (dataUrl) => {
+        r.evidence.push({ id: uid(), name: file.name, type: "image", dataUrl });
+        persist(); render();
+      });
+    }
+  });
+  document.querySelectorAll('[data-action="remove-risk-evidence"]').forEach(el=>el.onclick=()=>{
+    const r = state.riskAssessments.find(x=>x.id===el.dataset.risk);
+    if(!r) return;
+    r.evidence = (r.evidence||[]).filter(ev=>ev.id!==el.dataset.evidence);
+    persist(); render();
+  });
   document.querySelectorAll('[data-action="delete-risk"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this risk assessment? This cannot be undone.")) return;
     state.riskAssessments = state.riskAssessments.filter(r=>r.id!==el.dataset.risk);
@@ -5959,10 +6550,12 @@ function attachHandlers(){
   });
   const riskCsvBtn = document.querySelector('[data-action="export-risk-csv"]');
   if(riskCsvBtn) riskCsvBtn.onclick=()=>{
-    const headers = ["Ref No","Date","Category","Area/Task","Risk Description","Who/What at Risk","Existing Controls","Likelihood","Severity","Risk Score","Risk Level","Action Required","Responsible","Target Date","Status","Residual Risk Level"];
+    const headers = ["Ref No","Date","Category","Area/Task","Risk Description","Who/What at Risk","Existing Controls","Root Cause","Likelihood","Severity","Risk Score","Risk Level","Action Required","Risk Owner","Action Owner","Target Date","Review Date","Status","Residual Likelihood","Residual Severity","Residual Risk Score","Residual Risk Level","Related Finding/CAPA","Related Supplier","Related Document","Related Incident","Related Complaint"];
     const rows = state.riskAssessments.map(r=>[
-      r.refNo||'', r.date, r.category||'Health & Safety', r.area||'', r.hazard, r.riskTo||'', r.controls||'', r.likelihood, r.severity, r.riskScore, r.riskLevel,
-      r.action||'', r.owner||'', r.dueDate||'', r.status, r.residualRiskLevel||''
+      r.refNo||'', r.date, r.category||'Health & Safety', r.area||'', r.hazard, r.riskTo||'', r.controls||'', r.rootCause||'', r.likelihood, r.severity, r.riskScore, r.riskLevel,
+      r.action||'', r.riskOwner||r.owner||'', r.actionOwner||'', r.dueDate||'', r.reviewDate||'', r.status,
+      r.residualLikelihood||'', r.residualSeverity||'', r.residualRiskScore||'', r.residualRiskLevel||'',
+      r.linkedFindingRef||'', r.linkedSupplierRef||'', r.linkedDocumentRef||'', r.linkedIncidentRef||'', r.linkedComplaintRef||''
     ]);
     const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
     const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
@@ -5973,6 +6566,108 @@ function attachHandlers(){
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
+
+  /* Management Review */
+  document.querySelectorAll('[data-mgmt-review-tab]').forEach(el=>el.onclick=()=>{
+    mgmtReviewSubTab = el.dataset.mgmtReviewTab; render();
+  });
+  const printMgmtReview = document.querySelector('[data-action="print-mgmt-review"]');
+  if(printMgmtReview) printMgmtReview.onclick=()=>{ buildMgmtReviewPrintReport(); window.print(); };
+
+  const toggleNewOfi = document.querySelector('[data-action="toggle-new-ofi"]'); if(toggleNewOfi) toggleNewOfi.onclick=()=>{ showNewOfi=!showNewOfi; render(); };
+  const cancelNewOfi = document.querySelector('[data-action="cancel-new-ofi"]'); if(cancelNewOfi) cancelNewOfi.onclick=()=>{ showNewOfi=false; render(); };
+  const createOfi = document.querySelector('[data-action="create-ofi"]');
+  if(createOfi) createOfi.onclick=()=>{
+    const desc = document.getElementById('nofi-desc').value.trim();
+    if(!desc) return;
+    state.ofis.push({
+      id: uid(), refNo: nextOfiRefNo(), date: document.getElementById('nofi-date').value || today(),
+      source: document.getElementById('nofi-source').value, description: desc,
+      owner: document.getElementById('nofi-owner').value, targetDate: document.getElementById('nofi-target').value,
+      status: "Open"
+    });
+    showNewOfi = false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-ofi]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleOfi; openOfiId = openOfiId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-ofi-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.ofiField.split(':');
+      const o = state.ofis.find(x=>x.id===id);
+      if(!o) return;
+      o[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="delete-ofi"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this OFI? This cannot be undone.")) return;
+    state.ofis = state.ofis.filter(o=>o.id!==el.dataset.ofi);
+    openOfiId = null; persist(); render();
+  });
+
+  const toggleNewMeeting = document.querySelector('[data-action="toggle-new-meeting"]'); if(toggleNewMeeting) toggleNewMeeting.onclick=()=>{ showNewMeeting=!showNewMeeting; render(); };
+  const cancelNewMeeting = document.querySelector('[data-action="cancel-new-meeting"]'); if(cancelNewMeeting) cancelNewMeeting.onclick=()=>{ showNewMeeting=false; render(); };
+  const createMeeting = document.querySelector('[data-action="create-meeting"]');
+  if(createMeeting) createMeeting.onclick=()=>{
+    const date = document.getElementById('nm-date').value || today();
+    state.mgmtReviewMeetings.unshift({
+      id: uid(), date, status: document.getElementById('nm-status').value,
+      attendees: document.getElementById('nm-attendees').value, agenda: document.getElementById('nm-agenda').value,
+      minutes: "", decisions: "", actionItems: [], approval: { approvedBy:"", approvedDate:"" }
+    });
+    showNewMeeting = false; persist(); render();
+  };
+  document.querySelectorAll('[data-toggle-meeting]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.toggleMeeting; openMeetingId = openMeetingId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-meeting-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.meetingField.split(':');
+      const m = state.mgmtReviewMeetings.find(x=>x.id===id);
+      if(!m) return;
+      m[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-meeting-approval-field]').forEach(el=>{
+    el.onchange = () => {
+      const [id, field] = el.dataset.meetingApprovalField.split(':');
+      const m = state.mgmtReviewMeetings.find(x=>x.id===id);
+      if(!m) return;
+      m.approval[field] = el.value;
+      persist(); render();
+    };
+  });
+  document.querySelectorAll('[data-action="add-meeting-action"]').forEach(el=>el.onclick=()=>{
+    const m = state.mgmtReviewMeetings.find(x=>x.id===el.dataset.meeting);
+    if(!m) return;
+    m.actionItems.push({ id: uid(), text: "", owner: "", dueDate: "", status: "Open" });
+    persist(); render();
+  });
+  document.querySelectorAll('[data-meeting-action-field]').forEach(el=>{
+    el.onchange = () => {
+      const [meetingId, itemId, field] = el.dataset.meetingActionField.split(':');
+      const m = state.mgmtReviewMeetings.find(x=>x.id===meetingId);
+      if(!m) return;
+      const ai = m.actionItems.find(x=>x.id===itemId);
+      if(!ai) return;
+      ai[field] = el.value;
+      persist();
+      if(field==="status") render();
+    };
+  });
+  document.querySelectorAll('[data-action="remove-meeting-action"]').forEach(el=>el.onclick=()=>{
+    const m = state.mgmtReviewMeetings.find(x=>x.id===el.dataset.meeting);
+    if(!m) return;
+    m.actionItems = m.actionItems.filter(ai=>ai.id!==el.dataset.item);
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="delete-meeting"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Delete this meeting record? This cannot be undone.")) return;
+    state.mgmtReviewMeetings = state.mgmtReviewMeetings.filter(m=>m.id!==el.dataset.meeting);
+    openMeetingId = null; persist(); render();
+  });
 
   /* Document Control */
   const toggleNewDocument = document.querySelector('[data-action="toggle-new-document"]'); if(toggleNewDocument) toggleNewDocument.onclick=()=>{ showNewDocument=!showNewDocument; render(); };
