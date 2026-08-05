@@ -532,6 +532,10 @@ const RECALL_CLASSES = ["Class I – Serious Health Risk","Class II – Temporar
 const RECALL_STATUSES = ["Open","Investigating","Recall In Progress","Closed"];
 const recallStatusTone = {Open:"rust",Investigating:"amber","Recall In Progress":"amber",Closed:"green"};
 const recallClassTone = {"Class I – Serious Health Risk":"rust","Class II – Temporary/Reversible Risk":"amber","Class III – Low Risk / Regulatory":"navy"};
+const RECALL_TYPES = ["Mock Recall","Internal Recall","Customer Recall"];
+const recallTypeTone = {"Mock Recall":"navy","Internal Recall":"amber","Customer Recall":"rust"};
+const SA_REGULATORY_AUTHORITIES = ["Not Applicable","NRCS (National Regulator for Compulsory Specifications)","Department of Health","DALRRD (Dept of Agriculture, Land Reform & Rural Development)","Other"];
+const RECALL_ROOT_CAUSES = ["","Poor Housekeeping","Equipment Failure","Human Error","Supplier Issue","Process Deviation","Labelling Error","Other"];
 const RECALL_ACTION_STEPS = [
   "Stop production","Place stock on hold","Identify affected batches","Notify customers",
   "Notify authorities (if required)","Retrieve products","Dispose or rework product",
@@ -630,6 +634,134 @@ function seedData(){
   return { audits: [a], auditSeq: 1 };
 }
 
+function isWorkspaceEmpty(){
+  return state.audits.length===0 && state.riskAssessments.length===0 && state.suppliers.length===0 &&
+         state.trainingRecords.length===0 && state.productRecalls.length===0 && state.metrics.length===0;
+}
+function hasDemoData(){
+  return state.audits.some(a=>a.isDemo) || state.riskAssessments.some(r=>r.isDemo) ||
+         state.suppliers.some(s=>s.isDemo) || state.trainingRecords.some(t=>t.isDemo) ||
+         state.productRecalls.some(r=>r.isDemo) || state.metrics.some(m=>m.isDemo);
+}
+
+function loadDemoData(){
+  const year = new Date().getFullYear();
+
+  // Demo Audit 1 — Internal, with a failed item that auto-generates a finding/CAPA
+  const a1 = seedAudit("Demo — Internal GMP Verification (Bakery Line 2)","FSSC 22000","Production",[
+    {name:"Personnel Hygiene", items:["Hairnets and beard snoods worn correctly","No jewellery or false nails observed","Hand-wash stations stocked and functional"]},
+    {name:"8. Operation (including HACCP)", items:["Chiller temp logs complete and within range","Metal detector verification records up to date"]},
+    {name:"Housekeeping", items:["Floors and drains clean, no standing water","Waste segregated and bins covered"]}
+  ], null, "Internal");
+  a1.isDemo = true;
+  a1.auditor = "Sandiso Mabeka"; a1.auditee = "Line Supervisor"; a1.status = "Closed";
+  a1.sections.forEach(s=>s.items.forEach(it=>{ it.result = "Pass"; }));
+  a1.sections[1].items[1].result = "Fail";
+  a1.findings = [{
+    id: uid(), refNo: nextFindingRefNo(a1), clause:"8. Operation (including HACCP)", clauseRef:"FSSC 22000 Clause 8.5.2",
+    category:"Equipment", desc:"Metal detector verification log missing entries for two shifts",
+    severity:"Major", owner:"Line Supervisor", dueDate: today(), actionText:"Reissue verification log, retrain shift leads, daily QA spot-check for 2 weeks",
+    status:"Open"
+  }];
+
+  // Demo Audit 2 — External, closed, clean
+  const a2 = seedAudit("Demo — FSSC 22000 Surveillance Audit","FSSC 22000","Site-Wide",[
+    {name:"9. Performance Evaluation", items:["Verification activities (e.g. mock recalls) conducted and reviewed","Internal audits scheduled and findings closed out"]}
+  ], null, "External");
+  a2.isDemo = true;
+  a2.auditor = "External Certification Body"; a2.auditee = "Sandiso Mabeka"; a2.status = "Closed";
+  a2.sections.forEach(s=>s.items.forEach(it=>{ it.result = "Pass"; }));
+
+  state.audits.unshift(a1, a2);
+
+  // Demo Risks
+  const demoRisks = [
+    { category:"Health & Safety", area:"Warehouse", hazard:"Forklift operating in pedestrian area", riskTo:"Warehouse staff", controls:"Floor markings and pedestrian barriers", rootCause:"Process Deviation", likelihood:3, severity:4, riskOwner:"Warehouse Manager", actionOwner:"Warehouse Manager", action:"Install physical pedestrian barriers and repaint floor markings", status:"In Progress" },
+    { category:"Quality", area:"Production", hazard:"Metal detector verification gap on night shift", riskTo:"Product safety", controls:"Verification log with QA spot-checks", rootCause:"Human Error", likelihood:2, severity:4, riskOwner:"QA Manager", actionOwner:"Line Supervisor", action:"Retrain night shift leads and add digital verification log", status:"In Progress" },
+    { category:"Business", area:"Procurement", hazard:"Single supplier for key packaging material", riskTo:"Production continuity", controls:"None currently", rootCause:"Supplier Issue", likelihood:3, severity:3, riskOwner:"Procurement Manager", actionOwner:"Procurement Manager", action:"Qualify a second approved supplier", status:"Open" }
+  ];
+  demoRisks.forEach(d=>{
+    const riskScore = d.likelihood*d.severity;
+    state.riskAssessments.unshift({
+      id: uid(), refNo:`HIRA-DEMO-${state.riskAssessments.length+1}`, date: today(), category:d.category, area:d.area,
+      hazard:d.hazard, riskTo:d.riskTo, controls:d.controls, rootCause:d.rootCause,
+      likelihood:d.likelihood, severity:d.severity, riskScore, riskLevel: riskLevelFromScore(riskScore),
+      action:d.action, riskOwner:d.riskOwner, actionOwner:d.actionOwner, dueDate:"", reviewDate:"",
+      status:d.status, residualLikelihood:null, residualSeverity:null, residualRiskScore:null, residualRiskLevel:null,
+      evidence:[], linkedFindingRef:"None / Not linked", linkedSupplierRef:"None / Not linked",
+      linkedDocumentRef:"None / Not linked", linkedIncidentRef:"None / Not linked", linkedComplaintRef:"None / Not linked",
+      isDemo:true
+    });
+  });
+
+  // Demo Suppliers
+  [
+    { name:"Golden Valley Dairy", category:"Raw Material", approvalStatus:"Approved", riskRating:"Low", qualityScore:"92" },
+    { name:"Prime Packaging Co", category:"Packaging", approvalStatus:"Approved", riskRating:"Low", qualityScore:"88" },
+    { name:"Coastal Spice Traders", category:"Raw Material", approvalStatus:"Pending Review", riskRating:"Medium", qualityScore:"" }
+  ].forEach(s=>{
+    state.suppliers.unshift({
+      id: uid(), name:s.name, category:s.category, approvalStatus:s.approvalStatus, riskRating:s.riskRating,
+      lastAssessmentDate: today(), contactPerson:"", qualityScore:s.qualityScore, lastAuditDate:"", lastAuditResult:"",
+      notes:"Demo record", isDemo:true
+    });
+  });
+
+  // Demo Training Records
+  [
+    { employeeName:"Thabo Nkosi", role:"Production Operator", competency:"HACCP Awareness", trainedDate: today(), expiryDate:"" },
+    { employeeName:"Lindiwe Dlamini", role:"QA Technician", competency:"Internal Auditor Training", trainedDate: today(), expiryDate:"" }
+  ].forEach(t=>{
+    state.trainingRecords.unshift({ id: uid(), ...t, certRef:"", notes:"Demo record", isDemo:true });
+  });
+
+  // Demo KPI Metrics
+  [
+    { name:"NCR Closure Rate", category:"Process", unit:"%", target:90, direction:"higher", value:91 },
+    { name:"CAPA On-Time Closure", category:"Process", unit:"%", target:90, direction:"higher", value:78 },
+    { name:"Customer Complaints Rate", category:"Customer", unit:"%", target:0.5, direction:"lower", value:0.8 },
+    { name:"Training Compliance Rate", category:"People", unit:"%", target:95, direction:"higher", value:97 },
+    { name:"Supplier OTIF", category:"Supplier", unit:"%", target:95, direction:"higher", value:96 }
+  ].forEach(m=>{
+    state.metrics.unshift({
+      id: uid(), name:m.name, category:m.category, unit:m.unit, target:m.target, direction:m.direction,
+      critical:false, source:"manual", history:[{date: today(), value:m.value}], isDemo:true
+    });
+  });
+
+  // Demo Product Recall — mock recall showcasing mass balance + timer
+  const startedAt = new Date(); startedAt.setHours(9,15,0,0);
+  const completedAt = new Date(startedAt.getTime() + (1*3600000 + 52*60000));
+  state.productRecalls.unshift({
+    id: uid(), recallNumber: nextRecallNumber(), recallType:"Mock Recall",
+    productName:"Vanilla Ice Cream 2L Tub", productCode:"IC-VAN-2L", batchLot:"IC-2026-001",
+    mfgDate: today(), expiryDate:"", qtyProduced:10000, qtyWarehouse:2000, qtyCustomers:7500, qtyDestroyed:500,
+    reason:"Other", riskClass:"Class III – Low Risk / Regulatory", status:"Closed",
+    notes:"Annual FSSC 22000 mock recall exercise — demo record.",
+    actionSteps: RECALL_ACTION_STEPS.map(label=>({label, done:true})),
+    commsLog:[{ id: uid(), contact:"Distribution Centre — JHB", date: today(), method:"Phone", response:"Confirmed batch on hold", followUp:"" }],
+    recallStartedAt: startedAt.toISOString(), recallCompletedAt: completedAt.toISOString(), targetHours:4,
+    regulatoryAuthority:"Not Applicable", regulatoryNotifiedDate:"",
+    rootCause:"Process Deviation", investigationSummary:"Annual mock recall exercise to test traceability speed and mass balance reconciliation per FSSC 22000 clause 9.1 verification requirements.",
+    linkedCapaRef:"None / Not linked",
+    approval:{ approvedBy:"Sandiso Mabeka", approverRole:"QA Manager", approvedAt: completedAt.toISOString() },
+    isDemo:true
+  });
+
+  ensureStateDefaults();
+  persist();
+}
+
+function clearDemoData(){
+  state.audits = state.audits.filter(a=>!a.isDemo);
+  state.riskAssessments = state.riskAssessments.filter(r=>!r.isDemo);
+  state.suppliers = state.suppliers.filter(s=>!s.isDemo);
+  state.trainingRecords = state.trainingRecords.filter(t=>!t.isDemo);
+  state.metrics = state.metrics.filter(m=>!m.isDemo);
+  state.productRecalls = state.productRecalls.filter(r=>!r.isDemo);
+  persist();
+}
+
 function migrateAuditNumbers(){
   if(state.auditSeq === undefined){
     state.auditSeq = 0;
@@ -716,6 +848,21 @@ function ensureStateDefaults(){
   if(!state.haccpChecklistLogs){ state.haccpChecklistLogs = []; }
   if(!state.foodsafeNcrs){ state.foodsafeNcrs = []; }
   if(!state.productRecalls){ state.productRecalls = []; }
+  state.productRecalls.forEach(r=>{
+    if(!r.recallType){ r.recallType = "Customer Recall"; }
+    if(r.qtyWarehouse===undefined){ r.qtyWarehouse = null; }
+    if(r.qtyCustomers===undefined){ r.qtyCustomers = null; }
+    if(r.qtyDestroyed===undefined){ r.qtyDestroyed = null; }
+    if(r.recallStartedAt===undefined){ r.recallStartedAt = null; }
+    if(r.recallCompletedAt===undefined){ r.recallCompletedAt = null; }
+    if(r.targetHours===undefined){ r.targetHours = 4; }
+    if(!r.regulatoryAuthority){ r.regulatoryAuthority = "Not Applicable"; }
+    if(r.regulatoryNotifiedDate===undefined){ r.regulatoryNotifiedDate = ""; }
+    if(r.rootCause===undefined){ r.rootCause = ""; }
+    if(r.investigationSummary===undefined){ r.investigationSummary = ""; }
+    if(r.linkedCapaRef===undefined){ r.linkedCapaRef = "None / Not linked"; }
+    if(!r.approval){ r.approval = { approvedBy:"", approverRole:"", approvedAt:null }; }
+  });
   if(!state.complianceScoreHistory){ state.complianceScoreHistory = []; }
   if(state.complianceScoreHistory.length && state.complianceScoreHistory[0].date){
     const byMonth = {};
@@ -1044,7 +1191,7 @@ function complaintOptionsList(){
   return ["None / Not linked", ...state.complaintRecords.map(c=>`${c.natureOfComplaint||c.classification||'Complaint'} — ${c.complainantName||'Unnamed'} (${c.dateReceived||''})`)];
 }
 function recallOptionsList(){
-  return ["None / Not applicable", ...state.productRecalls.map(r=>`${r.product} — ${r.status}`)];
+  return ["None / Not applicable", ...state.productRecalls.map(r=>`${r.recallNumber?r.recallNumber+' — ':''}${r.productName} — ${r.status}`)];
 }
 function renderCheckboxGroup(name, options, currentCsv){
   const selected = (currentCsv||'').split(',').map(s=>s.trim()).filter(Boolean);
@@ -2246,6 +2393,24 @@ function renderDashboard(){
   }
 
   return `
+  ${isWorkspaceEmpty() ? `
+    <div class="card p4" style="margin-bottom:16px;background:var(--navy-bg);border-color:#c3cee2;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div>
+          <strong style="color:var(--navy);">Your workspace is empty</strong>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px;">Load realistic sample data — audits, CAPAs, risks, suppliers, KPIs, and a product recall example — to explore the platform or run a demo.</div>
+        </div>
+        <button class="btn btn-primary" data-action="load-demo-data" style="white-space:nowrap;">✨ Load Demo Data</button>
+      </div>
+    </div>
+  ` : hasDemoData() ? `
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div style="font-size:12px;color:var(--muted);">✨ This workspace contains sample demo data.</div>
+        <button class="btn btn-ghost" data-action="clear-demo-data" style="white-space:nowrap;">🗑 Clear Demo Data</button>
+      </div>
+    </div>
+  ` : ''}
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
       <button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;">+ New Audit</button>
       <button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;">+ Raise CAPA</button>
@@ -3764,6 +3929,35 @@ function recallCompletionPct(r){
   return Math.round((steps.filter(s=>s.done).length/steps.length)*100);
 }
 
+function recallMassBalance(r){
+  const produced = Number(r.qtyProduced)||0;
+  const parts = [Number(r.qtyWarehouse)||0, Number(r.qtyCustomers)||0, Number(r.qtyDestroyed)||0];
+  const total = parts.reduce((a,b)=>a+b,0);
+  const hasAnyPart = r.qtyWarehouse!=null || r.qtyCustomers!=null || r.qtyDestroyed!=null;
+  const variance = total - produced;
+  return { produced, total, variance, balanced: hasAnyPart && produced>0 && variance===0, hasAnyPart };
+}
+
+function recallDurationMs(r){
+  if(!r.recallStartedAt) return null;
+  const end = r.recallCompletedAt ? new Date(r.recallCompletedAt) : new Date();
+  return end - new Date(r.recallStartedAt);
+}
+
+function formatDuration(ms){
+  if(ms==null || ms<0) return "—";
+  const totalMin = Math.round(ms/60000);
+  const h = Math.floor(totalMin/60);
+  const m = totalMin%60;
+  return h>0 ? `${h} hour${h===1?'':'s'} ${m} minute${m===1?'':'s'}` : `${m} minute${m===1?'':'s'}`;
+}
+
+function recallExceededTarget(r){
+  if(!r.recallStartedAt || !r.targetHours) return false;
+  const ms = recallDurationMs(r);
+  return ms!==null && ms > (Number(r.targetHours)*3600000);
+}
+
 function nextRecallNumber(){
   return `REC-${new Date().getFullYear()}-${String(state.productRecalls.length+1).padStart(3,'0')}`;
 }
@@ -3804,14 +3998,13 @@ function renderNewRecallForm(){
   return `
     <div class="card p4 grid2" style="margin-bottom:16px;">
       <label class="field">Recall Number<input id="nr-number" value="${nextRecallNumber()}" /></label>
+      <label class="field">Recall Type<select id="nr-type">${RECALL_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
       <label class="field">Product Name<input id="nr-product" placeholder="e.g. Sponge Cake 500g" /></label>
       <label class="field">Product Code / SKU<input id="nr-code" placeholder="e.g. SC500-1907A" /></label>
       <label class="field">Batch / Lot Number<input id="nr-batch" placeholder="e.g. WWF-2607" /></label>
       <label class="field">Manufacturing Date<input type="date" id="nr-mfg-date" /></label>
       <label class="field">Expiry Date<input type="date" id="nr-expiry-date" /></label>
       <label class="field">Quantity Produced<input type="number" id="nr-qty-produced" /></label>
-      <label class="field">Quantity Released<input type="number" id="nr-qty-released" /></label>
-      <label class="field">Quantity Recalled<input type="number" id="nr-qty-recalled" /></label>
       <label class="field" style="grid-column:1/-1;">Reason for Recall<select id="nr-reason">${RECALL_REASONS.map(r=>`<option>${r}</option>`).join('')}</select></label>
       <label class="field" style="grid-column:1/-1;">Risk Classification<select id="nr-class">${RECALL_CLASSES.map(c=>`<option>${c}</option>`).join('')}</select></label>
       <label class="field" style="grid-column:1/-1;">Notes<input id="nr-notes" placeholder="Optional notes…" /></label>
@@ -3837,8 +4030,10 @@ function renderRecallRow(r){
           </div>
         </div>
         <div class="flex-wrap">
+          <span class="tag tag-${recallTypeTone[r.recallType]||'neutral'}">${esc(r.recallType)||'Customer Recall'}</span>
           <span class="tag tag-${recallClassTone[r.riskClass]||'neutral'}">${(r.riskClass||'').split(' –')[0]}</span>
           <span class="tag tag-${recallStatusTone[r.status]||'neutral'}">${r.status}</span>
+          ${recallExceededTarget(r) ? `<span class="tag tag-rust">⚠ Exceeded Target</span>` : ''}
         </div>
       </button>
       ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderRecallDetail(r)}</div>` : ''}
@@ -3859,18 +4054,83 @@ function renderRecallDetail(r){
   return `
     <div class="grid2" style="margin-bottom:12px;">
       <label class="field">Recall Number<input data-recall-field="${r.id}:recallNumber" value="${esc(r.recallNumber)}" /></label>
+      <label class="field">Recall Type<select data-recall-field="${r.id}:recallType">${RECALL_TYPES.map(x=>`<option ${x===r.recallType?'selected':''}>${x}</option>`).join('')}</select></label>
       <label class="field">Product Name<input data-recall-field="${r.id}:productName" value="${esc(r.productName)}" /></label>
       <label class="field">Product Code / SKU<input data-recall-field="${r.id}:productCode" value="${esc(r.productCode)}" /></label>
       <label class="field">Batch / Lot Number<input data-recall-field="${r.id}:batchLot" value="${esc(r.batchLot)}" /></label>
       <label class="field">Manufacturing Date<input type="date" data-recall-field="${r.id}:mfgDate" value="${r.mfgDate||''}" /></label>
       <label class="field">Expiry Date<input type="date" data-recall-field="${r.id}:expiryDate" value="${r.expiryDate||''}" /></label>
-      <label class="field">Quantity Produced<input type="number" data-recall-field="${r.id}:qtyProduced" value="${r.qtyProduced??''}" /></label>
-      <label class="field">Quantity Released<input type="number" data-recall-field="${r.id}:qtyReleased" value="${r.qtyReleased??''}" /></label>
-      <label class="field">Quantity Recalled<input type="number" data-recall-field="${r.id}:qtyRecalled" value="${r.qtyRecalled??''}" /></label>
       <label class="field" style="grid-column:1/-1;">Reason for Recall<select data-recall-field="${r.id}:reason">${RECALL_REASONS.map(x=>`<option ${x===r.reason?'selected':''}>${x}</option>`).join('')}</select></label>
       <label class="field" style="grid-column:1/-1;">Risk Classification<select data-recall-field="${r.id}:riskClass">${RECALL_CLASSES.map(x=>`<option ${x===r.riskClass?'selected':''}>${x}</option>`).join('')}</select></label>
       <label class="field" style="grid-column:1/-1;">Status<select data-recall-field="${r.id}:status">${RECALL_STATUSES.map(x=>`<option ${x===r.status?'selected':''}>${x}</option>`).join('')}</select></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-recall-field="${r.id}:notes" value="${esc(r.notes)}" /></label>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">⚖️ Mass Balance</h3>
+      ${(() => {
+        const mb = recallMassBalance(r);
+        return `
+          <div class="grid2" style="margin-bottom:10px;">
+            <label class="field">Quantity Produced<input type="number" data-recall-field="${r.id}:qtyProduced" value="${r.qtyProduced??''}" /></label>
+            <div></div>
+            <label class="field">In Warehouse (Recovered)<input type="number" data-recall-field="${r.id}:qtyWarehouse" value="${r.qtyWarehouse??''}" /></label>
+            <label class="field">With Customers (Sold)<input type="number" data-recall-field="${r.id}:qtyCustomers" value="${r.qtyCustomers??''}" /></label>
+            <label class="field">Destroyed / Disposed<input type="number" data-recall-field="${r.id}:qtyDestroyed" value="${r.qtyDestroyed??''}" /></label>
+          </div>
+          <div style="background:var(--line2);border-radius:8px;padding:10px 14px;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;"><span>Produced</span><strong>${mb.produced}</strong></div>
+            <div style="display:flex;justify-content:space-between;"><span>Warehouse + Customers + Destroyed</span><strong>${mb.total}</strong></div>
+            <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--line);">
+              <span>Every unit accounted for?</span>
+              ${!mb.hasAnyPart || !mb.produced ? `<span class="tag tag-neutral">Enter quantities above</span>` : mb.variance===0 ? `<span class="tag tag-green">✓ Balanced</span>` : `<span class="tag tag-rust">⚠ Variance: ${mb.variance>0?'+':''}${mb.variance} units</span>`}
+            </div>
+          </div>
+        `;
+      })()}
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">⏱ Recall Timer</h3>
+      <div class="grid2" style="margin-bottom:10px;">
+        <label class="field">Target Time to Complete (hours)<input type="number" data-recall-field="${r.id}:targetHours" value="${r.targetHours??4}" /></label>
+        <div></div>
+      </div>
+      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;">
+        <div><div class="muted-italic" style="font-size:11px;">RECALL STARTED</div><strong>${r.recallStartedAt ? new Date(r.recallStartedAt).toLocaleString() : '—'}</strong></div>
+        <div><div class="muted-italic" style="font-size:11px;">RECALL COMPLETED</div><strong>${r.recallCompletedAt ? new Date(r.recallCompletedAt).toLocaleString() : '—'}</strong></div>
+        <div><div class="muted-italic" style="font-size:11px;">DURATION</div><strong>${formatDuration(recallDurationMs(r))}</strong></div>
+      </div>
+      ${recallExceededTarget(r) ? `<div class="tag tag-rust" style="margin-bottom:10px;">⚠ Recall exceeded target of ${r.targetHours}h</div>` : ''}
+      <div class="flex-wrap">
+        ${!r.recallStartedAt ? `<button class="btn btn-primary" data-action="start-recall-timer" data-recall="${r.id}">▶ Start Recall Clock</button>` : ''}
+        ${r.recallStartedAt && !r.recallCompletedAt ? `<button class="btn btn-primary" data-action="complete-recall-timer" data-recall="${r.id}">⏹ Mark Recall Complete</button>` : ''}
+        ${r.recallStartedAt ? `<button class="btn btn-ghost" data-action="reset-recall-timer" data-recall="${r.id}">Reset Timer</button>` : ''}
+      </div>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">🔎 Investigation & Regulatory</h3>
+      <div class="grid2">
+        <label class="field">Root Cause<select data-recall-field="${r.id}:rootCause">${RECALL_ROOT_CAUSES.map(c=>`<option ${c===r.rootCause?'selected':''}>${c||'— Select —'}</option>`).join('')}</select></label>
+        <label class="field">Linked CAPA<select data-recall-field="${r.id}:linkedCapaRef">${capaOptionsList().map(c=>`<option ${c===r.linkedCapaRef?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
+        <label class="field" style="grid-column:1/-1;">Investigation Summary<input data-recall-field="${r.id}:investigationSummary" value="${esc(r.investigationSummary)}" placeholder="What caused this and how was it confirmed…" /></label>
+        <label class="field">Regulatory Authority Notified<select data-recall-field="${r.id}:regulatoryAuthority">${SA_REGULATORY_AUTHORITIES.map(a=>`<option ${a===r.regulatoryAuthority?'selected':''}>${a}</option>`).join('')}</select></label>
+        <label class="field">Date Notified<input type="date" data-recall-field="${r.id}:regulatoryNotifiedDate" value="${r.regulatoryNotifiedDate||''}" /></label>
+      </div>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Reference: OHS Act 85 of 1993 · Foodstuffs, Cosmetics and Disinfectants Act regulations (R638, where applicable) · POPIA applies to any customer contact data used for recall communications.</p>
+    </div>
+    <div class="card p4 top-border" style="margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✍ Final Approval</h3>
+      ${r.approval && r.approval.approvedAt ? `
+        <div style="font-size:13px;">✓ Signed by <strong>${esc(r.approval.approvedBy)}</strong>${r.approval.approverRole?`, ${esc(r.approval.approverRole)}`:''}</div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Electronically signed ${new Date(r.approval.approvedAt).toLocaleString()}</div>
+        <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-recall" data-recall="${r.id}">Unsign</button>
+      ` : `
+        <div class="grid2" style="margin-bottom:8px;">
+          <input placeholder="Type full name to sign" id="sign-recall-name-${r.id}" />
+          <input placeholder="Role / Title (e.g. QA Manager)" id="sign-recall-role-${r.id}" />
+        </div>
+        <button class="btn btn-primary" style="font-size:12px;" data-action="sign-recall" data-recall="${r.id}">✅ Confirm Final Approval</button>
+        <p class="muted-italic" style="font-size:11px;margin:8px 0 0;">Signing captures the date and time automatically and cannot be edited afterward — unsign to make corrections.</p>
+      `}
     </div>
     <div class="card p4 top-border" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✅ Recall Actions — ${pct}% Complete</h3>
@@ -5846,6 +6106,15 @@ function attachHandlers(){
     navGroupOpen = null; navSubGroupOpen = null;
     render();
   });
+  const loadDemoBtn = document.querySelector('[data-action="load-demo-data"]');
+  if(loadDemoBtn) loadDemoBtn.onclick=()=>{
+    loadDemoData(); render();
+  };
+  const clearDemoBtn = document.querySelector('[data-action="clear-demo-data"]');
+  if(clearDemoBtn) clearDemoBtn.onclick=()=>{
+    if(!confirm("Clear all demo data? This removes every sample record but leaves your real data untouched.")) return;
+    clearDemoData(); render();
+  };
   const toggleNavMenu = document.querySelector('[data-action="toggle-nav-menu"]');
   if(toggleNavMenu) toggleNavMenu.onclick=()=>{ navMenuOpen = !navMenuOpen; render(); };
   const breadcrumbBackBtn = document.querySelector('[data-action="breadcrumb-back"]');
@@ -6932,20 +7201,24 @@ function attachHandlers(){
     const record = {
       id: uid(),
       recallNumber: document.getElementById('nr-number').value || nextRecallNumber(),
+      recallType: document.getElementById('nr-type').value,
       productName,
       productCode: document.getElementById('nr-code').value,
       batchLot: document.getElementById('nr-batch').value,
       mfgDate: document.getElementById('nr-mfg-date').value,
       expiryDate: document.getElementById('nr-expiry-date').value,
       qtyProduced: toNum(document.getElementById('nr-qty-produced').value),
-      qtyReleased: toNum(document.getElementById('nr-qty-released').value),
-      qtyRecalled: toNum(document.getElementById('nr-qty-recalled').value),
+      qtyWarehouse: null, qtyCustomers: null, qtyDestroyed: null,
       reason: document.getElementById('nr-reason').value,
       riskClass: document.getElementById('nr-class').value,
       status: "Open",
       notes: document.getElementById('nr-notes').value,
       actionSteps: RECALL_ACTION_STEPS.map(label=>({label, done:false})),
-      commsLog: []
+      commsLog: [],
+      recallStartedAt: null, recallCompletedAt: null, targetHours: 4,
+      regulatoryAuthority: "Not Applicable", regulatoryNotifiedDate: "",
+      rootCause: "", investigationSummary: "", linkedCapaRef: "None / Not linked",
+      approval: { approvedBy:"", approverRole:"", approvedAt:null }
     };
     state.productRecalls.unshift(record);
     openRecallId = record.id; showNewRecall=false; persist(); render();
@@ -6973,6 +7246,42 @@ function attachHandlers(){
       r.actionSteps[idx].done = el.checked;
       persist(); render();
     };
+  });
+  document.querySelectorAll('[data-action="start-recall-timer"]').forEach(el=>el.onclick=()=>{
+    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
+    if(!r) return;
+    r.recallStartedAt = new Date().toISOString();
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="complete-recall-timer"]').forEach(el=>el.onclick=()=>{
+    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
+    if(!r) return;
+    r.recallCompletedAt = new Date().toISOString();
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="reset-recall-timer"]').forEach(el=>el.onclick=()=>{
+    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
+    if(!r) return;
+    if(!confirm("Reset the recall timer? This clears the start and complete times.")) return;
+    r.recallStartedAt = null; r.recallCompletedAt = null;
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="sign-recall"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.recall;
+    const r = state.productRecalls.find(x=>x.id===id);
+    if(!r) return;
+    const name = document.getElementById(`sign-recall-name-${id}`).value.trim();
+    if(!name){ alert("Type your full name to sign."); return; }
+    const role = document.getElementById(`sign-recall-role-${id}`).value.trim();
+    if(!r.approval){ r.approval = { approvedBy:"", approverRole:"", approvedAt:null }; }
+    r.approval.approvedBy = name; r.approval.approverRole = role; r.approval.approvedAt = new Date().toISOString();
+    persist(); render();
+  });
+  document.querySelectorAll('[data-action="unsign-recall"]').forEach(el=>el.onclick=()=>{
+    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
+    if(!r) return;
+    r.approval = { approvedBy:"", approverRole:"", approvedAt:null };
+    persist(); render();
   });
   document.querySelectorAll('[data-action="add-recall-comm"]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.recall;
@@ -7005,8 +7314,11 @@ function attachHandlers(){
   });
   const recallsCsvBtn = document.querySelector('[data-action="export-recalls-csv"]');
   if(recallsCsvBtn) recallsCsvBtn.onclick=()=>{
-    const headers = ["Recall Number","Product Name","Product Code","Batch/Lot","Mfg Date","Expiry Date","Qty Produced","Qty Released","Qty Recalled","Reason","Risk Class","Status","% Actions Complete","Notes"];
-    const rows = state.productRecalls.map(r=>[r.recallNumber, r.productName, r.productCode||'', r.batchLot||'', r.mfgDate||'', r.expiryDate||'', r.qtyProduced??'', r.qtyReleased??'', r.qtyRecalled??'', r.reason||'', r.riskClass||'', r.status, recallCompletionPct(r)+'%', r.notes||'']);
+    const headers = ["Recall Number","Recall Type","Product Name","Product Code","Batch/Lot","Mfg Date","Expiry Date","Qty Produced","Qty Warehouse","Qty Customers","Qty Destroyed","Mass Balance Variance","Reason","Risk Class","Status","% Actions Complete","Recall Started","Recall Completed","Duration","Target Hours","Exceeded Target","Root Cause","Linked CAPA","Regulatory Authority","Date Notified","Approved By","Approver Role","Approved At","Notes"];
+    const rows = state.productRecalls.map(r=>{
+      const mb = recallMassBalance(r);
+      return [r.recallNumber, r.recallType||'', r.productName, r.productCode||'', r.batchLot||'', r.mfgDate||'', r.expiryDate||'', r.qtyProduced??'', r.qtyWarehouse??'', r.qtyCustomers??'', r.qtyDestroyed??'', mb.hasAnyPart?mb.variance:'', r.reason||'', r.riskClass||'', r.status, recallCompletionPct(r)+'%', r.recallStartedAt?new Date(r.recallStartedAt).toLocaleString():'', r.recallCompletedAt?new Date(r.recallCompletedAt).toLocaleString():'', formatDuration(recallDurationMs(r)), r.targetHours??'', recallExceededTarget(r)?'Yes':'No', r.rootCause||'', r.linkedCapaRef||'', r.regulatoryAuthority||'', r.regulatoryNotifiedDate||'', (r.approval&&r.approval.approvedBy)||'', (r.approval&&r.approval.approverRole)||'', (r.approval&&r.approval.approvedAt)?new Date(r.approval.approvedAt).toLocaleString():'', r.notes||''];
+    });
     const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
     const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
     const blob = new Blob([csv], {type:"text/csv"});
