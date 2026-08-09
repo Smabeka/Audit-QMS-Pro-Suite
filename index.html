@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -240,7 +240,14 @@ async function initCloudSession(){
   if(!supabaseClient) return;
   try{
     const { data } = await supabaseClient.auth.getSession();
-    if(data && data.session){ currentCloudUser = data.session.user; render(); fetchMyProfile(); }
+    if(data && data.session){
+      currentCloudUser = data.session.user; render();
+      await fetchMyProfile();
+      if(currentProfile && currentProfile.status === "Active"){
+        fetchDocumentsFromCloud();
+        subscribeDocumentsRealtime();
+      }
+    }
     else { render(); } // nothing was in session, but we still need to drop the "Loading…" gate
   }catch(e){ console.error(e); render(); }
 }
@@ -293,6 +300,8 @@ async function cloudSignIn(email, password){
   }
   loginError = "";
   render();
+  fetchDocumentsFromCloud();
+  subscribeDocumentsRealtime();
 }
 async function cloudResetPassword(email){
   if(!supabaseClient) return;
@@ -304,10 +313,12 @@ async function cloudResetPassword(email){
 }
 async function cloudSignOut(){
   if(!supabaseClient) return;
+  unsubscribeDocumentsRealtime();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
   allProfiles = [];
+  state.documents = [];
   render();
 }
 /* Pushes the CURRENT workspace's data to the cloud, one row per (user, workspace).
@@ -344,6 +355,7 @@ async function cloudRestoreNow(){
   persist();
   cloudStatus = "✓ Restored from cloud (backed up " + new Date(data.updated_at).toLocaleString() + ").";
   render();
+  if(cloudReady()) fetchDocumentsFromCloud(); // Documents live in their own shared table now — don't let a personal workspace snapshot override the team's shared copy
 }
 /* Lists which of the device's local workspaces also have a cloud backup, and when. */
 async function cloudListBackups(){
@@ -664,6 +676,55 @@ async function fetchMyProfile(){
   render();
 }
 let usersLoadError = "";
+/* ---------------------------------------------------------------
+   Generic multi-user data sync for GENERIC_MODULES entries.
+   Any module with `cloudSynced: true, supabaseTable: "table_name"`
+   in its GENERIC_MODULES definition gets automatic shared-data sync
+   through this engine — no per-module code needed beyond that flag
+   plus a matching Supabase table (id, workspace_id, created_by,
+   updated_by, fields jsonb, created_at, updated_at).
+   Modules WITHOUT cloudSynced are completely unaffected — they keep
+   working exactly as before, purely local. This lets each module be
+   turned on for sharing one at a time, tested individually.
+--------------------------------------------------------------- */
+let cloudSyncStatus = {}; // { [moduleKey]: "" | "syncing" | "error: ..." }
+async function cloudSyncFetch(cfg){
+  if(!cloudReady() || !cfg.supabaseTable || !currentWorkspaceId) return;
+  cloudSyncStatus[cfg.key] = "syncing"; render();
+  const { data, error } = await supabaseClient.from(cfg.supabaseTable)
+    .select("*").eq("workspace_id", currentWorkspaceId).order("created_at", { ascending:true });
+  if(error){
+    cloudSyncStatus[cfg.key] = "error: " + error.message;
+    render();
+    return;
+  }
+  state[cfg.stateArr] = (data||[]).map(row => ({ id: row.id, ...row.fields }));
+  cloudSyncStatus[cfg.key] = "";
+  persist(); render();
+}
+async function cloudSyncInsert(cfg, record){
+  if(!cloudReady() || !cfg.supabaseTable) return;
+  const { id, ...fields } = record;
+  const { error } = await supabaseClient.from(cfg.supabaseTable).insert({
+    id, workspace_id: currentWorkspaceId,
+    created_by: currentCloudUser.id, updated_by: currentCloudUser.id, fields
+  });
+  if(error){ cloudSyncStatus[cfg.key] = "error: " + error.message; render(); }
+}
+async function cloudSyncUpdate(cfg, record){
+  if(!cloudReady() || !cfg.supabaseTable) return;
+  const { id, ...fields } = record;
+  const { error } = await supabaseClient.from(cfg.supabaseTable).update({
+    fields, updated_by: currentCloudUser.id, updated_at: new Date().toISOString()
+  }).eq("id", id).eq("workspace_id", currentWorkspaceId);
+  if(error){ cloudSyncStatus[cfg.key] = "error: " + error.message; render(); }
+}
+async function cloudSyncDelete(cfg, id){
+  if(!cloudReady() || !cfg.supabaseTable) return;
+  const { error } = await supabaseClient.from(cfg.supabaseTable).delete()
+    .eq("id", id).eq("workspace_id", currentWorkspaceId);
+  if(error){ cloudSyncStatus[cfg.key] = "error: " + error.message; render(); }
+}
 async function fetchAllProfiles(){
   if(!supabaseClient) return;
   const { data, error } = await supabaseClient.from("profiles").select("*").order("created_at", { ascending:true });
@@ -671,6 +732,74 @@ async function fetchAllProfiles(){
   allProfiles = data || [];
   usersLoadError = "";
   render();
+}
+
+/* ---------------- Shared Documents (Day 1 of the multi-user migration) ----------------
+   state.documents stays the in-memory array every existing render function already
+   reads — that doesn't change. What changes is where it comes FROM (Supabase, not just
+   localStorage) and that every write also pushes to the cloud + a live subscription
+   pulls in everyone else's changes automatically. */
+let documentsSyncError = "";
+let documentsRealtimeChannel = null;
+
+function docRowToLocal(row){
+  return {
+    id: row.id, title: row.title, docNumber: row.doc_number, category: row.category,
+    version: row.version, status: row.status, owner: row.owner,
+    issueDate: row.issue_date, reviewDate: row.review_date,
+    reviewedBy: row.reviewed_by, reviewedDate: row.reviewed_date,
+    approvedBy: row.approved_by, approvedDate: row.approved_date,
+    notes: row.notes, history: row.history||[], acknowledgments: row.acknowledgments||[]
+  };
+}
+function docLocalToRow(d){
+  return {
+    id: d.id, title: d.title, doc_number: d.docNumber, category: d.category,
+    version: d.version, status: d.status, owner: d.owner,
+    issue_date: d.issueDate||null, review_date: d.reviewDate||null,
+    reviewed_by: d.reviewedBy||null, reviewed_date: d.reviewedDate||null,
+    approved_by: d.approvedBy||null, approved_date: d.approvedDate||null,
+    notes: d.notes, history: d.history||[], acknowledgments: d.acknowledgments||[],
+    updated_at: new Date().toISOString()
+  };
+}
+async function fetchDocumentsFromCloud(){
+  if(!cloudReady()) return;
+  const { data, error } = await supabaseClient.from("documents").select("*").order("created_at", { ascending:false });
+  if(error){ documentsSyncError = error.message; render(); return; }
+  state.documents = (data||[]).map(docRowToLocal);
+  documentsSyncError = "";
+  render();
+}
+async function pushDocumentToCloud(d){
+  if(!cloudReady()) return;
+  const row = docLocalToRow(d);
+  if(!d.createdByPushed){ row.created_by = currentCloudUser.id; d.createdByPushed = true; }
+  const { error } = await supabaseClient.from("documents").upsert(row);
+  if(error){ documentsSyncError = error.message; render(); }
+}
+async function deleteDocumentFromCloud(id){
+  if(!cloudReady()) return;
+  const { error } = await supabaseClient.from("documents").delete().eq("id", id);
+  if(error){ documentsSyncError = error.message; render(); }
+}
+function subscribeDocumentsRealtime(){
+  if(!cloudReady() || documentsRealtimeChannel) return;
+  documentsRealtimeChannel = supabaseClient.channel("documents-changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:"documents" }, (payload) => {
+      if(payload.eventType === "DELETE"){
+        state.documents = state.documents.filter(d=>d.id!==payload.old.id);
+      } else {
+        const updated = docRowToLocal(payload.new);
+        const idx = state.documents.findIndex(d=>d.id===updated.id);
+        if(idx>=0) state.documents[idx] = updated; else state.documents.unshift(updated);
+      }
+      render();
+    })
+    .subscribe();
+}
+function unsubscribeDocumentsRealtime(){
+  if(documentsRealtimeChannel){ supabaseClient.removeChannel(documentsRealtimeChannel); documentsRealtimeChannel = null; }
 }
 function can(perm){
   const u = currentUser();
@@ -1690,15 +1819,20 @@ function renderGenericModule(cfg){
   const arr = cfg.filterFn ? rawArr.filter(cfg.filterFn) : rawArr;
   const sorted = cfg.sortField ? [...arr].sort((a,b)=>String(b[cfg.sortField]||'').localeCompare(String(a[cfg.sortField]||''))) : arr;
   const showTrends = genericShowTrends[cfg.key];
+  const syncOn = cfg.cloudSynced && cloudReady();
+  const syncState = cloudSyncStatus[cfg.key] || "";
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">${cfg.icon} ${cfg.title}</h2>
       <div class="flex-wrap">
+        ${syncOn ? `<button class="btn btn-ghost" data-generic-cloud-refresh="${cfg.key}" style="font-size:12px;">${syncState==="syncing" ? "🔄 Syncing…" : "🔄 Refresh"}</button>` : ''}
         ${cfg.trendsFn ? `<button class="btn btn-ghost" data-generic-trends="${cfg.key}">${showTrends?'📋 Register':'📈 Trends'}</button>` : ''}
         <button class="btn btn-ghost" data-generic-csv="${cfg.key}">⬇ CSV</button>
         <button class="btn btn-primary" data-generic-new="${cfg.key}">+ ${cfg.newLabel||'Add Record'}</button>
       </div>
     </div>
+    ${syncOn ? `<p class="muted-italic" style="font-size:11px;margin:-10px 0 12px;">🔒 Shared with your team via Supabase — everyone with an Active account sees the same records here.</p>` : ''}
+    ${syncOn && syncState.startsWith("error") ? `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-bottom:14px;"><p style="color:var(--rust);font-size:13px;margin:0;">⚠ Cloud sync issue: ${esc(syncState.replace('error: ',''))}</p><p class="muted-italic" style="font-size:11px;margin-top:6px;">Your changes are still saved on this device — tap Refresh once the connection issue is resolved.</p></div>` : ''}
     ${cfg.blurb ? `<p class="muted-italic" style="font-size:12px;margin:-10px 0 14px;">${esc(cfg.blurb)}</p>` : ''}
     ${cfg.extraStats ? cfg.extraStats(arr) : ''}
     ${showTrends && cfg.trendsFn ? cfg.trendsFn(arr) : `
@@ -2114,6 +2248,7 @@ const GENERIC_MODULES = [
   },
   { key:"quality-objectives", stateArr:"qualityObjectives", icon:"🎯", title:"Quality Objectives",
     blurb:"Define, track and report measurable quality / food-safety objectives that feed into Management Review.",
+    cloudSynced:true, supabaseTable:"quality_objectives",
     sortField:"targetDate",
     fields:[
       {id:"objectiveCode", label:"Objective Code", placeholder:"e.g. QO-2026-001"},
@@ -4789,12 +4924,13 @@ function renderDocuments(){
   const overdueCount = all.filter(d=>documentReviewStatus(d)==="Overdue").length;
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">Document Control</h2>
+      <h2 class="serif" style="font-size:18px;margin:0;">Document Control ${cloudReady() ? `<span class="tag tag-green" style="font-size:10px;vertical-align:middle;">🔄 Live — shared with your team</span>` : ''}</h2>
       <div class="flex-wrap">
         <button class="btn btn-ghost" data-action="export-documents-csv">⬇ CSV</button>
         <button class="btn btn-primary" data-action="toggle-new-document">+ New Document</button>
       </div>
     </div>
+    ${documentsSyncError ? `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-bottom:14px;"><p style="color:var(--rust);font-size:13px;margin:0;">⚠ Sync issue: ${esc(documentsSyncError)}</p><p class="muted-italic" style="font-size:11px;margin-top:6px;">Your change is saved locally, but may not have reached the shared cloud copy yet. Check your connection and try again.</p></div>` : ''}
     <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
       ${statCard("📄", "Total Documents", all.length)}
       ${statCard("✅", "Approved", all.filter(d=>d.status==="Approved").length)}
@@ -7618,6 +7754,7 @@ function attachHandlers(){
     }
     state[cfg.stateArr].unshift(record);
     genericShowNew[k] = false; genericOpenId[k] = record.id;
+    if(cfg.cloudSynced) cloudSyncInsert(cfg, record);
     persist(); render();
   });
   document.querySelectorAll('[data-generic-toggle]').forEach(el=>el.onclick=()=>{
@@ -7853,6 +7990,7 @@ function attachHandlers(){
           logActivity(`Risk assessment auto-logged from Critical customer complaint`);
         }
       }
+      if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
       persist(); render();
     };
   });
@@ -7882,6 +8020,7 @@ function attachHandlers(){
           logActivity(`CAPA auto-generated: communication "${rec.topic}" marked not effective`);
         }
       }
+      if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
       persist(); render();
     };
   });
@@ -7891,6 +8030,7 @@ function attachHandlers(){
     if(!cfg) return;
     state[cfg.stateArr] = state[cfg.stateArr].filter(x=>x.id!==id);
     genericOpenId[k] = null;
+    if(cfg.cloudSynced) cloudSyncDelete(cfg, id);
     persist(); render();
   });
   document.querySelectorAll('[data-generic-csv]').forEach(el=>el.onclick=()=>{
@@ -8551,6 +8691,7 @@ function attachHandlers(){
     state.documents.unshift(doc);
     logActivity(`Document ${doc.docNumber||title} created by ${currentUser()?.fullName||'Unknown'}`);
     openDocumentId = doc.id; showNewDocument=false; persist(); render();
+    pushDocumentToCloud(doc);
   };
   document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleDocument; openDocumentId = openDocumentId===id ? null : id; render();
@@ -8588,17 +8729,22 @@ function attachHandlers(){
           logActivity(`Document ${d.docNumber||d.title} moved ${prev} → ${next}`, { prevStatus:prev, newStatus:next });
         }
         d.status = next;
-        persist(); render(); return;
+        persist(); render();
+        pushDocumentToCloud(d);
+        return;
       }
       d[field] = el.value;
       if(field==="version") logActivity(`Document ${d.docNumber||d.title} revised to v${el.value}`);
       persist(); render();
+      pushDocumentToCloud(d);
     };
   });
   document.querySelectorAll('[data-action="delete-document"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this document record? This cannot be undone.")) return;
+    const deletedId = el.dataset.document;
     state.documents = state.documents.filter(d=>d.id!==el.dataset.document);
     openDocumentId = null; persist(); render();
+    deleteDocumentFromCloud(deletedId);
   });
   document.querySelectorAll('[data-action="add-doc-ack"]').forEach(el=>el.onclick=()=>{
     const d = state.documents.find(x=>x.id===el.dataset.document);
@@ -8608,12 +8754,14 @@ function attachHandlers(){
     if(!d.acknowledgments) d.acknowledgments = [];
     d.acknowledgments.push({ name, date: today() });
     persist(); render();
+    pushDocumentToCloud(d);
   });
   document.querySelectorAll('[data-action="remove-doc-ack"]').forEach(el=>el.onclick=()=>{
     const d = state.documents.find(x=>x.id===el.dataset.document);
     const idx = parseInt(el.dataset.ack, 10);
     if(d.acknowledgments) d.acknowledgments.splice(idx, 1);
     persist(); render();
+    pushDocumentToCloud(d);
   });
   const documentsCsvBtn = document.querySelector('[data-action="export-documents-csv"]');
   if(documentsCsvBtn) documentsCsvBtn.onclick=()=>{
