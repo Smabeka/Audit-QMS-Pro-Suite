@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -581,7 +581,7 @@ const docStatusTone = {Draft:"amber","Under Review":"navy",Approved:"green",Publ
    or local storage could bypass it. For real security (multi-tenant, audit-
    grade), move auth + permission checks to Supabase Auth + Row Level Security. */
 const ROLES = [
-  { id:1, name:"Admin", icon:"👑" },
+  { id:1, name:"Admin", icon:"🛡️" },
   { id:2, name:"Quality Manager", icon:"🧑‍🔬" },
   { id:3, name:"Auditor", icon:"🔍" },
   { id:4, name:"Department Manager", icon:"🏭" },
@@ -2833,7 +2833,7 @@ const NAV_TREE = [
       { id:"nav-trace-recall-reports", label:"Recall Reports", isActive(){ return tab==="recall-reports"; }, action(){ tab="recall-reports"; } }
     ]
   },
-  { id:"nav-sensory", icon:"👅", label:"Sensory Evaluation", children: SENSORY_CATEGORIES.map((c,i)=>({
+  { id:"nav-sensory", icon:"⭐", label:"Sensory Evaluation", children: SENSORY_CATEGORIES.map((c,i)=>({
       id:"nav-sensory-"+i, label:c,
       isActive(){ return tab==="sensory" && sensorySubTab===c; },
       action(){ tab="sensory"; sensorySubTab=c; }
@@ -7654,11 +7654,14 @@ function attachHandlers(){
         const prev = rec.status;
         const next = el.value;
         if(next==="Complete" && prev!==next){
-          const who = prompt("Enter full name to APPROVE and mark this design project Complete (design transfer sign-off):");
-          if(!who || !who.trim()){ el.value = prev; return; }
-          rec.approvedBy = who.trim();
+          if(!can("approveDocuments")){
+            alert(`Your role (${currentUser()?.role||'—'}) does not have permission to complete/sign off a Design & Development project. This requires a Quality Manager, Approver or Admin.`);
+            el.value = prev; return;
+          }
+          const who = currentUser()?.fullName;
+          rec.approvedBy = who;
           rec.approvedAt = today();
-          logActivity(`Design & Development project completed: ${rec.projectTitle||rec.projectCode||rec.id} by ${rec.approvedBy}`);
+          logActivity(`Design & Development project completed: ${rec.projectTitle||rec.projectCode||rec.id} by ${rec.approvedBy}`, { prevStatus:prev, newStatus:next });
         }
         rec.status = next;
         persist(); render(); return;
@@ -7667,26 +7670,25 @@ function attachHandlers(){
         const prev = rec.status;
         const next = el.value;
         if((next==="Approved" || next==="Completed" || next==="Closed") && prev!==next){
-          const who = prompt(
-            next==="Approved" ? "Enter full name to APPROVE this protocol:" :
-            next==="Completed" ? "Enter full name to record COMPLETION / execution sign-off:" :
-            "Enter full name to CLOSE this validation record:"
-          );
-          if(!who || !who.trim()){ el.value = prev; return; }
+          if(!can("approveValidation")){
+            alert(`Your role (${currentUser()?.role||'—'}) does not have permission to approve, complete or close a validation record. This requires a Quality Manager, Approver or Admin.`);
+            el.value = prev; return;
+          }
+          const who = currentUser()?.fullName;
           if(next==="Approved"){
-            rec.approvedBy = who.trim();
+            rec.approvedBy = who;
             rec.approvedAt = today();
-            logActivity(`Validation protocol approved: ${rec.title||rec.protocolNumber||rec.id} by ${rec.approvedBy}`);
+            logActivity(`Validation protocol approved: ${rec.title||rec.protocolNumber||rec.id} by ${rec.approvedBy}`, { prevStatus:prev, newStatus:next });
           }
           if(next==="Completed"){
             if(!rec.reviewedBy){
-              rec.reviewedBy = who.trim();
+              rec.reviewedBy = who;
               rec.reviewedAt = today();
             }
-            logActivity(`Validation protocol completed: ${rec.title||rec.protocolNumber||rec.id}`);
+            logActivity(`Validation protocol completed: ${rec.title||rec.protocolNumber||rec.id} by ${who}`, { prevStatus:prev, newStatus:next });
           }
           if(next==="Closed"){
-            logActivity(`Validation record closed: ${rec.title||rec.protocolNumber||rec.id} by ${who.trim()}`);
+            logActivity(`Validation record closed: ${rec.title||rec.protocolNumber||rec.id} by ${who}`, { prevStatus:prev, newStatus:next });
           }
         }
         rec.status = next;
@@ -7701,29 +7703,24 @@ function attachHandlers(){
             alert(`Your role (${currentUser()?.role||'—'}) does not have permission to approve, verify or close a Change Control record.`);
             el.value = prev; return;
           }
-          const who = prompt(
-            next==="Approved" ? "Enter full name to APPROVE this change:" :
-            next==="Verified" ? "Enter full name to VERIFY effectiveness:" :
-            "Enter full name to CLOSE this change:"
-          );
-          if(!who || !who.trim()){ el.value = prev; return; }
+          const who = currentUser()?.fullName;
           if(next==="Approved"){
-            rec.approvedBy = who.trim();
+            rec.approvedBy = who;
             rec.approvedAt = today();
             logActivity(`Change Control approved: ${rec.title||rec.changeNumber||rec.id} by ${rec.approvedBy}`, { prevStatus:prev, newStatus:next });
           }
           if(next==="Verified"){
-            rec.verifiedBy = who.trim();
+            rec.verifiedBy = who;
             rec.verifiedAt = today();
             if(!rec.effectivenessResult || rec.effectivenessResult==="Pending") rec.effectivenessResult = "Effective";
             logActivity(`Change Control verified: ${rec.title||rec.changeNumber||rec.id} by ${rec.verifiedBy}`, { prevStatus:prev, newStatus:next });
           }
           if(next==="Closed"){
             if(!rec.verifiedBy){
-              rec.verifiedBy = who.trim();
+              rec.verifiedBy = who;
               rec.verifiedAt = today();
             }
-            logActivity(`Change Control closed: ${rec.title||rec.changeNumber||rec.id}`, { prevStatus:prev, newStatus:next });
+            logActivity(`Change Control closed: ${rec.title||rec.changeNumber||rec.id} by ${who}`, { prevStatus:prev, newStatus:next });
           }
         }
         if(next==="Implemented" && prev!=="Implemented" && (rec.qualityImpact==="High" || rec.safetyImpact==="High" || rec.regulatoryImpact==="High")){
@@ -7734,9 +7731,11 @@ function attachHandlers(){
       }
       if(k==="supplier-scar" && field==="status"){
         if(el.value==="Closed" && rec.status!=="Closed"){
-          const approver = (rec.qaApprovedBy||"").trim() || prompt("QA approval required to close this SCAR.\n\nEnter QA approver name:");
-          if(!approver || !approver.trim()){ el.value = rec.status; return; } // cancelled — revert dropdown, do not close
-          rec.qaApprovedBy = approver.trim();
+          if(!can("manageCapa") && !can("closeOthersCapa")){
+            alert(`Your role (${currentUser()?.role||'—'}) does not have permission to close a Supplier CAR. This requires a Quality Manager, Approver or Admin.`);
+            el.value = rec.status; return;
+          }
+          rec.qaApprovedBy = currentUser()?.fullName;
           rec.closureDate = rec.closureDate || today();
           rec.status = "Closed";
           logActivity(`SCAR for ${rec.supplierName||'supplier'} closed — QA approved by ${rec.qaApprovedBy}`);
@@ -8211,9 +8210,7 @@ function attachHandlers(){
         alert(`Your role (${currentUser()?.role||'—'}) can create and action CAPA items, but closing one requires a Quality Manager, Approver or Admin.`);
         return;
       }
-      const verifier = prompt("Verification required to close this finding.\n\nEnter QA verifier name:");
-      if(!verifier || !verifier.trim()) return; // cancelled — do not close
-      f.verifiedBy = verifier.trim();
+      f.verifiedBy = currentUser()?.fullName;
       f.verifiedAt = new Date().toISOString();
       logHistory(a, `Finding "${f.desc.slice(0,50)}${f.desc.length>50?'…':''}" verified & closed by ${f.verifiedBy}`);
       logActivity(`CAPA closed: ${f.desc.slice(0,50)}${f.desc.length>50?'…':''}`, { prevStatus:f.status, newStatus:"Closed" });
@@ -8574,18 +8571,17 @@ function attachHandlers(){
             alert(`Your role (${currentUser()?.role||'—'}) does not have permission to ${next==="Approved"?"review/approve":"release/publish"} documents. This requires a Quality Manager, Approver or Admin.`);
             el.value = prev; return;
           }
-          const who = prompt(next==="Approved" ? "Enter reviewer/approver name to move this document to Approved:" : "Enter approver name to RELEASE (Publish) this document:");
-          if(!who || !who.trim()){ el.value = prev; return; }
+          const who = currentUser()?.fullName;
           if(next==="Approved"){
-            d.reviewedBy = who.trim();
+            d.reviewedBy = who;
             d.reviewedDate = today();
           } else if(next==="Published"){
-            d.approvedBy = who.trim();
+            d.approvedBy = who;
             d.approvedDate = today();
           }
           if(!d.history) d.history = [];
-          d.history.push({ stage: next, by: who.trim(), date: today() });
-          logActivity(`Document ${d.docNumber||d.title} moved ${prev} → ${next} by ${who.trim()}`, { prevStatus:prev, newStatus:next });
+          d.history.push({ stage: next, by: who, date: today() });
+          logActivity(`Document ${d.docNumber||d.title} moved ${prev} → ${next} by ${who}`, { prevStatus:prev, newStatus:next });
         } else if(next!==prev){
           if(!d.history) d.history = [];
           d.history.push({ stage: next, by: currentUser()?.fullName||"Unknown", date: today() });
