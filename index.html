@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -2060,6 +2060,7 @@ function renderGenericModule(cfg){
 const GENERIC_MODULES = [
   { key:"people-competency", stateArr:"competencyRecords", icon:"🎓", title:"Competency Matrix",
     blurb:"Track each employee's proficiency across the skills and competencies required for their role.",
+    cloudSynced:true, supabaseTable:"competency_records",
     sortField:"assessedDate",
     fields:[
       {id:"employee", label:"Employee Name", required:true},
@@ -2074,6 +2075,7 @@ const GENERIC_MODULES = [
   },
   { key:"people-medsurv", stateArr:"medicalSurveillanceRecords", icon:"🩺", title:"Medical Surveillance",
     blurb:"Log occupational health exams and track fitness-for-duty outcomes.",
+    cloudSynced:true, supabaseTable:"medical_surveillance_records",
     sortField:"examDate",
     fields:[
       {id:"employee", label:"Employee Name", required:true},
@@ -2088,6 +2090,7 @@ const GENERIC_MODULES = [
   },
   { key:"people-medexpiry", stateArr:"medicalCertRecords", icon:"📅", title:"Medical Certificate Expiry",
     blurb:"Track expiry dates for employee medical certificates so renewals never get missed.",
+    cloudSynced:true, supabaseTable:"medical_cert_records",
     sortField:"expiryDate",
     fields:[
       {id:"employee", label:"Employee Name", required:true},
@@ -2107,6 +2110,7 @@ const GENERIC_MODULES = [
   },
   { key:"people-foodhandler", stateArr:"foodHandlerDeclarations", icon:"🧻", title:"Food Handler Declarations",
     blurb:"Daily fitness-for-duty declarations for food handlers, covering symptoms and illness reporting.",
+    cloudSynced:true, supabaseTable:"food_handler_declarations",
     sortField:"date",
     fields:[
       {id:"employee", label:"Employee Name", required:true},
@@ -2120,6 +2124,7 @@ const GENERIC_MODULES = [
   },
   { key:"people-ppe", stateArr:"ppeIssueLogs", icon:"🥽", title:"PPE Compliance",
     blurb:"Log PPE issue and condition per employee — ties into the PPE Compliance % KPI Metric.",
+    cloudSynced:true, supabaseTable:"ppe_issue_logs",
     sortField:"issueDate",
     fields:[
       {id:"employee", label:"Employee Name", required:true},
@@ -2133,6 +2138,7 @@ const GENERIC_MODULES = [
   },
   { key:"pest-control", stateArr:"pestControlLogs", icon:"🐀", title:"Pest Control",
     blurb:"Log pest control inspections, findings and corrective actions from your contracted service provider.",
+    cloudSynced:true, supabaseTable:"pest_control_logs",
     sortField:"date",
     fields:[
       {id:"date", label:"Inspection Date", type:"date", default:"today"},
@@ -2148,6 +2154,7 @@ const GENERIC_MODULES = [
   },
   { key:"fs-verification", stateArr:"verificationLogs", icon:"✔", title:"Verification",
     blurb:"Log verification activities that confirm your food safety controls are working as intended.",
+    cloudSynced:true, supabaseTable:"verification_logs",
     sortField:"date",
     fields:[
       {id:"date", label:"Date", type:"date", default:"today"},
@@ -2162,6 +2169,7 @@ const GENERIC_MODULES = [
   },
   { key:"recall-effectiveness", stateArr:"recallDrills", icon:"🎯", title:"Recall Effectiveness",
     blurb:"Log mock recall drills to measure how quickly and completely product could be traced and recovered.",
+    cloudSynced:true, supabaseTable:"recall_drills",
     sortField:"date",
     fields:[
       {id:"date", label:"Drill Date", type:"date", default:"today"},
@@ -2189,6 +2197,7 @@ const GENERIC_MODULES = [
   },
   { key:"lab-microbiology", stateArr:"labResults", icon:"🧫", title:"Microbiology",
     blurb:"Microbiological test results from internal or external labs. Fill in the certificate fields below to generate a printable Certificate of Analysis.",
+    cloudSynced:true, supabaseTable:"lab_results",
     sortField:"date",
     filterFn: r=>r.testType==="Microbiological",
     presetValues:{ testType:"Microbiological" },
@@ -2221,6 +2230,7 @@ const GENERIC_MODULES = [
   },
   { key:"lab-chemistry", stateArr:"labResults", icon:"⚗️", title:"Chemistry / Analytical",
     blurb:"Chemical and physical/analytical test results from internal or external labs.",
+    cloudSynced:true, supabaseTable:"lab_results",
     sortField:"date",
     filterFn: r=>r.testType!=="Microbiological",
     fields:[
@@ -2241,6 +2251,7 @@ const GENERIC_MODULES = [
   },
   { key:"emp", stateArr:"empSwabs", icon:"🧼", title:"Environmental Monitoring (EMP)",
     blurb:"Log environmental and personnel hygiene swab results.",
+    cloudSynced:true, supabaseTable:"emp_swabs",
     sortField:"date",
     fields:[
       {id:"date", label:"Swab Date", type:"date", default:"today"},
@@ -2261,6 +2272,7 @@ const GENERIC_MODULES = [
   },
   { key:"proficiency-testing", stateArr:"proficiencyTests", icon:"🧪", title:"Proficiency Testing",
     blurb:"Track your lab's participation in external proficiency testing / PT schemes.",
+    cloudSynced:true, supabaseTable:"proficiency_tests",
     sortField:"date",
     fields:[
       {id:"date", label:"Round Date", type:"date", default:"today"},
@@ -2278,6 +2290,7 @@ const GENERIC_MODULES = [
   },
   { key:"lab-sample-register", stateArr:"sampleRegister", icon:"🧾", title:"Sample Register",
     blurb:"Central log of samples collected and submitted for lab testing.",
+    cloudSynced:true, supabaseTable:"sample_register",
     sortField:"dateCollected",
     fields:[
       {id:"sampleId", label:"Sample ID", required:true},
@@ -2296,6 +2309,7 @@ const GENERIC_MODULES = [
   },
   { key:"lab-coa", stateArr:"coaRecords", icon:"📜", title:"COA Management",
     blurb:"Track Certificates of Analysis issued for products and batches.",
+    cloudSynced:true, supabaseTable:"coa_records",
     sortField:"dateIssued",
     fields:[
       {id:"coaNumber", label:"COA Number", required:true},
@@ -2312,6 +2326,7 @@ const GENERIC_MODULES = [
   },
   { key:"lab-media-prep", stateArr:"mediaPrepRecords", icon:"🧴", title:"Media Preparation",
     blurb:"Log culture media batches prepared for microbiological testing.",
+    cloudSynced:true, supabaseTable:"media_prep_records",
     sortField:"datePrepared",
     fields:[
       {id:"mediaType", label:"Media Type", required:true, placeholder:"e.g. Plate Count Agar"},
@@ -2328,6 +2343,7 @@ const GENERIC_MODULES = [
   },
   { key:"lab-incubation", stateArr:"incubationRecords", icon:"🌡", title:"Incubation Tracking",
     blurb:"Track samples through incubation, from plating to reading.",
+    cloudSynced:true, supabaseTable:"incubation_records",
     sortField:"incubationStart",
     fields:[
       {id:"sampleId", label:"Sample ID", required:true},
@@ -2344,6 +2360,7 @@ const GENERIC_MODULES = [
   },
   { key:"audit-planning", stateArr:"auditPlans", icon:"🗓", title:"Audit Planning",
     blurb:"Plan the audit in full before it goes live in the Audit Register — objective, criteria, clauses, team and logistics.",
+    cloudSynced:true, supabaseTable:"audit_plans",
     sortField:"plannedDate",
     fields:[
       {id:"auditObjective", label:"Audit Objective", full:true, placeholder:"e.g. Verify ongoing compliance with FSSC 22000 requirements"},
@@ -2367,6 +2384,7 @@ const GENERIC_MODULES = [
   },
   { key:"calibration", stateArr:"calibrationRecords", icon:"📏", title:"Calibration & Equipment",
     blurb:"Register of equipment requiring calibration, with due dates and results.",
+    cloudSynced:true, supabaseTable:"calibration_records",
     sortField:"nextDueDate",
     fields:[
       {id:"equipmentId", label:"Equipment ID", required:true, placeholder:"e.g. TH-014"},
@@ -2390,6 +2408,7 @@ const GENERIC_MODULES = [
   },
   { key:"supplier-scar", stateArr:"supplierScars", icon:"📝", title:"Supplier Corrective Actions (SCAR)",
     blurb:"Log corrective action requests raised against suppliers for quality issues.",
+    cloudSynced:true, supabaseTable:"supplier_scars",
     sortField:"dateRaised",
     fields:[
       {id:"supplierName", label:"Supplier", required:true, type:"select", optionsFn:supplierOptionsList},
@@ -2406,6 +2425,7 @@ const GENERIC_MODULES = [
   },
   { key:"customer-complaints", stateArr:"complaintRecords", icon:"📮", title:"Customer & Consumer Complaints",
     blurb:"Full complaint case register — separate from sensory quality scoring, this tracks the complaint itself through to closure.",
+    cloudSynced:true, supabaseTable:"complaint_records",
     sortField:"dateReceived",
     fields:[
       {id:"dateReceived", label:"Date Received", type:"date", default:"today"},
@@ -2492,6 +2512,7 @@ const GENERIC_MODULES = [
   },
   { key:"interested-parties", stateArr:"interestedParties", icon:"🤝", title:"Interested Parties",
     blurb:"Document the needs and expectations of interested parties (ISO 9001 4.2 / ISO 22000 4.2).",
+    cloudSynced:true, supabaseTable:"interested_parties",
     sortField:"name",
     fields:[
       {id:"name", label:"Party Name", required:true},
@@ -2555,6 +2576,7 @@ const GENERIC_MODULES = [
   },
   { key:"validation-qualification", stateArr:"validationRecords", icon:"🧪", title:"Validation & Qualification",
     blurb:"IQ / OQ / PQ, process, cleaning, method and computer system validation protocols with approval sign-off and revalidation tracking.",
+    cloudSynced:true, supabaseTable:"validation_records",
     sortField:"executionDate",
     fields:[
       {id:"protocolNumber", label:"Protocol Number", placeholder:"e.g. VAL-2026-001"},
@@ -2596,6 +2618,7 @@ const GENERIC_MODULES = [
   },
   { key:"communication-log", stateArr:"communicationLogs", icon:"📣", title:"Communication Log & Effectiveness",
     blurb:"Records what was communicated, to whom, when, how, and whether it actually landed (ISO 9001 §7.4 / ISO 22000 §7.4 / FSSC 22000 / OHS & ISO 45001 communication requirements).",
+    cloudSynced:true, supabaseTable:"communication_logs",
     sortField:"date",
     fields:[
       {id:"communicationId", label:"Communication ID", placeholder:"auto-generated, e.g. COM-2026-001"},
@@ -2628,6 +2651,7 @@ const GENERIC_MODULES = [
   },
   { key:"design-development", stateArr:"designProjects", icon:"📐", title:"Design & Development File",
     blurb:"Design History File (DHF)-style record: input → output → review → verification → validation → transfer (ISO 13485 §7.3).",
+    cloudSynced:true, supabaseTable:"design_projects",
     sortField:"startDate",
     fields:[
       {id:"projectCode", label:"Project Code", placeholder:"e.g. DHF-2026-001"},
@@ -2668,6 +2692,7 @@ const GENERIC_MODULES = [
   },
   { key:"regulatory-reports", stateArr:"regulatoryReports", icon:"🚨", title:"Regulatory Reporting",
     blurb:"Adverse event, vigilance and competent-authority notification forms (ISO 13485 §8.2.3 / post-market surveillance).",
+    cloudSynced:true, supabaseTable:"regulatory_reports",
     sortField:"dateOfEvent",
     fields:[
       {id:"reportNumber", label:"Report Number", placeholder:"e.g. REG-2026-001"},
@@ -2701,6 +2726,7 @@ const GENERIC_MODULES = [
   },
   { key:"emergency-preparedness", stateArr:"emergencyPlans", icon:"🆘", title:"Emergency Preparedness & Response",
     blurb:"Scenarios, response plans, drills and lessons learned so the business can demonstrate readiness (ISO 22000 §8.4).",
+    cloudSynced:true, supabaseTable:"emergency_plans",
     sortField:"nextReviewDate",
     fields:[
       {id:"scenarioName", label:"Scenario Name", required:true},
@@ -8018,7 +8044,9 @@ function attachHandlers(){
           logActivity(`Design & Development project completed: ${rec.projectTitle||rec.projectCode||rec.id} by ${rec.approvedBy}`, { prevStatus:prev, newStatus:next });
         }
         rec.status = next;
-        persist(); render(); return;
+        persist(); render();
+        if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+        return;
       }
       if(k==="validation-qualification" && field==="status"){
         const prev = rec.status;
@@ -8046,7 +8074,9 @@ function attachHandlers(){
           }
         }
         rec.status = next;
-        persist(); render(); return;
+        persist(); render();
+        if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+        return;
       }
       if(k==="change-control" && field==="status"){
         const prev = rec.status;
@@ -8081,7 +8111,9 @@ function attachHandlers(){
           flagFsmsReview(`Change Control "${rec.title||rec.changeNumber}" with a High quality/food-safety/regulatory impact was implemented on ${today()} — confirm the FSMS checklist still reflects current practice.`);
         }
         rec.status = next;
-        persist(); render(); return;
+        persist(); render();
+        if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+        return;
       }
       if(k==="supplier-scar" && field==="status"){
         if(el.value==="Closed" && rec.status!=="Closed"){
@@ -8101,7 +8133,9 @@ function attachHandlers(){
               logActivity(`Supplier ${supplier.name} restored to Approved — all SCARs closed`);
             }
           }
-          persist(); render(); return;
+          persist(); render();
+          if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+          return;
         } else {
           rec.status = el.value;
           const supplier = state.suppliers.find(s=>s.name===rec.supplierName);
@@ -8110,7 +8144,9 @@ function attachHandlers(){
             logActivity(`Supplier ${supplier.name} moved to Conditional — open SCAR raised`);
           }
         }
-        persist(); render(); return;
+        persist(); render();
+        if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+        return;
       }
       rec[field] = el.value;
       if(k==="lab-sample-register" && field==="result" && el.value==="Out of Specification" && !rec.linkedFindingId){
