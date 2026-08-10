@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -248,6 +248,9 @@ async function initCloudSession(){
         subscribeDocumentsRealtime();
         fetchCapaFindingsFromCloud();
         subscribeCapaRealtime();
+        fetchRiskFromCloud();
+        subscribeRiskRealtime();
+        syncAllGenericCloudModules();
       }
     }
     else { render(); } // nothing was in session, but we still need to drop the "Loading…" gate
@@ -306,6 +309,9 @@ async function cloudSignIn(email, password){
   subscribeDocumentsRealtime();
   fetchCapaFindingsFromCloud();
   subscribeCapaRealtime();
+  fetchRiskFromCloud();
+  subscribeRiskRealtime();
+  syncAllGenericCloudModules();
 }
 async function cloudResetPassword(email){
   if(!supabaseClient) return;
@@ -319,6 +325,8 @@ async function cloudSignOut(){
   if(!supabaseClient) return;
   unsubscribeDocumentsRealtime();
   unsubscribeCapaRealtime();
+  unsubscribeRiskRealtime();
+  unsyncAllGenericCloudModules();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -361,7 +369,7 @@ async function cloudRestoreNow(){
   persist();
   cloudStatus = "✓ Restored from cloud (backed up " + new Date(data.updated_at).toLocaleString() + ").";
   render();
-  if(cloudReady()){ fetchDocumentsFromCloud(); fetchCapaFindingsFromCloud(); } // Documents and CAPA live in their own shared tables now — don't let a personal workspace snapshot override the team's shared copy
+  if(cloudReady()){ fetchDocumentsFromCloud(); fetchCapaFindingsFromCloud(); fetchRiskFromCloud(); syncAllGenericCloudModules(); } // Documents, CAPA, Risk and every cloudSynced module live in their own shared tables now — don't let a personal workspace snapshot override the team's shared copy
 }
 /* Lists which of the device's local workspaces also have a cloud backup, and when. */
 async function cloudListBackups(){
@@ -695,10 +703,10 @@ let usersLoadError = "";
 --------------------------------------------------------------- */
 let cloudSyncStatus = {}; // { [moduleKey]: "" | "syncing" | "error: ..." }
 async function cloudSyncFetch(cfg){
-  if(!cloudReady() || !cfg.supabaseTable || !currentWorkspaceId) return;
+  if(!cloudReady() || !cfg.supabaseTable) return;
   cloudSyncStatus[cfg.key] = "syncing"; render();
   const { data, error } = await supabaseClient.from(cfg.supabaseTable)
-    .select("*").eq("workspace_id", currentWorkspaceId).order("created_at", { ascending:true });
+    .select("*").order("created_at", { ascending:true });
   if(error){
     cloudSyncStatus[cfg.key] = "error: " + error.message;
     render();
@@ -712,8 +720,7 @@ async function cloudSyncInsert(cfg, record){
   if(!cloudReady() || !cfg.supabaseTable) return;
   const { id, ...fields } = record;
   const { error } = await supabaseClient.from(cfg.supabaseTable).insert({
-    id, workspace_id: currentWorkspaceId,
-    created_by: currentCloudUser.id, updated_by: currentCloudUser.id, fields
+    id, created_by: currentCloudUser.id, updated_by: currentCloudUser.id, fields
   });
   if(error){ cloudSyncStatus[cfg.key] = "error: " + error.message; render(); }
 }
@@ -722,14 +729,42 @@ async function cloudSyncUpdate(cfg, record){
   const { id, ...fields } = record;
   const { error } = await supabaseClient.from(cfg.supabaseTable).update({
     fields, updated_by: currentCloudUser.id, updated_at: new Date().toISOString()
-  }).eq("id", id).eq("workspace_id", currentWorkspaceId);
+  }).eq("id", id);
   if(error){ cloudSyncStatus[cfg.key] = "error: " + error.message; render(); }
 }
 async function cloudSyncDelete(cfg, id){
   if(!cloudReady() || !cfg.supabaseTable) return;
-  const { error } = await supabaseClient.from(cfg.supabaseTable).delete()
-    .eq("id", id).eq("workspace_id", currentWorkspaceId);
+  const { error } = await supabaseClient.from(cfg.supabaseTable).delete().eq("id", id);
   if(error){ cloudSyncStatus[cfg.key] = "error: " + error.message; render(); }
+}
+let genericRealtimeChannels = {}; // { [moduleKey]: channel }
+function subscribeGenericModuleRealtime(cfg){
+  if(!cloudReady() || !cfg.supabaseTable || genericRealtimeChannels[cfg.key]) return;
+  genericRealtimeChannels[cfg.key] = supabaseClient.channel(cfg.supabaseTable + "-changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:cfg.supabaseTable }, (payload) => {
+      const arr = state[cfg.stateArr] || (state[cfg.stateArr] = []);
+      if(payload.eventType === "DELETE"){
+        state[cfg.stateArr] = arr.filter(r=>r.id!==payload.old.id);
+      } else {
+        const updated = { id: payload.new.id, ...payload.new.fields };
+        const idx = arr.findIndex(r=>r.id===updated.id);
+        if(idx>=0) arr[idx] = updated; else arr.unshift(updated);
+      }
+      render();
+    })
+    .subscribe();
+}
+function unsubscribeGenericModuleRealtime(cfg){
+  if(genericRealtimeChannels[cfg.key]){ supabaseClient.removeChannel(genericRealtimeChannels[cfg.key]); delete genericRealtimeChannels[cfg.key]; }
+}
+function syncAllGenericCloudModules(){
+  GENERIC_MODULES.filter(m=>m.cloudSynced).forEach(cfg=>{
+    cloudSyncFetch(cfg);
+    subscribeGenericModuleRealtime(cfg);
+  });
+}
+function unsyncAllGenericCloudModules(){
+  GENERIC_MODULES.filter(m=>m.cloudSynced).forEach(cfg=>unsubscribeGenericModuleRealtime(cfg));
 }
 async function fetchAllProfiles(){
   if(!supabaseClient) return;
@@ -899,6 +934,84 @@ function subscribeCapaRealtime(){
 }
 function unsubscribeCapaRealtime(){
   if(capaRealtimeChannel){ supabaseClient.removeChannel(capaRealtimeChannel); capaRealtimeChannel = null; }
+}
+
+/* ---------------- Shared Risk Management (Day 3) ----------------
+   Same pattern as Documents/CAPA: state.riskAssessments stays exactly
+   as every render function already expects it. Evidence (photos/PDFs
+   as base64) stays local-only, same reasoning as CAPA photos — those
+   don't belong in a constantly-synced row and need real file storage
+   as a separate future piece of work. */
+let riskSyncError = "";
+let riskRealtimeChannel = null;
+const RISK_CORE_FIELDS = new Set([
+  "id","refNo","date","category","area","hazard","riskTo","controls","rootCause",
+  "likelihood","severity","riskScore","riskLevel","action","dueDate","reviewDate",
+  "completedDate","status","residualLikelihood","residualSeverity","residualRiskScore","residualRiskLevel"
+]);
+function riskRowToLocal(row){
+  return {
+    id: row.id, refNo: row.ref_no, date: row.date, category: row.category, area: row.area,
+    hazard: row.hazard, riskTo: row.risk_to, controls: row.controls, rootCause: row.root_cause,
+    likelihood: row.likelihood, severity: row.severity, riskScore: row.risk_score, riskLevel: row.risk_level,
+    action: row.action, dueDate: row.due_date, reviewDate: row.review_date, completedDate: row.completed_date,
+    status: row.status, residualLikelihood: row.residual_likelihood, residualSeverity: row.residual_severity,
+    residualRiskScore: row.residual_risk_score, residualRiskLevel: row.residual_risk_level,
+    evidence: [], // local-only, never synced — see note above
+    ...(row.meta||{})
+  };
+}
+function riskLocalToRow(r){
+  const meta = {};
+  Object.keys(r).forEach(k=>{ if(!RISK_CORE_FIELDS.has(k) && k!=="evidence") meta[k] = r[k]; });
+  return {
+    id: r.id, ref_no: r.refNo||null, date: r.date||null, category: r.category||null, area: r.area||null,
+    hazard: r.hazard||null, risk_to: r.riskTo||null, controls: r.controls||null, root_cause: r.rootCause||null,
+    likelihood: r.likelihood||null, severity: r.severity||null, risk_score: r.riskScore||null, risk_level: r.riskLevel||null,
+    action: r.action||null, due_date: r.dueDate||null, review_date: r.reviewDate||null, completed_date: r.completedDate||null,
+    status: r.status||"Open", residual_likelihood: r.residualLikelihood||null, residual_severity: r.residualSeverity||null,
+    residual_risk_score: r.residualRiskScore||null, residual_risk_level: r.residualRiskLevel||null,
+    meta, updated_at: new Date().toISOString()
+  };
+}
+async function fetchRiskFromCloud(){
+  if(!cloudReady()) return;
+  const { data, error } = await supabaseClient.from("risk_assessments").select("*").order("created_at", { ascending:false });
+  if(error){ riskSyncError = error.message; render(); return; }
+  state.riskAssessments = (data||[]).map(riskRowToLocal);
+  riskSyncError = "";
+  render();
+}
+async function pushRiskToCloud(r){
+  if(!cloudReady()) return;
+  const row = riskLocalToRow(r);
+  if(!r.createdByPushed){ row.created_by = currentCloudUser.id; r.createdByPushed = true; }
+  const { error } = await supabaseClient.from("risk_assessments").upsert(row);
+  if(error){ riskSyncError = error.message; render(); }
+}
+async function deleteRiskFromCloud(id){
+  if(!cloudReady()) return;
+  const { error } = await supabaseClient.from("risk_assessments").delete().eq("id", id);
+  if(error){ riskSyncError = error.message; render(); }
+}
+function subscribeRiskRealtime(){
+  if(!cloudReady() || riskRealtimeChannel) return;
+  riskRealtimeChannel = supabaseClient.channel("risk-assessments-changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:"risk_assessments" }, (payload) => {
+      if(payload.eventType === "DELETE"){
+        state.riskAssessments = state.riskAssessments.filter(r=>r.id!==payload.old.id);
+      } else {
+        const updated = riskRowToLocal(payload.new);
+        const idx = state.riskAssessments.findIndex(r=>r.id===updated.id);
+        if(idx>=0){ updated.evidence = state.riskAssessments[idx].evidence||[]; state.riskAssessments[idx] = updated; }
+        else state.riskAssessments.unshift(updated);
+      }
+      render();
+    })
+    .subscribe();
+}
+function unsubscribeRiskRealtime(){
+  if(riskRealtimeChannel){ supabaseClient.removeChannel(riskRealtimeChannel); riskRealtimeChannel = null; }
 }
 function can(perm){
   const u = currentUser();
@@ -2402,6 +2515,7 @@ const GENERIC_MODULES = [
   { key:"change-control", stateArr:"changeControls", icon:"🔄", title:"Change Control",
     blurb:"Assess, approve and verify changes. Status moves: Draft → Under Review → Approved → Implemented → Verified → Closed.",
     sortField:"requestDate",
+    cloudSynced:true, supabaseTable:"change_controls",
     fields:[
       {id:"changeNumber", label:"Change Number", placeholder:"e.g. CC-2026-001"},
       {id:"title", label:"Change Title", required:true},
@@ -4866,12 +4980,13 @@ function renderRiskRegister(){
   const filtered = all.filter(r => (riskLevelFilter==="All" || r.riskLevel===riskLevelFilter) && (riskCategoryFilter==="All" || (r.category||"Health & Safety")===riskCategoryFilter));
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">Enterprise Risk Register</h2>
+      <h2 class="serif" style="font-size:18px;margin:0;">Enterprise Risk Register ${cloudReady() ? `<span class="tag tag-green" style="font-size:10px;vertical-align:middle;">🔄 Live — shared with your team</span>` : ''}</h2>
       <div class="flex-wrap">
         <button class="btn btn-ghost" data-action="export-risk-csv">⬇ CSV</button>
         <button class="btn btn-primary" data-action="toggle-new-risk">+ New Risk</button>
       </div>
     </div>
+    ${riskSyncError ? `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-bottom:14px;"><p style="color:var(--rust);font-size:13px;margin:0;">⚠ Sync issue: ${esc(riskSyncError)}</p><p class="muted-italic" style="font-size:11px;margin-top:6px;">Your change is saved locally, but may not have reached the shared cloud copy yet.</p></div>` : ''}
     <div class="card p4" style="margin-bottom:16px;">
       <div class="flex-wrap" style="margin-bottom:10px;">
         <span style="font-size:12px;color:var(--muted);">Filter by Category:</span>
@@ -8090,6 +8205,7 @@ function attachHandlers(){
           state.riskAssessments.unshift(risk);
           rec.linkedRiskId = risk.id;
           logActivity(`Risk assessment auto-logged from Critical customer complaint`);
+          pushRiskToCloud(risk);
         }
       }
       if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
@@ -8134,6 +8250,10 @@ function attachHandlers(){
     genericOpenId[k] = null;
     if(cfg.cloudSynced) cloudSyncDelete(cfg, id);
     persist(); render();
+  });
+  document.querySelectorAll('[data-generic-cloud-refresh]').forEach(el=>el.onclick=()=>{
+    const cfg = GENERIC_MODULES.find(m=>m.key===el.dataset.genericCloudRefresh);
+    if(cfg) cloudSyncFetch(cfg);
   });
   document.querySelectorAll('[data-generic-csv]').forEach(el=>el.onclick=()=>{
     const k = el.dataset.genericCsv;
@@ -8494,6 +8614,7 @@ function attachHandlers(){
       state.riskAssessments.unshift(risk);
       linkedRiskId = risk.id;
       logActivity(`Risk assessment auto-logged from audit finding: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
+      pushRiskToCloud(risk);
     }
     a.findings.push({
       id: findingId,
@@ -8575,6 +8696,7 @@ function attachHandlers(){
     state.riskAssessments.unshift(risk);
     logActivity(`Risk assessment logged: ${hazard.slice(0,40)}${hazard.length>40?'…':''}`);
     openRiskId = risk.id; showNewRisk=false; persist(); render();
+    pushRiskToCloud(risk);
   };
   document.querySelectorAll('[data-toggle-risk]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleRisk; openRiskId = openRiskId===id ? null : id; render();
@@ -8607,6 +8729,7 @@ function attachHandlers(){
         if(field==="status" && el.value==="Closed") logActivity(`Risk assessment closed: ${(r.hazard||'').slice(0,40)}`);
       }
       persist(); render();
+      pushRiskToCloud(r);
     };
   });
   document.querySelectorAll('[data-risk-evidence]').forEach(el=>el.onchange=()=>{
@@ -8639,8 +8762,10 @@ function attachHandlers(){
   });
   document.querySelectorAll('[data-action="delete-risk"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this risk assessment? This cannot be undone.")) return;
+    const deletedId = el.dataset.risk;
     state.riskAssessments = state.riskAssessments.filter(r=>r.id!==el.dataset.risk);
     openRiskId = null; persist(); render();
+    deleteRiskFromCloud(deletedId);
   });
   const riskCsvBtn = document.querySelector('[data-action="export-risk-csv"]');
   if(riskCsvBtn) riskCsvBtn.onclick=()=>{
