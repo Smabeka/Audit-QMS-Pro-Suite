@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -769,24 +769,22 @@ function unsubscribeGenericModuleRealtime(cfg){
    modules. Each entry just needs {key, stateArr, supabaseTable} —
    cloudSyncFetch/Insert/Update/Delete/subscribeGenericModuleRealtime
    don't care whether a module is "generic" or "custom". */
-const CUSTOM_CLOUD_MODULES = [
-  { key:"suppliers", stateArr:"suppliers", supabaseTable:"suppliers" },
-  { key:"training", stateArr:"trainingRecords", supabaseTable:"training_records" },
-  { key:"haccp-points", stateArr:"haccpPoints", supabaseTable:"haccp_points" }
-];
+/* NOTE: suppliers, trainingRecords and haccpPoints are NOT synced here.
+   They're fully handled by the custom-module engine below (fetchAllCustomModules /
+   subscribeAllCustomModules / pushToCloud / deleteFromCloud), which covers all 10
+   custom-rendered modules consistently. An earlier version of this file also routed
+   these same 3 tables through the generic-module engine below — same data, same
+   table, but a second redundant fetch + a second redundant realtime subscription
+   on every login. Removed to avoid double network calls and double render() firing
+   on every remote change to these 3 tables. */
 function syncAllGenericCloudModules(){
   GENERIC_MODULES.filter(m=>m.cloudSynced).forEach(cfg=>{
-    cloudSyncFetch(cfg);
-    subscribeGenericModuleRealtime(cfg);
-  });
-  CUSTOM_CLOUD_MODULES.forEach(cfg=>{
     cloudSyncFetch(cfg);
     subscribeGenericModuleRealtime(cfg);
   });
 }
 function unsyncAllGenericCloudModules(){
   GENERIC_MODULES.filter(m=>m.cloudSynced).forEach(cfg=>unsubscribeGenericModuleRealtime(cfg));
-  CUSTOM_CLOUD_MODULES.forEach(cfg=>unsubscribeGenericModuleRealtime(cfg));
 }
 async function fetchAllProfiles(){
   if(!supabaseClient) return;
