@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -251,6 +251,8 @@ async function initCloudSession(){
         fetchRiskFromCloud();
         subscribeRiskRealtime();
         syncAllGenericCloudModules();
+        fetchAllCustomModules();
+        subscribeAllCustomModules();
       }
     }
     else { render(); } // nothing was in session, but we still need to drop the "Loading…" gate
@@ -312,6 +314,8 @@ async function cloudSignIn(email, password){
   fetchRiskFromCloud();
   subscribeRiskRealtime();
   syncAllGenericCloudModules();
+  fetchAllCustomModules();
+  subscribeAllCustomModules();
 }
 async function cloudResetPassword(email){
   if(!supabaseClient) return;
@@ -327,12 +331,14 @@ async function cloudSignOut(){
   unsubscribeCapaRealtime();
   unsubscribeRiskRealtime();
   unsyncAllGenericCloudModules();
+  unsubscribeAllCustomModuleRealtime();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
   allProfiles = [];
   state.documents = [];
   state.audits = state.audits.filter(a=>!a.isCloudShellAudit); // drop placeholder audits that only existed to hold synced CAPA data
+  Object.keys(CUSTOM_MODULE_TABLES).forEach(arr => { state[arr] = []; });
   render();
 }
 /* Pushes the CURRENT workspace's data to the cloud, one row per (user, workspace).
@@ -369,7 +375,7 @@ async function cloudRestoreNow(){
   persist();
   cloudStatus = "✓ Restored from cloud (backed up " + new Date(data.updated_at).toLocaleString() + ").";
   render();
-  if(cloudReady()){ fetchDocumentsFromCloud(); fetchCapaFindingsFromCloud(); fetchRiskFromCloud(); syncAllGenericCloudModules(); } // Documents, CAPA, Risk and every cloudSynced module live in their own shared tables now — don't let a personal workspace snapshot override the team's shared copy
+  if(cloudReady()){ fetchDocumentsFromCloud(); fetchCapaFindingsFromCloud(); fetchRiskFromCloud(); syncAllGenericCloudModules(); fetchAllCustomModules(); } // Documents, CAPA, Risk and every cloudSynced module live in their own shared tables now — don't let a personal workspace snapshot override the team's shared copy
 }
 /* Lists which of the device's local workspaces also have a cloud backup, and when. */
 async function cloudListBackups(){
@@ -757,14 +763,30 @@ function subscribeGenericModuleRealtime(cfg){
 function unsubscribeGenericModuleRealtime(cfg){
   if(genericRealtimeChannels[cfg.key]){ supabaseClient.removeChannel(genericRealtimeChannels[cfg.key]); delete genericRealtimeChannels[cfg.key]; }
 }
+/* Custom-coded modules (their own render/handlers, not the generic
+   field-driven form system) that still want to reuse the exact same
+   proven fetch/insert/update/delete/realtime engine as the generic
+   modules. Each entry just needs {key, stateArr, supabaseTable} —
+   cloudSyncFetch/Insert/Update/Delete/subscribeGenericModuleRealtime
+   don't care whether a module is "generic" or "custom". */
+const CUSTOM_CLOUD_MODULES = [
+  { key:"suppliers", stateArr:"suppliers", supabaseTable:"suppliers" },
+  { key:"training", stateArr:"trainingRecords", supabaseTable:"training_records" },
+  { key:"haccp-points", stateArr:"haccpPoints", supabaseTable:"haccp_points" }
+];
 function syncAllGenericCloudModules(){
   GENERIC_MODULES.filter(m=>m.cloudSynced).forEach(cfg=>{
+    cloudSyncFetch(cfg);
+    subscribeGenericModuleRealtime(cfg);
+  });
+  CUSTOM_CLOUD_MODULES.forEach(cfg=>{
     cloudSyncFetch(cfg);
     subscribeGenericModuleRealtime(cfg);
   });
 }
 function unsyncAllGenericCloudModules(){
   GENERIC_MODULES.filter(m=>m.cloudSynced).forEach(cfg=>unsubscribeGenericModuleRealtime(cfg));
+  CUSTOM_CLOUD_MODULES.forEach(cfg=>unsubscribeGenericModuleRealtime(cfg));
 }
 async function fetchAllProfiles(){
   if(!supabaseClient) return;
@@ -804,6 +826,79 @@ function docLocalToRow(d){
     updated_at: new Date().toISOString()
   };
 }
+/* ---------------- Reusable cloud sync for remaining custom modules ----------------
+   Suppliers, Training, HACCP, Allergen, Traceability, Recalls, Sensory, CIP, Temp Logs
+   each have their own dedicated render/handler code (unlike the GENERIC_MODULES system),
+   but they all share the same simple sync need: push the whole local object to a table
+   shaped {id, fields jsonb, created_by, updated_by, created_at, updated_at}. Rather than
+   write 9 bespoke copies of fetch/push/delete/subscribe (where the Risk migration bugs
+   came from), this is one proven implementation, parameterized per module. */
+let customModuleSyncError = "";
+const customModuleChannels = {};
+function customRowToLocal(row){
+  return { id: row.id, ...row.fields };
+}
+function customLocalToRow(item){
+  const { id, ...rest } = item;
+  return { id, fields: rest, updated_at: new Date().toISOString() };
+}
+async function fetchCustomModuleFromCloud(stateArrayName, tableName){
+  if(!cloudReady()) return;
+  const { data, error } = await supabaseClient.from(tableName).select("*").order("created_at", { ascending:false });
+  if(error){ customModuleSyncError = `${tableName}: ${error.message}`; render(); return; }
+  state[stateArrayName] = (data||[]).map(customRowToLocal);
+  render();
+}
+async function pushCustomModuleToCloud(item, tableName){
+  if(!cloudReady()) return;
+  const row = customLocalToRow(item);
+  const { error } = await supabaseClient.from(tableName).upsert(row);
+  if(error){ customModuleSyncError = `${tableName}: ${error.message}`; render(); }
+}
+async function deleteCustomModuleFromCloud(id, tableName){
+  if(!cloudReady()) return;
+  const { error } = await supabaseClient.from(tableName).delete().eq("id", id);
+  if(error){ customModuleSyncError = `${tableName}: ${error.message}`; render(); }
+}
+function subscribeCustomModuleRealtime(stateArrayName, tableName){
+  if(!cloudReady() || customModuleChannels[tableName]) return;
+  customModuleChannels[tableName] = supabaseClient.channel(tableName+"-changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:tableName }, (payload) => {
+      if(payload.eventType === "DELETE"){
+        state[stateArrayName] = state[stateArrayName].filter(x=>x.id!==payload.old.id);
+      } else {
+        const updated = customRowToLocal(payload.new);
+        const idx = state[stateArrayName].findIndex(x=>x.id===updated.id);
+        if(idx>=0) state[stateArrayName][idx] = updated; else state[stateArrayName].unshift(updated);
+      }
+      render();
+    })
+    .subscribe();
+}
+function unsubscribeAllCustomModuleRealtime(){
+  Object.keys(customModuleChannels).forEach(t=>{ supabaseClient.removeChannel(customModuleChannels[t]); delete customModuleChannels[t]; });
+}
+const CUSTOM_MODULE_TABLES = {
+  suppliers: "suppliers",
+  trainingRecords: "training_records",
+  haccpPoints: "haccp_points",
+  allergenProducts: "allergen_products",
+  allergenIncidents: "allergen_incidents",
+  batches: "batches",
+  productRecalls: "product_recalls",
+  sensoryEvaluations: "sensory_evaluations",
+  cipSchedules: "cip_schedules",
+  tempLogs: "temp_logs"
+};
+function pushToCloud(stateArrayName, item){ pushCustomModuleToCloud(item, CUSTOM_MODULE_TABLES[stateArrayName]); }
+function deleteFromCloud(stateArrayName, id){ deleteCustomModuleFromCloud(id, CUSTOM_MODULE_TABLES[stateArrayName]); }
+function fetchAllCustomModules(){
+  Object.entries(CUSTOM_MODULE_TABLES).forEach(([arr, table]) => fetchCustomModuleFromCloud(arr, table));
+}
+function subscribeAllCustomModules(){
+  Object.entries(CUSTOM_MODULE_TABLES).forEach(([arr, table]) => subscribeCustomModuleRealtime(arr, table));
+}
+
 async function fetchDocumentsFromCloud(){
   if(!cloudReady()) return;
   const { data, error } = await supabaseClient.from("documents").select("*").order("created_at", { ascending:false });
@@ -815,7 +910,6 @@ async function fetchDocumentsFromCloud(){
 async function pushDocumentToCloud(d){
   if(!cloudReady()) return;
   const row = docLocalToRow(d);
-  if(!d.createdByPushed){ row.created_by = currentCloudUser.id; d.createdByPushed = true; }
   const { error } = await supabaseClient.from("documents").upsert(row);
   if(error){ documentsSyncError = error.message; render(); }
 }
@@ -879,11 +973,7 @@ function findingLocalToRow(f, auditId, auditTitle, auditNumber){
 }
 async function pushAuditFindingsToCloud(a){
   if(!cloudReady() || !a.findings || a.findings.length===0) return;
-  const rows = a.findings.map(f => {
-    const row = findingLocalToRow(f, a.id, a.title, a.auditNumber);
-    row.created_by = currentCloudUser.id;
-    return row;
-  });
+  const rows = a.findings.map(f => findingLocalToRow(f, a.id, a.title, a.auditNumber));
   const { error } = await supabaseClient.from("capa_findings").upsert(rows);
   if(error){ capaSyncError = error.message; render(); }
 }
@@ -985,7 +1075,6 @@ async function fetchRiskFromCloud(){
 async function pushRiskToCloud(r){
   if(!cloudReady()) return;
   const row = riskLocalToRow(r);
-  if(!r.createdByPushed){ row.created_by = currentCloudUser.id; r.createdByPushed = true; }
   const { error } = await supabaseClient.from("risk_assessments").upsert(row);
   if(error){ riskSyncError = error.message; render(); }
 }
@@ -1683,6 +1772,7 @@ let capaFilter = "All";
 let savedFlashTimer = null;
 let auditSearch = "";
 let auditStandardFilter = "All";
+let dashboardStandardFilter = "All";
 let auditStatusFilter = "All";
 let auditRiskFilter = "All";
 let showProModal = false;
@@ -3511,6 +3601,15 @@ function render(){
         </div>
         ${renderMainNav()}
       </header>
+      ${customModuleSyncError ? `
+      <div class="wrap no-print" style="margin-top:12px;">
+        <div class="card p4" style="background:#fdecea;border-color:var(--rust);">
+          <p style="color:var(--rust);font-size:13px;margin:0;">⚠ Sync issue: ${esc(customModuleSyncError)}</p>
+          <p class="muted-italic" style="font-size:11px;margin-top:6px;">Your change is saved locally, but may not have reached the shared cloud copy yet. Check your connection and try again — or dismiss if this has already resolved.</p>
+          <button class="btn btn-ghost" data-action="dismiss-custom-sync-error" style="margin-top:8px;font-size:12px;padding:4px 10px;">Dismiss</button>
+        </div>
+      </div>
+      ` : ''}
       <main class="wrap">
         ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
@@ -3896,6 +3995,22 @@ function renderDashboard(){
     `;
   }
 
+  /* Standards Filter card — isolated, additive computation. Lets a manager
+     isolate audit completion / open findings / critical findings by a
+     specific standard (e.g. FSSC 22000 vs ISO 9001) without touching any
+     of the module scores computed above. */
+  const dashAudits = dashboardStandardFilter==="All" ? audits : audits.filter(a=>a.standard===dashboardStandardFilter);
+  const dashClosedAudits = dashAudits.filter(a=>a.status==="Closed").length;
+  const dashCompletionRate = dashAudits.length ? Math.round((dashClosedAudits/dashAudits.length)*100) : null;
+  const dashFindings = dashAudits.flatMap(a=>(a.findings||[]).map(f=>({...f, auditTitle:a.title, auditId:a.id})));
+  const dashOpenFindings = dashFindings.filter(f=>f.status!=="Closed");
+  const dashCritical = dashOpenFindings.filter(f=>f.severity==="Critical");
+  const dashMajor = dashOpenFindings.filter(f=>f.severity==="Major");
+  const dashTopFindings = [...dashOpenFindings].sort((a,b)=>{
+    const sevOrder = {Critical:0, Major:1, Minor:2};
+    return (sevOrder[a.severity]??3) - (sevOrder[b.severity]??3);
+  }).slice(0,5);
+
   /* Today's Priorities — a ranked, clickable action list.
      Primary sort: severity tier (red > yellow > green).
      Secondary sort: urgency within the tier (more overdue days / higher risk level first),
@@ -3942,6 +4057,37 @@ function renderDashboard(){
       </div>
     </div>
   ` : ''}
+  <div class="card p4" style="margin-bottom:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
+      <h3 class="serif" style="font-size:15px;margin:0;">🔍 Filter by Standard</h3>
+      <select id="dash-standard-filter" style="font-size:13px;max-width:220px;">
+        <option ${dashboardStandardFilter==="All"?'selected':''}>All</option>
+        ${[...new Set(audits.map(a=>a.standard).filter(Boolean))].sort().map(s=>`<option ${dashboardStandardFilter===s?'selected':''}>${esc(s)}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;">
+      <div class="card p4" style="margin:0;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Audit Completion</div>
+        <div style="font-size:26px;font-weight:700;margin-top:4px;">${dashCompletionRate===null?'—':dashCompletionRate+'%'}</div>
+        <div class="muted-italic" style="font-size:12px;">${dashClosedAudits} of ${dashAudits.length} closed</div>
+      </div>
+      <div class="card p4" style="margin:0;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Open Findings</div>
+        <div style="font-size:26px;font-weight:700;margin-top:4px;">${dashOpenFindings.length} <span style="font-size:13px;font-weight:500;color:var(--rust);">(${dashCritical.length} Critical)</span></div>
+        <div class="muted-italic" style="font-size:12px;">${dashMajor.length} Major issues</div>
+      </div>
+    </div>
+    ${dashTopFindings.length ? `
+      <div style="margin-top:12px;border-top:1px solid var(--line2);padding-top:10px;">
+        ${dashTopFindings.map(f=>`
+          <button data-jump-audit="${f.auditId}" style="display:flex;width:100%;text-align:left;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;cursor:pointer;color:inherit;">
+            <span><span class="tag tag-${f.severity==='Critical'?'rust':f.severity==='Major'?'amber':'neutral'}" style="font-size:10px;">${esc(f.severity)}</span> ${esc((f.desc||'').slice(0,60))}${(f.desc||'').length>60?'…':''}</span>
+            <span class="muted-italic" style="font-size:11px;white-space:nowrap;">${esc(f.auditTitle)}</span>
+          </button>
+        `).join('')}
+      </div>
+    ` : dashboardStandardFilter!=="All" ? `<p class="muted-italic" style="margin-top:10px;font-size:12px;">No open findings for ${esc(dashboardStandardFilter)}.</p>` : ''}
+  </div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
       <button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;">+ New Audit</button>
       <button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;">+ Raise CAPA</button>
@@ -7734,6 +7880,13 @@ function attachHandlers(){
   if(loadDemoBtn) loadDemoBtn.onclick=()=>{
     loadDemoData(); render();
   };
+  const dismissSyncErrorBtn = document.querySelector('[data-action="dismiss-custom-sync-error"]');
+  if(dismissSyncErrorBtn) dismissSyncErrorBtn.onclick=()=>{ customModuleSyncError = ""; render(); };
+  const dashStandardFilterEl = document.getElementById('dash-standard-filter');
+  if(dashStandardFilterEl) dashStandardFilterEl.onchange=()=>{
+    dashboardStandardFilter = dashStandardFilterEl.value;
+    render();
+  };
   const clearDemoBtn = document.querySelector('[data-action="clear-demo-data"]');
   if(clearDemoBtn) clearDemoBtn.onclick=()=>{
     if(!confirm("Clear all demo data? This removes every sample record but leaves your real data untouched.")) return;
@@ -9062,6 +9215,7 @@ function attachHandlers(){
     };
     state.trainingRecords.unshift(record);
     openTrainingId = record.id; showNewTraining=false; persist(); render();
+    pushToCloud("trainingRecords", record);
   };
   document.querySelectorAll('[data-toggle-training]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleTraining; openTrainingId = openTrainingId===id ? null : id; render();
@@ -9076,12 +9230,15 @@ function attachHandlers(){
       if(!t) return;
       t[field] = el.value;
       persist(); render();
+      pushToCloud("trainingRecords", t);
     };
   });
   document.querySelectorAll('[data-action="delete-training"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this training record? This cannot be undone.")) return;
+    const deletedId = el.dataset.training;
     state.trainingRecords = state.trainingRecords.filter(t=>t.id!==el.dataset.training);
     openTrainingId = null; persist(); render();
+    deleteFromCloud("trainingRecords", deletedId);
   });
   const trainingCsvBtn = document.querySelector('[data-action="export-training-csv"]');
   if(trainingCsvBtn) trainingCsvBtn.onclick=()=>{
@@ -9117,6 +9274,7 @@ function attachHandlers(){
     };
     state.haccpPoints.unshift(point);
     openHaccpId = point.id; showNewHaccp=false; persist(); render();
+    pushToCloud("haccpPoints", point);
   };
   document.querySelectorAll('[data-toggle-haccp]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleHaccp; openHaccpId = openHaccpId===id ? null : id; render();
@@ -9131,6 +9289,7 @@ function attachHandlers(){
       if(!p) return;
       p[field] = el.value;
       persist(); render();
+      pushToCloud("haccpPoints", p);
     };
   });
   document.querySelectorAll('[data-action="add-haccp-reading"]').forEach(el=>el.onclick=()=>{
@@ -9173,17 +9332,21 @@ function attachHandlers(){
     }
 
     persist(); render();
+    pushToCloud("haccpPoints", p);
   });
   document.querySelectorAll('[data-action="delete-haccp-reading"]').forEach(el=>el.onclick=()=>{
     const p = state.haccpPoints.find(x=>x.id===el.dataset.haccp);
     if(!p) return;
     p.readings = p.readings.filter(r=>r.id!==el.dataset.reading);
     persist(); render();
+    pushToCloud("haccpPoints", p);
   });
   document.querySelectorAll('[data-action="delete-haccp"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this CCP and all its monitoring readings? This cannot be undone.")) return;
+    const deletedId = el.dataset.haccp;
     state.haccpPoints = state.haccpPoints.filter(p=>p.id!==el.dataset.haccp);
     openHaccpId = null; persist(); render();
+    deleteFromCloud("haccpPoints", deletedId);
   });
   const haccpCsvBtn = document.querySelector('[data-action="export-haccp-csv"]');
   if(haccpCsvBtn) haccpCsvBtn.onclick=()=>{
@@ -9234,6 +9397,7 @@ function attachHandlers(){
     };
     state.productRecalls.unshift(record);
     openRecallId = record.id; showNewRecall=false; persist(); render();
+    pushToCloud("productRecalls", record);
   };
   document.querySelectorAll('[data-toggle-recall]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleRecall; openRecallId = openRecallId===id ? null : id; render();
@@ -9248,6 +9412,7 @@ function attachHandlers(){
       if(!r) return;
       r[field] = el.type==="number" ? (el.value===''?null:Number(el.value)) : el.value;
       persist(); render();
+      pushToCloud("productRecalls", r);
     };
   });
   document.querySelectorAll('[data-recall-step]').forEach(el=>{
@@ -9257,6 +9422,7 @@ function attachHandlers(){
       if(!r || !r.actionSteps[idx]) return;
       r.actionSteps[idx].done = el.checked;
       persist(); render();
+      pushToCloud("productRecalls", r);
     };
   });
   document.querySelectorAll('[data-action="start-recall-timer"]').forEach(el=>el.onclick=()=>{
@@ -9264,12 +9430,14 @@ function attachHandlers(){
     if(!r) return;
     r.recallStartedAt = new Date().toISOString();
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="complete-recall-timer"]').forEach(el=>el.onclick=()=>{
     const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
     if(!r) return;
     r.recallCompletedAt = new Date().toISOString();
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="reset-recall-timer"]').forEach(el=>el.onclick=()=>{
     const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
@@ -9277,6 +9445,7 @@ function attachHandlers(){
     if(!confirm("Reset the recall timer? This clears the start and complete times.")) return;
     r.recallStartedAt = null; r.recallCompletedAt = null;
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="sign-recall"]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.recall;
@@ -9288,12 +9457,14 @@ function attachHandlers(){
     if(!r.approval){ r.approval = { approvedBy:"", approverRole:"", approvedAt:null }; }
     r.approval.approvedBy = name; r.approval.approverRole = role; r.approval.approvedAt = new Date().toISOString();
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="unsign-recall"]').forEach(el=>el.onclick=()=>{
     const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
     if(!r) return;
     r.approval = { approvedBy:"", approverRole:"", approvedAt:null };
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="add-recall-comm"]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.recall;
@@ -9312,17 +9483,21 @@ function attachHandlers(){
     if(!r.commsLog) r.commsLog = [];
     r.commsLog.unshift(entry);
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="delete-recall-comm"]').forEach(el=>el.onclick=()=>{
     const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
     if(!r) return;
     r.commsLog = r.commsLog.filter(c=>c.id!==el.dataset.comm);
     persist(); render();
+    pushToCloud("productRecalls", r);
   });
   document.querySelectorAll('[data-action="delete-recall"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this recall record? This cannot be undone.")) return;
+    const deletedId = el.dataset.recall;
     state.productRecalls = state.productRecalls.filter(r=>r.id!==el.dataset.recall);
     openRecallId = null; persist(); render();
+    deleteFromCloud("productRecalls", deletedId);
   });
   const recallsCsvBtn = document.querySelector('[data-action="export-recalls-csv"]');
   if(recallsCsvBtn) recallsCsvBtn.onclick=()=>{
@@ -9362,6 +9537,7 @@ function attachHandlers(){
     };
     state.suppliers.unshift(supplier);
     openSupplierId = supplier.id; showNewSupplier=false; persist(); render();
+    pushToCloud("suppliers", supplier);
   };
   document.querySelectorAll('[data-toggle-supplier]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleSupplier; openSupplierId = openSupplierId===id ? null : id; render();
@@ -9377,12 +9553,15 @@ function attachHandlers(){
       s[field] = el.value;
       if(field==="approvalStatus" && el.value==="Approved") logActivity(`Supplier ${s.name} approved`);
       persist(); render();
+      pushToCloud("suppliers", s);
     };
   });
   document.querySelectorAll('[data-action="delete-supplier"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this supplier record? This cannot be undone.")) return;
+    const deletedId = el.dataset.supplier;
     state.suppliers = state.suppliers.filter(s=>s.id!==el.dataset.supplier);
     openSupplierId = null; persist(); render();
+    deleteFromCloud("suppliers", deletedId);
   });
   const suppliersCsvBtn = document.querySelector('[data-action="export-suppliers-csv"]');
   if(suppliersCsvBtn) suppliersCsvBtn.onclick=()=>{
@@ -9410,6 +9589,7 @@ function attachHandlers(){
     };
     state.allergenProducts.unshift(product);
     openAllergenProductId = product.id; showNewAllergenProduct=false; persist(); render();
+    pushToCloud("allergenProducts", product);
   };
   document.querySelectorAll('[data-toggle-allergen-product]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleAllergenProduct; openAllergenProductId = openAllergenProductId===id ? null : id; render();
@@ -9420,6 +9600,7 @@ function attachHandlers(){
       const p = state.allergenProducts.find(x=>x.id===id);
       if(!p) return;
       p[field] = el.value; persist(); render();
+      pushToCloud("allergenProducts", p);
     };
   });
   document.querySelectorAll('[data-allergen-product-tag]').forEach(el=>{
@@ -9431,18 +9612,21 @@ function attachHandlers(){
       if(el.checked){ if(!p.allergensPresent.includes(allergen)) p.allergensPresent.push(allergen); }
       else { p.allergensPresent = p.allergensPresent.filter(a=>a!==allergen); }
       persist(); render();
+      pushToCloud("allergenProducts", p);
     };
   });
   document.querySelectorAll('[data-action="delete-allergen-product"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this product's allergen entry? This cannot be undone.")) return;
+    const deletedId = el.dataset.allergenProduct;
     state.allergenProducts = state.allergenProducts.filter(p=>p.id!==el.dataset.allergenProduct);
     openAllergenProductId = null; persist(); render();
+    deleteFromCloud("allergenProducts", deletedId);
   });
   const addAllergenIncident = document.querySelector('[data-action="add-allergen-incident"]');
   if(addAllergenIncident) addAllergenIncident.onclick=()=>{
     const product = document.getElementById('ai-product').value.trim();
     if(!product) return;
-    state.allergenIncidents.unshift({
+    const incident = {
       id: uid(),
       date: document.getElementById('ai-date').value || today(),
       product,
@@ -9450,12 +9634,16 @@ function attachHandlers(){
       rootCause: document.getElementById('ai-root-cause').value,
       correctiveAction: document.getElementById('ai-corrective').value,
       capaStatus: document.getElementById('ai-capa-status').value
-    });
+    };
+    state.allergenIncidents.unshift(incident);
     persist(); render();
+    pushToCloud("allergenIncidents", incident);
   };
   document.querySelectorAll('[data-action="delete-allergen-incident"]').forEach(el=>el.onclick=()=>{
+    const deletedId = el.dataset.incident;
     state.allergenIncidents = state.allergenIncidents.filter(i=>i.id!==el.dataset.incident);
     persist(); render();
+    deleteFromCloud("allergenIncidents", deletedId);
   });
   const allergensCsvBtn = document.querySelector('[data-action="export-allergens-csv"]');
   if(allergensCsvBtn) allergensCsvBtn.onclick=()=>{
@@ -9485,6 +9673,7 @@ function attachHandlers(){
     };
     state.cipSchedules.unshift(schedule);
     openCipId = schedule.id; showNewCip=false; persist(); render();
+    pushToCloud("cipSchedules", schedule);
   };
   document.querySelectorAll('[data-toggle-cip]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleCip; openCipId = openCipId===id ? null : id; render();
@@ -9498,6 +9687,7 @@ function attachHandlers(){
       const c = state.cipSchedules.find(x=>x.id===id);
       if(!c) return;
       c[field] = el.value; persist(); render();
+      pushToCloud("cipSchedules", c);
     };
   });
   document.querySelectorAll('[data-cip-verify]').forEach(el=>{
@@ -9508,6 +9698,7 @@ function attachHandlers(){
       if(!c.verification) c.verification = CIP_VERIFICATION_STEPS.map(()=>false);
       c.verification[idx] = el.checked;
       persist(); render();
+      pushToCloud("cipSchedules", c);
     };
   });
   document.querySelectorAll('[data-action="mark-cip-complete"]').forEach(el=>el.onclick=()=>{
@@ -9516,11 +9707,14 @@ function attachHandlers(){
     c.lastCompletedDate = today();
     c.verification = CIP_VERIFICATION_STEPS.map(()=>false);
     persist(); render();
+    pushToCloud("cipSchedules", c);
   });
   document.querySelectorAll('[data-action="delete-cip"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this equipment cleaning schedule? This cannot be undone.")) return;
+    const deletedId = el.dataset.cip;
     state.cipSchedules = state.cipSchedules.filter(c=>c.id!==el.dataset.cip);
     openCipId = null; persist(); render();
+    deleteFromCloud("cipSchedules", deletedId);
   });
   const addCipDeviation = document.querySelector('[data-action="add-cip-deviation"]');
   if(addCipDeviation) addCipDeviation.onclick=()=>{
@@ -9574,6 +9768,7 @@ function attachHandlers(){
     };
     state.sensoryEvaluations.unshift(record);
     openSensoryId = record.id; showNewSensory=false; persist(); render();
+    pushToCloud("sensoryEvaluations", record);
   };
   document.querySelectorAll('[data-toggle-sensory]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleSensory; openSensoryId = openSensoryId===id ? null : id; render();
@@ -9588,6 +9783,7 @@ function attachHandlers(){
       if(!e) return;
       e[field] = el.value;
       persist(); render();
+      pushToCloud("sensoryEvaluations", e);
     };
   });
   document.querySelectorAll('[data-sensory-score]').forEach(el=>{
@@ -9598,12 +9794,15 @@ function attachHandlers(){
       if(!e.scores) e.scores = {};
       e.scores[attr] = el.value;
       persist(); render();
+      pushToCloud("sensoryEvaluations", e);
     };
   });
   document.querySelectorAll('[data-action="delete-sensory"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this sensory evaluation record? This cannot be undone.")) return;
+    const deletedId = el.dataset.sensory;
     state.sensoryEvaluations = state.sensoryEvaluations.filter(e=>e.id!==el.dataset.sensory);
     openSensoryId = null; persist(); render();
+    deleteFromCloud("sensoryEvaluations", deletedId);
   });
   const sensoryCsvBtn = document.querySelector('[data-action="export-sensory-csv"]');
   if(sensoryCsvBtn) sensoryCsvBtn.onclick=()=>{
@@ -9648,6 +9847,7 @@ function attachHandlers(){
     };
     state.batches.unshift(batch);
     openBatchId = batch.id; showNewBatch=false; persist(); render();
+    pushToCloud("batches", batch);
   };
   document.querySelectorAll('[data-toggle-batch]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleBatch; openBatchId = openBatchId===id ? null : id; render();
@@ -9664,6 +9864,7 @@ function attachHandlers(){
       if(!b) return;
       b[field] = el.type==="number" ? (el.value===''?null:Number(el.value)) : el.value;
       persist(); render();
+      pushToCloud("batches", b);
     };
   });
   document.querySelectorAll('[data-batch-component]').forEach(el=>{
@@ -9675,12 +9876,15 @@ function attachHandlers(){
       if(el.checked){ if(!b.components.includes(rmId)) b.components.push(rmId); }
       else { b.components = b.components.filter(id=>id!==rmId); }
       persist(); render();
+      pushToCloud("batches", b);
     };
   });
   document.querySelectorAll('[data-action="delete-batch"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this batch record? This cannot be undone.")) return;
+    const deletedId = el.dataset.batch;
     state.batches = state.batches.filter(b=>b.id!==el.dataset.batch);
     openBatchId = null; persist(); render();
+    deleteFromCloud("batches", deletedId);
   });
   document.querySelectorAll('[data-action="add-batch-distribution"]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.batch;
@@ -9701,12 +9905,14 @@ function attachHandlers(){
     });
     logActivity(`Distribution logged: ${b.product||b.batchNo} → ${consignee}`);
     persist(); render();
+    pushToCloud("batches", b);
   });
   document.querySelectorAll('[data-action="delete-batch-distribution"]').forEach(el=>el.onclick=()=>{
     const b = state.batches.find(x=>x.id===el.dataset.batch);
     if(!b) return;
     b.distribution = (b.distribution||[]).filter(d=>d.id!==el.dataset.dist);
     persist(); render();
+    pushToCloud("batches", b);
   });
   const batchesCsvBtn = document.querySelector('[data-action="export-batches-csv"]');
   if(batchesCsvBtn) batchesCsvBtn.onclick=()=>{
@@ -9772,10 +9978,13 @@ function attachHandlers(){
     document.getElementById('tl-temp').value = '';
     document.getElementById('tl-location').value = '';
     persist(); render();
+    pushToCloud("tempLogs", log);
   };
   document.querySelectorAll('[data-action="delete-temp-log"]').forEach(el=>el.onclick=()=>{
+    const deletedId = el.dataset.log;
     state.tempLogs = state.tempLogs.filter(l=>l.id!==el.dataset.log);
     persist(); render();
+    deleteFromCloud("tempLogs", deletedId);
   });
   const tempProductsCsvBtn = document.querySelector('[data-action="export-temp-products-csv"]');
   if(tempProductsCsvBtn) tempProductsCsvBtn.onclick=()=>{
