@@ -220,9 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
-
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -249,6 +248,8 @@ async function initCloudSession(){
         subscribeDocumentsRealtime();
         fetchCapaFindingsFromCloud();
         subscribeCapaRealtime();
+        fetchFindingEventsFromCloud();
+        subscribeFindingEventsRealtime();
         fetchRiskFromCloud();
         subscribeRiskRealtime();
         syncAllGenericCloudModules();
@@ -312,6 +313,8 @@ async function cloudSignIn(email, password){
   subscribeDocumentsRealtime();
   fetchCapaFindingsFromCloud();
   subscribeCapaRealtime();
+  fetchFindingEventsFromCloud();
+  subscribeFindingEventsRealtime();
   fetchRiskFromCloud();
   subscribeRiskRealtime();
   syncAllGenericCloudModules();
@@ -330,6 +333,7 @@ async function cloudSignOut(){
   if(!supabaseClient) return;
   unsubscribeDocumentsRealtime();
   unsubscribeCapaRealtime();
+  unsubscribeFindingEventsRealtime();
   unsubscribeRiskRealtime();
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
@@ -1023,6 +1027,94 @@ function subscribeCapaRealtime(){
 }
 function unsubscribeCapaRealtime(){
   if(capaRealtimeChannel){ supabaseClient.removeChannel(capaRealtimeChannel); capaRealtimeChannel = null; }
+}
+
+/* ---------------- Finding Dispute Events ----------------
+   Same pattern as CAPA above: state.audits[].findings[] stays exactly
+   as every render function already expects it. This just adds an
+   insert-only event log (f.disputeEvents) synced from capa_finding_events,
+   plus a real e-signature via RPC instead of a free-text name field. */
+let findingEventsRealtimeChannel = null;
+
+async function logFindingEvent(a, f, eventType, { toSeverity, toStatus, justification }){
+  if(!cloudReady()){ alert("Dispute events require cloud sign-in — please sign in first."); return null; }
+  const { data, error } = await supabaseClient.rpc("log_finding_event", {
+    p_finding_id: f.id, p_audit_id: a.id, p_event_type: eventType,
+    p_from_severity: f.severity||null, p_to_severity: toSeverity||f.severity||null,
+    p_from_status: f.status||null, p_to_status: toStatus||f.status||null,
+    p_justification: justification,
+  });
+  if(error){ alert(`Could not log event: ${error.message}`); return null; }
+  if(!f.disputeEvents) f.disputeEvents = [];
+  f.disputeEvents.push({
+    id: data, event_type: eventType, from_severity: f.severity, to_severity: toSeverity||f.severity,
+    from_status: f.status, to_status: toStatus||f.status, justification,
+    actor_name: currentUser()?.fullName, actor_role: currentUser()?.role,
+    created_at: new Date().toISOString(),
+  });
+  persist();
+  return data;
+}
+async function signFindingEvent(eventId, meaning){
+  const { data, error } = await supabaseClient.rpc("sign_finding_event", { p_event_id: eventId, p_meaning: meaning }).single();
+  if(error){ alert(`Could not sign: ${error.message}`); return null; }
+  return data;
+}
+async function fetchFindingEventsFromCloud(){
+  if(!cloudReady()) return;
+  const { data, error } = await supabaseClient.from("capa_finding_events").select("*").order("created_at", { ascending:true });
+  if(error){ console.error(error.message); return; }
+  mergeCloudEventsIntoLocalFindings(data||[]);
+}
+function mergeCloudEventsIntoLocalFindings(rows){
+  const byFinding = {};
+  rows.forEach(r => { (byFinding[r.finding_id] = byFinding[r.finding_id]||[]).push(r); });
+  state.audits.forEach(a => {
+    (a.findings||[]).forEach(f => { if(byFinding[f.id]) f.disputeEvents = byFinding[f.id]; });
+  });
+  render();
+}
+function subscribeFindingEventsRealtime(){
+  if(!cloudReady() || findingEventsRealtimeChannel) return;
+  findingEventsRealtimeChannel = supabaseClient.channel("capa-finding-events-changes")
+    .on("postgres_changes", { event:"INSERT", schema:"public", table:"capa_finding_events" }, (payload) => {
+      mergeCloudEventsIntoLocalFindings([payload.new]);
+    })
+    .subscribe();
+}
+function unsubscribeFindingEventsRealtime(){
+  if(findingEventsRealtimeChannel){ supabaseClient.removeChannel(findingEventsRealtimeChannel); findingEventsRealtimeChannel = null; }
+}
+
+function disputeEventTone(type){
+  return { PROPOSED_RECLASSIFICATION:"amber", CHALLENGED:"rust", APPROVED:"green", REJECTED:"rust", CLOSED:"navy" }[type] || "neutral";
+}
+function renderFindingDispute(a, f){
+  const events = f.disputeEvents || [];
+  const canChallenge = can("respondFindings") || can("addFindings");
+  const canDecide = can("manageCapa") || can("closeOthersCapa");
+  return `
+    <div class="top-border" style="margin-top:10px;padding-top:10px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Dispute Trail</div>
+      ${events.length===0
+        ? `<p class="muted-italic" style="font-size:12px;">No disputes logged. Findings can be challenged if the classification is contested.</p>`
+        : events.map(ev => `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line2);gap:8px;">
+              <div style="flex:1;">
+                <span class="tag tag-${disputeEventTone(ev.event_type)}" style="font-size:10px;">${esc(ev.event_type.replace(/_/g,' '))}</span>
+                <span style="font-size:12px;margin-left:6px;">${esc(ev.justification)}</span>
+                <div class="muted-italic" style="font-size:11px;margin-top:2px;">${esc(ev.actor_name)} — ${esc(ev.actor_role)}</div>
+              </div>
+              <span class="muted-italic" style="font-size:10px;white-space:nowrap;">${new Date(ev.created_at).toLocaleDateString()}</span>
+            </div>
+          `).join('')
+      }
+      <div class="flex-wrap" style="margin-top:8px;">
+        ${canChallenge ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="challenge-finding" data-audit="${a.id}" data-finding="${f.id}">Challenge Classification</button>` : ''}
+        ${canDecide ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="decide-finding-dispute" data-audit="${a.id}" data-finding="${f.id}">Review & Decide</button>` : ''}
+      </div>
+    </div>
+  `;
 }
 
 /* ---------------- Shared Risk Management (Day 3) ----------------
@@ -3882,6 +3974,16 @@ function renderDashboard(){
   const scored = audits.map(scoreOf).filter(s=>s!==null);
   const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
   const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+  const findingsWithDisputes = allFindings.filter(f=>(f.disputeEvents||[]).length>0);
+  const pendingDisputeReview = findingsWithDisputes.filter(f=>{
+    const events = f.disputeEvents;
+    const last = events[events.length-1];
+    return last && last.event_type==="CHALLENGED";
+  });
+  const approvedReclassCount = allFindings.reduce((sum,f)=>
+    sum + (f.disputeEvents||[]).filter(ev=>ev.event_type==="APPROVED").length, 0);
+  const upheldOriginalCount = allFindings.reduce((sum,f)=>
+    sum + (f.disputeEvents||[]).filter(ev=>ev.event_type==="REJECTED").length, 0);
 
   /* Overall Compliance Score — built from every module that exists in this app today. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
@@ -4076,6 +4178,38 @@ function renderDashboard(){
         <div class="muted-italic" style="font-size:12px;">${dashMajor.length} Major issues</div>
       </div>
     </div>
+    ${findingsWithDisputes.length ? `
+    <div class="card p4" style="margin:10px 0 0;">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Dispute Trail</div>
+        ${pendingDisputeReview.length ? `<span class="tag tag-amber" style="font-size:10px;">${pendingDisputeReview.length} awaiting review</span>` : ''}
+      </div>
+      <div class="grid3" style="margin-top:8px;">
+        <div>
+          <div style="font-size:20px;font-weight:700;color:var(--amber);">${pendingDisputeReview.length}</div>
+          <div class="muted-italic" style="font-size:11px;">Pending Review</div>
+        </div>
+        <div>
+          <div style="font-size:20px;font-weight:700;color:var(--green);">${approvedReclassCount}</div>
+          <div class="muted-italic" style="font-size:11px;">Reclassified</div>
+        </div>
+        <div>
+          <div style="font-size:20px;font-weight:700;color:var(--navy);">${upheldOriginalCount}</div>
+          <div class="muted-italic" style="font-size:11px;">Upheld</div>
+        </div>
+      </div>
+      ${pendingDisputeReview.length ? `
+        <div class="top-border" style="margin-top:10px;padding-top:8px;">
+          ${pendingDisputeReview.slice(0,3).map(f=>`
+            <button data-jump-audit="${f.auditId}" style="display:flex;width:100%;text-align:left;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;background:none;border:none;font-size:12.5px;cursor:pointer;color:inherit;">
+              <span><span class="tag tag-rust" style="font-size:10px;">Challenged</span> ${esc((f.desc||'').slice(0,50))}${(f.desc||'').length>50?'…':''}</span>
+              <span class="muted-italic" style="font-size:11px;white-space:nowrap;">${esc(f.auditTitle)}</span>
+            </button>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+    ` : ''}
     ${dashTopFindings.length ? `
       <div style="margin-top:12px;border-top:1px solid var(--line2);padding-top:10px;">
         ${dashTopFindings.map(f=>`
@@ -4992,6 +5126,7 @@ function renderAuditDetail(a){
             ${["Open","In Progress","Closed"].map(s=>`<button class="status-pill ${f.status===s?'active':''}" data-set-finding-status="${a.id}:${f.id}:${s}">${s}</button>`).join('')}
           </div>
           ${f.status==="Closed" && f.verifiedBy ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">✓ Verified by <strong>${esc(f.verifiedBy)}</strong> — ${new Date(f.verifiedAt).toLocaleString()}</div>` : ''}
+          ${renderFindingDispute(a, f)}
         </div>
       `).join('')}
       <div class="grid2 top-border">
@@ -8771,6 +8906,44 @@ function attachHandlers(){
     }
     if(status!=="Closed"){ f.verifiedBy = null; f.verifiedAt = null; } // reopening clears prior verification
     f.status = status; persist(); render();
+  });
+
+  document.querySelectorAll('[data-action="challenge-finding"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a.findings.find(x=>x.id===el.dataset.finding);
+    const justification = prompt(`Challenge the ${f.severity} classification of "${(f.desc||'').slice(0,60)}"\n\nEnter your reasoning (min 15 characters):`);
+    if(!justification || justification.trim().length<15){
+      if(justification!==null) alert("Justification must be at least 15 characters.");
+      return;
+    }
+    logFindingEvent(a, f, "CHALLENGED", { justification: justification.trim() }).then(eventId=>{
+      if(eventId){ logActivity(`Finding challenged: ${(f.desc||'').slice(0,50)}`); render(); }
+    });
+  });
+
+  document.querySelectorAll('[data-action="decide-finding-dispute"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a.findings.find(x=>x.id===el.dataset.finding);
+    const approve = confirm(`Reviewing dispute for "${(f.desc||'').slice(0,60)}".\n\nOK = Approve reclassification to Minor\nCancel = Uphold original severity`);
+    const justification = prompt(approve ? "Reasoning for approving reclassification (min 15 chars):" : "Reasoning for upholding original classification (min 15 chars):");
+    if(!justification || justification.trim().length<15){
+      if(justification!==null) alert("Justification must be at least 15 characters.");
+      return;
+    }
+    const eventType = approve ? "APPROVED" : "REJECTED";
+    const toSeverity = approve ? "Minor" : f.severity;
+    logFindingEvent(a, f, eventType, { toSeverity, justification: justification.trim() }).then(async eventId=>{
+      if(!eventId) return;
+      if(approve) f.severity = toSeverity;
+      persist();
+      logActivity(`Finding dispute ${eventType.toLowerCase()}: ${(f.desc||'').slice(0,50)}`);
+      const meaning = approve
+        ? `I approve this reclassification as ${currentUser()?.role}`
+        : `I uphold the original classification as ${currentUser()?.role}`;
+      const sig = await signFindingEvent(eventId, meaning);
+      if(sig) alert(`Signed and recorded — ${sig.signature_id.slice(0,8)}…`);
+      render();
+    });
   });
 
   document.querySelectorAll('[data-action="add-finding"]').forEach(el=>el.onclick=()=>{
