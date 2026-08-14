@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -1121,6 +1121,16 @@ function renderFindingDocumentWarning(f){
   return `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-top:10px;">
     <p style="color:var(--rust);font-size:12.5px;margin:0;font-weight:600;">⚠ Obsolete document version in use: ${esc(doc.title)} v${esc(match.versionNumber)}</p>
     <p class="muted-italic" style="font-size:11.5px;margin-top:4px;">This version became obsolete on ${match.obsoleteDate||'an earlier date'}. The current approved version is ${doc.version ? 'v'+esc(doc.version) : 'not set'}. As with any document-control finding, confirm the approval and effective dates before classifying severity — an approved-but-not-yet-effective version doesn't automatically make prior use non-conforming.</p>
+  </div>`;
+}
+function renderFindingRequiresDocUpdateToggle(a, f){
+  const doc = findingDocumentLookup(f);
+  if(!doc) return '';
+  return `<div style="margin-top:6px;">
+    <label style="display:inline-flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+      <input type="checkbox" data-toggle-requires-doc-update="${a.id}:${f.id}" ${f.requiresDocumentUpdate?'checked':''} style="width:auto;" />
+      Requires SOP update to prevent recurrence ${f.requiresDocumentUpdate?'<span class="tag tag-amber" style="font-size:10px;">blocks closure until republished</span>':''}
+    </label>
   </div>`;
 }
 function renderFindingDispute(a, f){
@@ -5233,6 +5243,7 @@ function renderAuditDetail(a){
           </div>
           ${f.status==="Closed" && f.verifiedBy ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">✓ Verified by <strong>${esc(f.verifiedBy)}</strong> — ${new Date(f.verifiedAt).toLocaleString()}</div>` : ''}
           ${renderFindingDocumentWarning(f)}
+          ${renderFindingRequiresDocUpdateToggle(a, f)}
           ${renderFindingDispute(a, f)}
         </div>
       `).join('')}
@@ -5245,6 +5256,7 @@ function renderAuditDetail(a){
         <label class="field" style="grid-column:1/-1;">Clause Reference (optional)<input id="nf-clauseref-${a.id}" placeholder="e.g. FSSC 22000 Clause 8.5.2" /></label>
         <label class="field">Document Referenced (optional)<select id="nf-docref-${a.id}">${documentSelectOptions().map(o=>`<option>${esc(o)}</option>`).join('')}</select></label>
         <label class="field">Version Observed<input id="nf-docversion-${a.id}" placeholder="e.g. 1.0" /></label>
+        <label class="field" style="display:flex;align-items:center;gap:6px;grid-column:1/-1;"><input type="checkbox" id="nf-requires-doc-update-${a.id}" style="width:auto;" />Requires a document/SOP update to prevent recurrence (blocks closure until the SOP is republished)</label>
         <label class="field" style="grid-column:1/-1;">Finding Description<input id="nf-desc-${a.id}" placeholder="What was observed…" /></label>
         <label class="field" style="grid-column:1/-1;">Corrective Action<input id="nf-action-${a.id}" placeholder="Planned CAPA…" /></label>
         <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
@@ -5359,6 +5371,7 @@ let openOfiId = null;
 let showNewDocument = false;
 let openDocumentId = null;
 let documentStatusFilter = "All";
+let documentSearchQuery = "";
 let showNewTraining = false;
 let openTrainingId = null;
 let trainingStatusFilter = "All";
@@ -5371,6 +5384,7 @@ let recallStatusFilter = "All";
 let showNewSupplier = false;
 let openSupplierId = null;
 let supplierStatusFilter = "All";
+let supplierSearchQuery = "";
 let showNewAllergenProduct = false;
 let openAllergenProductId = null;
 let showNewCip = false;
@@ -5552,12 +5566,17 @@ function documentReviewStatus(d){
 
 function renderDocuments(){
   const all = state.documents;
-  const filtered = all.filter(d => documentStatusFilter==="All" || d.status===documentStatusFilter);
+  const q = (documentSearchQuery||'').trim().toLowerCase();
+  const filtered = all.filter(d =>
+    (documentStatusFilter==="All" || d.status===documentStatusFilter) &&
+    (!q || (d.title||'').toLowerCase().includes(q) || (d.docNumber||'').toLowerCase().includes(q) || (d.category||'').toLowerCase().includes(q))
+  );
   const overdueCount = all.filter(d=>documentReviewStatus(d)==="Overdue").length;
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">Document Control ${cloudReady() ? `<span class="tag tag-green" style="font-size:10px;vertical-align:middle;">🔄 Live — shared with your team</span>` : ''}</h2>
       <div class="flex-wrap">
+        <input id="document-search" data-document-search value="${esc(documentSearchQuery||'')}" placeholder="🔍 Search title, SOP #, category…" style="width:220px;" />
         <button class="btn btn-ghost" data-action="export-documents-csv">⬇ CSV</button>
         <button class="btn btn-primary" data-action="toggle-new-document">+ New Document</button>
       </div>
@@ -5630,6 +5649,31 @@ function renderDocumentRow(d){
   `;
 }
 
+function renderDocumentAssociatedFindings(d){
+  const docKey = `${d.title}${d.docNumber?` (${d.docNumber})`:''}`;
+  const linked = [];
+  state.audits.forEach(a=>{
+    (a.findings||[]).forEach(f=>{
+      if(f.documentRef===docKey) linked.push({a, f});
+    });
+  });
+  if(linked.length===0) return '';
+  return `
+    <div class="top-border" style="padding-top:12px;margin-top:4px;margin-bottom:12px;">
+      <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Associated Findings</div>
+      ${linked.map(({a,f})=>`
+        <button data-jump-audit="${a.id}" style="display:flex;width:100%;text-align:left;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);background:none;border-left:none;border-right:none;border-top:none;font-size:12.5px;cursor:pointer;color:inherit;">
+          <span>
+            🔗 <span class="tag tag-${f.status==='Closed'?'green':'rust'}" style="font-size:10px;">${esc(f.status)}</span>
+            ${esc((f.desc||'').slice(0,60))}${(f.desc||'').length>60?'…':''}
+            ${f.requiresDocumentUpdate ? `<span class="tag tag-amber" style="font-size:10px;">Requires SOP Update</span>` : ''}
+          </span>
+          <span class="muted-italic" style="font-size:11px;white-space:nowrap;">${esc(a.title)}</span>
+        </button>
+      `).join('')}
+    </div>
+  `;
+}
 function renderDocumentDetail(d){
   return `
     <div class="grid2" style="margin-bottom:12px;">
@@ -5641,13 +5685,14 @@ function renderDocumentDetail(d){
       <label class="field">Owner / Prepared By<input data-document-field="${d.id}:owner" value="${esc(d.owner)}" /></label>
       <label class="field">Issue Date<input type="date" data-document-field="${d.id}:issueDate" value="${d.issueDate||''}" /></label>
       <label class="field">Next Review Date<input type="date" data-document-field="${d.id}:reviewDate" value="${d.reviewDate||''}" /></label>
-      <div style="grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:6px;">Sign-Off</div>
-      <label class="field">Reviewed By (Managing Director)<input data-document-field="${d.id}:reviewedBy" value="${esc(d.reviewedBy)}" /></label>
-      <label class="field">Review Sign-Off Date<input type="date" data-document-field="${d.id}:reviewedDate" value="${d.reviewedDate||''}" /></label>
-      <label class="field">Approved By (3rd Signatory)<input data-document-field="${d.id}:approvedBy" value="${esc(d.approvedBy)}" /></label>
-      <label class="field">Approval Sign-Off Date<input type="date" data-document-field="${d.id}:approvedDate" value="${d.approvedDate||''}" /></label>
+      <div style="grid-column:1/-1;font-size:12px;color:var(--muted);margin-top:6px;">Sign-Off <span class="muted-italic" style="font-size:11px;">— auto-filled from your signed-in account when you move status to Approved/Published; not directly editable</span></div>
+      <label class="field">Reviewed By (Managing Director)<input value="${d.reviewedBy?esc(d.reviewedBy):'Not yet signed'}" disabled style="color:${d.reviewedBy?'inherit':'var(--muted)'};font-style:${d.reviewedBy?'normal':'italic'};" /></label>
+      <label class="field">Review Sign-Off Date<input value="${d.reviewedDate||'—'}" disabled /></label>
+      <label class="field">Approved By (3rd Signatory)<input value="${d.approvedBy?esc(d.approvedBy):'Not yet signed'}" disabled style="color:${d.approvedBy?'inherit':'var(--muted)'};font-style:${d.approvedBy?'normal':'italic'};" /></label>
+      <label class="field">Approval Sign-Off Date<input value="${d.approvedDate||'—'}" disabled /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-document-field="${d.id}:notes" value="${esc(d.notes)}" /></label>
     </div>
+    ${renderDocumentAssociatedFindings(d)}
     <div class="top-border" style="padding-top:12px;margin-top:4px;margin-bottom:12px;">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
         <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Version Lineage</div>
@@ -6155,13 +6200,18 @@ function renderRecallDetail(r){
 /* ---------- Supplier Management ---------- */
 function renderSuppliers(){
   const all = state.suppliers;
-  const filtered = all.filter(s => supplierStatusFilter==="All" || s.approvalStatus===supplierStatusFilter);
+  const q = (supplierSearchQuery||'').trim().toLowerCase();
+  const filtered = all.filter(s =>
+    (supplierStatusFilter==="All" || s.approvalStatus===supplierStatusFilter) &&
+    (!q || (s.name||'').toLowerCase().includes(q) || (s.category||'').toLowerCase().includes(q) || (s.suppliedMaterials||[]).some(m=>m.toLowerCase().includes(q)))
+  );
   const approvedCount = all.filter(s=>s.approvalStatus==="Approved").length;
   const highRiskCount = all.filter(s=>s.riskRating==="High").length;
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">Supplier Management</h2>
       <div class="flex-wrap">
+        <input id="supplier-search" data-supplier-search value="${esc(supplierSearchQuery||'')}" placeholder="🔍 Search name, category, material…" style="width:220px;" />
         <button class="btn btn-ghost" data-action="export-suppliers-csv">⬇ CSV</button>
         <button class="btn btn-primary" data-action="toggle-new-supplier">+ New Supplier</button>
       </div>
@@ -9085,6 +9135,14 @@ function attachHandlers(){
     deleteFindingFromCloud(deletedId);
   });
 
+  document.querySelectorAll('[data-toggle-requires-doc-update]').forEach(el=>el.onchange=()=>{
+    const [auditId, findingId] = el.dataset.toggleRequiresDocUpdate.split(':');
+    const a = state.audits.find(x=>x.id===auditId);
+    const f = a.findings.find(x=>x.id===findingId);
+    f.requiresDocumentUpdate = el.checked;
+    logActivity(`Finding "${(f.desc||'').slice(0,50)}" ${el.checked?'flagged as requiring':'unflagged from requiring'} an SOP update`);
+    persist(); render();
+  });
   document.querySelectorAll('[data-set-finding-status]').forEach(el=>el.onclick=()=>{
     const [auditId, findingId, status] = el.dataset.setFindingStatus.split(':');
     const a = state.audits.find(x=>x.id===auditId);
@@ -9093,6 +9151,15 @@ function attachHandlers(){
       if(!can("manageCapa") && !can("closeOthersCapa")){
         alert(`Your role (${currentUser()?.role||'—'}) can create and action CAPA items, but closing one requires a Quality Manager, Approver or Admin.`);
         return;
+      }
+      if(f.requiresDocumentUpdate){
+        const doc = findingDocumentLookup(f);
+        const currentVersion = doc ? (doc.versions||[]).find(v=>v.status==="CURRENT") : null;
+        const republished = doc && currentVersion && currentVersion.versionNumber.toLowerCase() !== (f.observedVersion||'').trim().toLowerCase() && doc.status==="Published";
+        if(!republished){
+          alert(`Cannot close: this finding was flagged as requiring a document/SOP update, and ${doc?doc.title:'the linked document'} hasn't been republished yet (still shows v${doc?doc.version:'—'}, status ${doc?doc.status:'—'}).\n\nPublish the new version in Document Control first, then close this finding.`);
+          return;
+        }
       }
       f.verifiedBy = currentUser()?.fullName;
       f.verifiedAt = new Date().toISOString();
@@ -9159,6 +9226,8 @@ function attachHandlers(){
     const documentRef = docRefEl ? docRefEl.value : "None / Not linked";
     const docVersionEl = document.getElementById(`nf-docversion-${auditId}`);
     const observedVersion = docVersionEl ? docVersionEl.value.trim() : "";
+    const requiresDocUpdateEl = document.getElementById(`nf-requires-doc-update-${auditId}`);
+    const requiresDocumentUpdate = requiresDocUpdateEl ? requiresDocUpdateEl.checked : false;
     const findingId = uid();
     let linkedRiskId = null;
     if(severity==="Major" || severity==="Critical"){
@@ -9192,7 +9261,8 @@ function attachHandlers(){
       status: "Open",
       linkedRiskId,
       documentRef,
-      observedVersion
+      observedVersion,
+      requiresDocumentUpdate
     });
     logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"${linkedRiskId?' — linked risk assessment auto-created':''}`);
     logActivity(`CAPA created: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
@@ -10771,6 +10841,25 @@ function attachHandlers(){
   if(statusFilter) statusFilter.onchange = ()=>{ auditStatusFilter = statusFilter.value; render(); };
   const riskFilter = document.getElementById('audit-filter-risk');
   if(riskFilter) riskFilter.onchange = ()=>{ auditRiskFilter = riskFilter.value; render(); };
+
+  const documentSearchInput = document.getElementById('document-search');
+  if(documentSearchInput){
+    documentSearchInput.oninput = () => {
+      documentSearchQuery = documentSearchInput.value;
+      render();
+      const newInput = document.getElementById('document-search');
+      if(newInput){ newInput.focus(); newInput.setSelectionRange(documentSearchQuery.length, documentSearchQuery.length); }
+    };
+  }
+  const supplierSearchInput = document.getElementById('supplier-search');
+  if(supplierSearchInput){
+    supplierSearchInput.oninput = () => {
+      supplierSearchQuery = supplierSearchInput.value;
+      render();
+      const newInput = document.getElementById('supplier-search');
+      if(newInput){ newInput.focus(); newInput.setSelectionRange(supplierSearchQuery.length, supplierSearchQuery.length); }
+    };
+  }
 
   /* pro modal */
   const openProBtn = document.querySelector('[data-action="open-pro-modal"]'); if(openProBtn) openProBtn.onclick=()=>{ showProModal=true; render(); };
