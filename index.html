@@ -220,8 +220,8 @@ function saveStore(d){ try{ localStorage.setItem(workspaceStoreKey(currentWorksp
    To enable: create a free project at supabase.com, run the SQL setup (see project notes),
    then fill in SUPABASE_URL and SUPABASE_ANON_KEY below. Until those are filled in,
    the Cloud Account feature is simply hidden and the app behaves exactly as before. */
-const SUPABASE_URL = "https://rchzyvnkfgofvdkgoawm.supabase.co";
-const SUPABASE_ANON_KEY = "sb_publishable_5f0SnAqrhuvo148s6N0cpA_4d37ntTX";
+const SUPABASE_URL = "https://panpkvjfyjichfioriqr.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_ArasDdZ0EsWKnq3WM9HhkA_nN7eRHFE";
 const CLOUD_ENABLED = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
 
 let supabaseClient = null;
@@ -815,7 +815,8 @@ function docRowToLocal(row){
     issueDate: row.issue_date, reviewDate: row.review_date,
     reviewedBy: row.reviewed_by, reviewedDate: row.reviewed_date,
     approvedBy: row.approved_by, approvedDate: row.approved_date,
-    notes: row.notes, history: row.history||[], acknowledgments: row.acknowledgments||[]
+    notes: row.notes, history: row.history||[], acknowledgments: row.acknowledgments||[],
+    versions: row.versions||[]
   };
 }
 function docLocalToRow(d){
@@ -826,6 +827,7 @@ function docLocalToRow(d){
     reviewed_by: d.reviewedBy||null, reviewed_date: d.reviewedDate||null,
     approved_by: d.approvedBy||null, approved_date: d.approvedDate||null,
     notes: d.notes, history: d.history||[], acknowledgments: d.acknowledgments||[],
+    versions: d.versions||[],
     updated_at: new Date().toISOString()
   };
 }
@@ -895,8 +897,21 @@ const CUSTOM_MODULE_TABLES = {
 };
 function pushToCloud(stateArrayName, item){ pushCustomModuleToCloud(item, CUSTOM_MODULE_TABLES[stateArrayName]); }
 function deleteFromCloud(stateArrayName, id){ deleteCustomModuleFromCloud(id, CUSTOM_MODULE_TABLES[stateArrayName]); }
-function fetchAllCustomModules(){
-  Object.entries(CUSTOM_MODULE_TABLES).forEach(([arr, table]) => fetchCustomModuleFromCloud(arr, table));
+function evaluateSupplierCriticalScars(supplierName){
+  const supplier = state.suppliers.find(s=>s.name===supplierName);
+  if(!supplier) return;
+  const openCritical = state.supplierScars.filter(s=>s.supplierName===supplierName && s.status!=="Closed" && s.severity==="Critical");
+  if(openCritical.length>=2 && supplier.approvalStatus!=="Not Approved"){
+    supplier.approvalStatus = "Not Approved";
+    logActivity(`Supplier ${supplier.name} downgraded to Not Approved — ${openCritical.length} unresolved Critical SCARs`);
+    persist(); render();
+    pushToCloud("suppliers", supplier);
+    alert(`${supplier.name} now has ${openCritical.length} unresolved Critical SCARs and has been automatically downgraded to Not Approved. Review before any further use of this supplier.`);
+  }
+}
+async function fetchAllCustomModules(){
+  await Promise.all(Object.entries(CUSTOM_MODULE_TABLES).map(([arr, table]) => fetchCustomModuleFromCloud(arr, table)));
+  checkSupplierCertExpiries();
 }
 function subscribeAllCustomModules(){
   Object.entries(CUSTOM_MODULE_TABLES).forEach(([arr, table]) => subscribeCustomModuleRealtime(arr, table));
@@ -1088,6 +1103,25 @@ function unsubscribeFindingEventsRealtime(){
 
 function disputeEventTone(type){
   return { PROPOSED_RECLASSIFICATION:"amber", CHALLENGED:"rust", APPROVED:"green", REJECTED:"rust", CLOSED:"navy" }[type] || "neutral";
+}
+function documentSelectOptions(){
+  return ["None / Not linked", ...state.documents.map(d=>`${d.title}${d.docNumber?` (${d.docNumber})`:''}`)];
+}
+function findingDocumentLookup(f){
+  if(!f.documentRef || f.documentRef==="None / Not linked") return null;
+  return state.documents.find(d=>`${d.title}${d.docNumber?` (${d.docNumber})`:''}`===f.documentRef) || null;
+}
+function renderFindingDocumentWarning(f){
+  const doc = findingDocumentLookup(f);
+  if(!doc || !f.observedVersion || !f.observedVersion.trim()) return '';
+  const versions = doc.versions||[];
+  const match = versions.find(v=>v.versionNumber.toLowerCase()===f.observedVersion.trim().toLowerCase());
+  if(!match) return `<div class="card p4" style="background:#fdf6e3;border-color:var(--amber);margin-top:10px;"><p style="color:#8a6d1a;font-size:12.5px;margin:0;">⚠ "${esc(f.observedVersion)}" doesn't match any recorded version of ${esc(doc.title)}. Check the version number, or record it as a new version on the document if it's genuinely a version not yet logged.</p></div>`;
+  if(match.status==="CURRENT") return `<div class="card p4" style="background:#eefbf1;border-color:var(--green);margin-top:10px;"><p style="color:#1a7a3d;font-size:12.5px;margin:0;">✓ v${esc(match.versionNumber)} was the current, approved version of ${esc(doc.title)}.</p></div>`;
+  return `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-top:10px;">
+    <p style="color:var(--rust);font-size:12.5px;margin:0;font-weight:600;">⚠ Obsolete document version in use: ${esc(doc.title)} v${esc(match.versionNumber)}</p>
+    <p class="muted-italic" style="font-size:11.5px;margin-top:4px;">This version became obsolete on ${match.obsoleteDate||'an earlier date'}. The current approved version is ${doc.version ? 'v'+esc(doc.version) : 'not set'}. As with any document-control finding, confirm the approval and effective dates before classifying severity — an approved-but-not-yet-effective version doesn't automatically make prior use non-conforming.</p>
+  </div>`;
 }
 function renderFindingDispute(a, f){
   const events = f.disputeEvents || [];
@@ -2082,6 +2116,30 @@ function compressImageToDataURL(file, maxDim, quality, cb){
 function photoAttachControl(dataAttrName, idPath, hasPhoto){
   return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;margin-top:6px;">📷 ${hasPhoto?'Replace':'Add'} Photo<input type="file" accept="image/*" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
 }
+/* Multi-file evidence attachments — used for Supplier evidence (NDAs,
+   audit reports, COAs) and SCAR evidence (photos of damaged pallets,
+   out-of-spec labels). See evidenceAttachControl/readFileAsAttachment
+   below for the actual upload handling. */
+function evidenceAttachControl(dataAttrName, idPath){
+  return `<label class="btn btn-ghost" style="font-size:11px;padding:4px 8px;cursor:pointer;">📎 Add Evidence File<input type="file" accept="image/*,application/pdf" ${dataAttrName}="${idPath}" style="display:none;" /></label>`;
+}
+/* Images get compressed/resized like every other photo upload in this app.
+   PDFs (NDAs, audit reports, COAs) can't go through the canvas compression
+   path, so they're read as-is — same local-only-blob approach as photos,
+   just without the resize step. */
+function readFileAsAttachment(file, cb){
+  if(file.type && file.type.startsWith('image/')){
+    compressImageToDataURL(file, 1200, 0.75, cb);
+    return;
+  }
+  if(file.size > 3*1024*1024){
+    alert("This file is larger than 3MB. It will still be attached, but large PDFs can slow down sync and local storage — a smaller/compressed version is recommended.");
+  }
+  const reader = new FileReader();
+  reader.onload = (e) => cb(e.target.result);
+  reader.onerror = () => alert("Could not read this file — please try again.");
+  reader.readAsDataURL(file);
+}
 
 /* ---------- Grouped navigation (Enterprise Edition 2.0) ---------- */
 function renderComingSoon(icon, title, blurb, plannedItems){
@@ -2108,6 +2166,11 @@ function batchOptionsList(){
 }
 function supplierOptionsList(){
   return ["None / Not linked", ...state.suppliers.map(s=>s.name)];
+}
+function allSuppliedMaterialsList(){
+  const set = new Set();
+  state.suppliers.forEach(s=>(s.suppliedMaterials||[]).forEach(m=>set.add(m)));
+  return [...set];
 }
 function capaOptionsList(){
   return ["None / Not linked", ...state.audits.flatMap(a=>a.findings.map(f=>`${f.refNo?f.refNo+' — ':''}${f.desc} (${a.title})`))];
@@ -2174,6 +2237,44 @@ function renderGenericNewForm(cfg){
     </div>
   `;
 }
+function renderScarScopeWarning(r){
+  if(!r.materialAffected || !r.materialAffected.trim()) return '';
+  if(!r.supplierName || r.supplierName==="None / Not linked") return '';
+  const supplier = state.suppliers.find(s=>s.name===r.supplierName);
+  if(!supplier) return '';
+  const scope = supplier.suppliedMaterials||[];
+  if(scope.length===0) return `<div class="card p4" style="background:#fdf6e3;border-color:var(--amber);margin-top:10px;"><p style="color:#8a6d1a;font-size:12.5px;margin:0;">⚠ ${esc(supplier.name)} has no Supplied Materials scope defined yet — cannot verify this SCAR's material is within their approved scope. Add scope on the supplier's record.</p></div>`;
+  const inScope = scope.some(m=>m.toLowerCase()===r.materialAffected.trim().toLowerCase());
+  if(inScope) return `<div class="card p4" style="background:#eefbf1;border-color:var(--green);margin-top:10px;"><p style="color:#1a7a3d;font-size:12.5px;margin:0;">✓ ${esc(r.materialAffected)} is within ${esc(supplier.name)}'s approved scope.</p></div>`;
+  return `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-top:10px;">
+    <p style="color:var(--rust);font-size:12.5px;margin:0;font-weight:600;">⚠ Scope breach: ${esc(supplier.name)} is not approved to supply "${esc(r.materialAffected)}"</p>
+    <p class="muted-italic" style="font-size:11.5px;margin-top:4px;">Approved scope: ${scope.map(esc).join(', ')}. An auditor will flag a supplier being used outside their approved material scope — verify this before closing the SCAR.</p>
+  </div>`;
+}
+function renderScarEvidence(r){
+  const files = r.evidenceFiles||[];
+  return `
+    <div style="margin-top:10px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Evidence — Photos of Damaged Pallets, Out-of-Spec Labels, etc.</div>
+      ${files.length===0
+        ? `<p class="muted-italic" style="font-size:12px;">No evidence uploaded yet.</p>`
+        : `<div style="display:flex;flex-direction:column;gap:6px;">${files.map(f=>`
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;background:var(--card2,#f5f2ea);border-radius:6px;">
+              <a href="${f.dataUrl}" download="${esc(f.name||'evidence')}" style="font-size:12.5px;color:inherit;text-decoration:underline;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.isPdf?'📄':'🖼'} ${esc(f.name||'Untitled')}</a>
+              <div class="flex-wrap" style="flex-shrink:0;">
+                <span class="muted-italic" style="font-size:10.5px;">${new Date(f.uploadedAt).toLocaleDateString()}</span>
+                <button data-action="remove-scar-evidence" data-scar="${r.id}" data-evidence="${f.id}" style="background:none;border:none;padding:0;cursor:pointer;color:var(--rust);font-size:12px;">✕</button>
+              </div>
+            </div>
+          `).join('')}</div>`
+      }
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+        <input data-scar-evidence-name="${r.id}" placeholder="Name this file (e.g. Damaged pallet photo)" style="flex:1;" />
+        ${evidenceAttachControl('data-scar-evidence-upload', r.id)}
+      </div>
+    </div>
+  `;
+}
 function renderGenericRow(cfg, r){
   const open = genericOpenId[cfg.key] === r.id;
   const tag = cfg.rowTag(r);
@@ -2199,6 +2300,8 @@ function renderGenericRow(cfg, r){
               return `<label class="field" ${f.full?'style="grid-column:1/-1;"':''}>${esc(f.label)}${genericInputEl(f, r[f.id], `data-generic-field="${cfg.key}:${r.id}:${f.id}"`)}</label>`;
             }).join('')}
           </div>
+          ${cfg.key==="supplier-scar" ? renderScarScopeWarning(r) : ''}
+          ${cfg.key==="supplier-scar" ? renderScarEvidence(r) : ''}
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
             ${cfg.key==="lab-microbiology" ? `<button class="btn btn-ghost" data-print-micro-cert="${r.id}">🖨 Certificate</button>` : ''}
             <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">Delete</button>
@@ -2593,15 +2696,18 @@ const GENERIC_MODULES = [
     sortField:"dateRaised",
     fields:[
       {id:"supplierName", label:"Supplier", required:true, type:"select", optionsFn:supplierOptionsList},
+      {id:"severity", label:"Severity", type:"select", options:["Minor","Major","Critical"]},
+      {id:"materialAffected", label:"Material / SKU Affected", placeholder:"e.g. Corrugated Boxes", datalistId:"scar-material-list", datalistOptions:allSuppliedMaterialsList},
       {id:"dateRaised", label:"Date Raised", type:"date", default:"today"},
       {id:"issue", label:"Issue / Non-Conformance", full:true},
       {id:"correctiveAction", label:"Corrective Action Requested", full:true},
+      {id:"rootCauseAnalysis", label:"Root Cause Analysis (5-Why / 8D)", full:true, placeholder:"Why did this happen? Why did that happen? …"},
       {id:"status", label:"Status", type:"select", options:["Open","In Progress","Closed"]},
       {id:"closureDate", label:"Closure Date", type:"date"},
       {id:"qaApprovedBy", label:"QA Approved By (required to close)"},
     ],
     rowTitle:r=>r.supplierName||"Supplier",
-    rowSub:r=>`${r.issue||'—'} · Raised ${r.dateRaised||'—'}`,
+    rowSub:r=>`${r.severity?r.severity+' · ':''}${r.issue||'—'} · Raised ${r.dateRaised||'—'}`,
     rowTag:r=>({label:r.status||"Open", tone:{Open:"rust","In Progress":"amber",Closed:"green"}[r.status]||"neutral"})
   },
   { key:"customer-complaints", stateArr:"complaintRecords", icon:"📮", title:"Customer & Consumer Complaints",
@@ -5126,6 +5232,7 @@ function renderAuditDetail(a){
             ${["Open","In Progress","Closed"].map(s=>`<button class="status-pill ${f.status===s?'active':''}" data-set-finding-status="${a.id}:${f.id}:${s}">${s}</button>`).join('')}
           </div>
           ${f.status==="Closed" && f.verifiedBy ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">✓ Verified by <strong>${esc(f.verifiedBy)}</strong> — ${new Date(f.verifiedAt).toLocaleString()}</div>` : ''}
+          ${renderFindingDocumentWarning(f)}
           ${renderFindingDispute(a, f)}
         </div>
       `).join('')}
@@ -5136,6 +5243,8 @@ function renderAuditDetail(a){
         <label class="field">Owner<input id="nf-owner-${a.id}" /></label>
         <label class="field">CAPA Due Date<input type="date" id="nf-due-${a.id}" /></label>
         <label class="field" style="grid-column:1/-1;">Clause Reference (optional)<input id="nf-clauseref-${a.id}" placeholder="e.g. FSSC 22000 Clause 8.5.2" /></label>
+        <label class="field">Document Referenced (optional)<select id="nf-docref-${a.id}">${documentSelectOptions().map(o=>`<option>${esc(o)}</option>`).join('')}</select></label>
+        <label class="field">Version Observed<input id="nf-docversion-${a.id}" placeholder="e.g. 1.0" /></label>
         <label class="field" style="grid-column:1/-1;">Finding Description<input id="nf-desc-${a.id}" placeholder="What was observed…" /></label>
         <label class="field" style="grid-column:1/-1;">Corrective Action<input id="nf-action-${a.id}" placeholder="Planned CAPA…" /></label>
         <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
@@ -5538,6 +5647,22 @@ function renderDocumentDetail(d){
       <label class="field">Approved By (3rd Signatory)<input data-document-field="${d.id}:approvedBy" value="${esc(d.approvedBy)}" /></label>
       <label class="field">Approval Sign-Off Date<input type="date" data-document-field="${d.id}:approvedDate" value="${d.approvedDate||''}" /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-document-field="${d.id}:notes" value="${esc(d.notes)}" /></label>
+    </div>
+    <div class="top-border" style="padding-top:12px;margin-top:4px;margin-bottom:12px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Version Lineage</div>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-action="new-document-version" data-document="${d.id}">+ New Version</button>
+      </div>
+      <p class="muted-italic" style="font-size:11px;margin-bottom:8px;">A superseded version is preserved, not overwritten — an auditor can always see what was actually in effect at any point in time.</p>
+      ${(d.versions||[]).length===0 ? `<p class="muted-italic" style="font-size:12px;">No version history yet.</p>` : [...(d.versions||[])].reverse().map(v=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
+          <span>
+            <span class="tag tag-${v.status==='CURRENT'?'green':'rust'}" style="font-size:10px;">${v.status}</span>
+            v${esc(v.versionNumber)} — effective ${v.effectiveDate||'—'}${v.obsoleteDate?`, obsolete ${v.obsoleteDate}`:''}
+          </span>
+          <span class="muted-italic" style="font-size:11px;">${esc(v.notedBy)||''}</span>
+        </div>
+      `).join('')}
     </div>
     <div class="top-border" style="padding-top:12px;margin-top:4px;margin-bottom:12px;">
       <div style="font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Approval Workflow History</div>
@@ -6071,6 +6196,9 @@ function renderNewSupplierForm(){
       <label class="field">Quality Score (0-100)<input type="number" id="ns-quality-score" min="0" max="100" placeholder="e.g. 92" /></label>
       <label class="field">Last Audit Date<input type="date" id="ns-last-audit-date" /></label>
       <label class="field">Last Audit Result<select id="ns-last-audit-result"><option value="">—</option><option>Pass</option><option>Conditional</option><option>Fail</option></select></label>
+      <label class="field">Certificate Type<input id="ns-cert-type" placeholder="e.g. FSSC 22000, BRCGS, Kosher, Halal" /></label>
+      <label class="field">Certificate Number<input id="ns-cert-number" /></label>
+      <label class="field">Certificate Expiry Date<input type="date" id="ns-cert-expiry" /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input id="ns-notes" placeholder="Optional notes…" /></label>
       <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn btn-ghost" data-action="cancel-new-supplier">Cancel</button>
@@ -6082,14 +6210,15 @@ function renderNewSupplierForm(){
 
 function renderSupplierRow(s){
   const open = openSupplierId === s.id;
+  const certWarn = s.certExpiryDate && daysUntil(s.certExpiryDate) < 30;
   return `
     <div class="card" style="margin-bottom:10px;overflow:hidden;">
       <button class="audit-row" data-toggle-supplier="${s.id}">
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
-            <div class="audit-title">${esc(s.name)}</div>
-            <div class="audit-sub">${esc(s.category)||'—'} · Risk: ${esc(s.riskRating)||'—'}${s.qualityScore?` · Quality: ${esc(s.qualityScore)}%`:''}</div>
+            <div class="audit-title">${esc(s.name)}${certWarn?' ⚠':''}</div>
+            <div class="audit-sub">${esc(s.category)||'—'} · Risk: ${esc(s.riskRating)||'—'}${s.qualityScore?` · Quality: ${esc(s.qualityScore)}%`:''}${(s.suppliedMaterials||[]).length ? ` · Scope: ${s.suppliedMaterials.slice(0,2).map(esc).join(', ')}${s.suppliedMaterials.length>2?` +${s.suppliedMaterials.length-2}`:''}` : ''}</div>
           </div>
         </div>
         <div class="flex-wrap">
@@ -6101,6 +6230,31 @@ function renderSupplierRow(s){
   `;
 }
 
+function renderSupplierEvidenceList(s){
+  const files = s.evidenceFiles||[];
+  if(files.length===0) return `<p class="muted-italic" style="font-size:12px;">No evidence files uploaded yet.</p>`;
+  return `<div style="display:flex;flex-direction:column;gap:6px;">${files.map(f=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 8px;background:var(--card2,#f5f2ea);border-radius:6px;">
+      <a href="${f.dataUrl}" download="${esc(f.name||'evidence')}" style="font-size:12.5px;color:inherit;text-decoration:underline;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${f.isPdf?'📄':'🖼'} ${esc(f.name||'Untitled')}</a>
+      <div class="flex-wrap" style="flex-shrink:0;">
+        <span class="muted-italic" style="font-size:10.5px;">${new Date(f.uploadedAt).toLocaleDateString()}</span>
+        <button data-action="remove-supplier-evidence" data-supplier="${s.id}" data-evidence="${f.id}" style="background:none;border:none;padding:0;cursor:pointer;color:var(--rust);font-size:12px;">✕</button>
+      </div>
+    </div>
+  `).join('')}</div>`;
+}
+function renderSupplierCertStatus(s){
+  if(!s.certExpiryDate) return '';
+  const d = daysUntil(s.certExpiryDate);
+  let tone, label;
+  if(d<0){ tone="rust"; label=`Expired ${Math.abs(d)}d ago`; }
+  else if(d<=30){ tone="amber"; label=`Expiring in ${d}d`; }
+  else { tone="green"; label="Valid"; }
+  return `<div class="card p4" style="margin:0 0 14px;background:var(--${tone}Bg);border-color:var(--${tone});">
+    <p style="margin:0;font-size:12.5px;color:var(--${tone});"><strong>${esc(s.certType||'Certificate')}</strong>${s.certNumber?` (${esc(s.certNumber)})`:''} — <span class="tag tag-${tone}" style="font-size:10px;">${label}</span></p>
+    ${d<0 ? `<p class="muted-italic" style="font-size:11.5px;margin-top:4px;">This certificate has expired. The supplier's Approval Status has been automatically set to Conditional — renew the certificate and update the expiry date to allow re-approval.</p>` : ''}
+  </div>`;
+}
 function renderSupplierDetail(s){
   return `
     <div class="grid2" style="margin-bottom:12px;">
@@ -6113,7 +6267,38 @@ function renderSupplierDetail(s){
       <label class="field">Quality Score (0-100)<input type="number" min="0" max="100" data-supplier-field="${s.id}:qualityScore" value="${s.qualityScore||''}" /></label>
       <label class="field">Last Audit Date<input type="date" data-supplier-field="${s.id}:lastAuditDate" value="${s.lastAuditDate||''}" /></label>
       <label class="field">Last Audit Result<select data-supplier-field="${s.id}:lastAuditResult"><option value="" ${!s.lastAuditResult?'selected':''}>—</option>${["Pass","Conditional","Fail"].map(o=>`<option ${o===s.lastAuditResult?'selected':''}>${o}</option>`).join('')}</select></label>
+      <label class="field">Certificate Type<input data-supplier-field="${s.id}:certType" value="${esc(s.certType)}" placeholder="e.g. FSSC 22000, BRCGS, Kosher, Halal" /></label>
+      <label class="field">Certificate Number<input data-supplier-field="${s.id}:certNumber" value="${esc(s.certNumber)}" /></label>
+      <label class="field">Certificate Expiry Date<input type="date" data-supplier-field="${s.id}:certExpiryDate" value="${s.certExpiryDate||''}" /></label>
       <label class="field" style="grid-column:1/-1;">Notes<input data-supplier-field="${s.id}:notes" value="${esc(s.notes)}" /></label>
+    </div>
+    ${renderSupplierCertStatus(s)}
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Supplied Materials / Specification Scope</div>
+      <p class="muted-italic" style="font-size:11.5px;margin:0 0 8px;">An approved supplier is approved for specific materials, not everything — an auditor will check this. List only what this supplier is actually audited/approved to supply.</p>
+      <div class="flex-wrap" style="margin-bottom:8px;">
+        ${(s.suppliedMaterials||[]).length===0
+          ? `<span class="muted-italic" style="font-size:12px;">No materials scoped yet.</span>`
+          : (s.suppliedMaterials||[]).map(m=>`
+              <span class="tag tag-navy" style="font-size:11px;display:inline-flex;align-items:center;gap:4px;">
+                ${esc(m)}
+                <button data-action="remove-supplier-material" data-supplier="${s.id}" data-material="${esc(m)}" style="background:none;border:none;padding:0;margin:0;cursor:pointer;color:inherit;font-size:11px;line-height:1;">✕</button>
+              </span>
+            `).join('')
+        }
+      </div>
+      <div style="display:flex;gap:8px;">
+        <input data-supplier-material-input="${s.id}" placeholder="e.g. Wheat Flour, Corrugated Boxes, Food-Contact Film…" style="flex:1;" />
+        <button class="btn btn-ghost" data-action="add-supplier-material" data-supplier="${s.id}">+ Add</button>
+      </div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Evidence — NDAs, Audit Reports, COAs</div>
+      ${renderSupplierEvidenceList(s)}
+      <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+        <input data-supplier-evidence-name="${s.id}" placeholder="Name this document (e.g. Signed NDA 2026)" style="flex:1;" />
+        ${evidenceAttachControl('data-supplier-evidence-upload', s.id)}
+      </div>
     </div>
     <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" data-action="delete-supplier" data-supplier="${s.id}">Delete Supplier</button>
@@ -8286,6 +8471,7 @@ function attachHandlers(){
     genericShowNew[k] = false; genericOpenId[k] = record.id;
     if(cfg.cloudSynced) cloudSyncInsert(cfg, record);
     persist(); render();
+    if(k==="supplier-scar" && record.severity==="Critical") evaluateSupplierCriticalScars(record.supplierName);
   });
   document.querySelectorAll('[data-generic-toggle]').forEach(el=>el.onclick=()=>{
     const [k,id] = el.dataset.genericToggle.split(':');
@@ -8404,6 +8590,14 @@ function attachHandlers(){
       }
       if(k==="supplier-scar" && field==="status"){
         if(el.value==="Closed" && rec.status!=="Closed"){
+          const scopeSupplier = state.suppliers.find(s=>s.name===rec.supplierName);
+          if(scopeSupplier && rec.materialAffected && rec.materialAffected.trim() && (scopeSupplier.suppliedMaterials||[]).length>0){
+            const inScope = scopeSupplier.suppliedMaterials.some(m=>m.toLowerCase()===rec.materialAffected.trim().toLowerCase());
+            if(!inScope){
+              alert(`Cannot close: ${scopeSupplier.name} is not approved for "${rec.materialAffected}".\n\nApproved scope: ${scopeSupplier.suppliedMaterials.join(', ')}.\n\nEither correct the Material Affected field, or update the supplier's approved scope first if this material should in fact be covered.`);
+              el.value = rec.status; return;
+            }
+          }
           if(!can("manageCapa") && !can("closeOthersCapa")){
             alert(`Your role (${currentUser()?.role||'—'}) does not have permission to close a Supplier CAR. This requires a Quality Manager, Approver or Admin.`);
             el.value = rec.status; return;
@@ -8436,6 +8630,9 @@ function attachHandlers(){
         return;
       }
       rec[field] = el.value;
+      if(k==="supplier-scar" && field==="severity" && el.value==="Critical"){
+        evaluateSupplierCriticalScars(rec.supplierName);
+      }
       if(k==="lab-sample-register" && field==="result" && el.value==="Out of Specification" && !rec.linkedFindingId){
         const oosAudit = getOrCreateOosFindingsAudit();
         const desc = `Out-of-Specification result — Sample ${rec.sampleId||'(unlabeled)'}${rec.product?`, ${rec.product}`:''}${rec.batchLot?` — ${rec.batchLot}`:''}`;
@@ -8958,6 +9155,10 @@ function attachHandlers(){
     const clause = document.getElementById(`nf-clause-${auditId}`).value;
     const clauseRefEl = document.getElementById(`nf-clauseref-${auditId}`);
     const clauseRef = clauseRefEl ? clauseRefEl.value.trim() : "";
+    const docRefEl = document.getElementById(`nf-docref-${auditId}`);
+    const documentRef = docRefEl ? docRefEl.value : "None / Not linked";
+    const docVersionEl = document.getElementById(`nf-docversion-${auditId}`);
+    const observedVersion = docVersionEl ? docVersionEl.value.trim() : "";
     const findingId = uid();
     let linkedRiskId = null;
     if(severity==="Major" || severity==="Critical"){
@@ -8989,7 +9190,9 @@ function attachHandlers(){
       dueDate,
       actionText,
       status: "Open",
-      linkedRiskId
+      linkedRiskId,
+      documentRef,
+      observedVersion
     });
     logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"${linkedRiskId?' — linked risk assessment auto-created':''}`);
     logActivity(`CAPA created: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
@@ -9276,7 +9479,8 @@ function attachHandlers(){
       approvedBy: document.getElementById('nd-approved-by').value,
       approvedDate: document.getElementById('nd-approved-date').value,
       notes: document.getElementById('nd-notes').value,
-      history: [{ stage: document.getElementById('nd-status').value || "Draft", by: currentUser()?.fullName||"Unknown", date: today() }]
+      history: [{ stage: document.getElementById('nd-status').value || "Draft", by: currentUser()?.fullName||"Unknown", date: today() }],
+      versions: [{ versionNumber: document.getElementById('nd-version').value || "1", status: "CURRENT", effectiveDate: document.getElementById('nd-issue-date').value || today(), obsoleteDate: null, notedBy: currentUser()?.fullName||"Unknown", createdAt: new Date().toISOString() }]
     };
     state.documents.unshift(doc);
     logActivity(`Document ${doc.docNumber||title} created by ${currentUser()?.fullName||'Unknown'}`);
@@ -9285,6 +9489,29 @@ function attachHandlers(){
   };
   document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleDocument; openDocumentId = openDocumentId===id ? null : id; render();
+  });
+  document.querySelectorAll('[data-action="new-document-version"]').forEach(el=>el.onclick=()=>{
+    const d = state.documents.find(x=>x.id===el.dataset.document);
+    if(!d) return;
+    const newVersionNumber = prompt(`Current version: ${d.version||'1'}\n\nEnter the new version number:`, "");
+    if(!newVersionNumber || !newVersionNumber.trim()) return;
+    if(!d.versions) d.versions = [];
+    const currentEntry = d.versions.find(v=>v.status==="CURRENT");
+    const effectiveDate = prompt(`Effective date for v${newVersionNumber.trim()} (YYYY-MM-DD):`, today());
+    if(!effectiveDate) return;
+    if(currentEntry){
+      currentEntry.status = "OBSOLETE";
+      currentEntry.obsoleteDate = effectiveDate;
+    }
+    d.versions.push({
+      versionNumber: newVersionNumber.trim(), status: "CURRENT",
+      effectiveDate, obsoleteDate: null,
+      notedBy: currentUser()?.fullName||"Unknown", createdAt: new Date().toISOString()
+    });
+    d.version = newVersionNumber.trim();
+    logActivity(`Document ${d.docNumber||d.title} bumped to v${newVersionNumber.trim()} — v${currentEntry?currentEntry.versionNumber:'—'} now obsolete`);
+    persist(); render();
+    pushDocumentToCloud(d);
   });
   document.querySelectorAll('[data-document-filter]').forEach(el=>el.onclick=()=>{
     documentStatusFilter = el.dataset.documentFilter; render();
@@ -9705,11 +9932,17 @@ function attachHandlers(){
       qualityScore: document.getElementById('ns-quality-score').value,
       lastAuditDate: document.getElementById('ns-last-audit-date').value,
       lastAuditResult: document.getElementById('ns-last-audit-result').value,
-      notes: document.getElementById('ns-notes').value
+      certType: document.getElementById('ns-cert-type').value,
+      certNumber: document.getElementById('ns-cert-number').value,
+      certExpiryDate: document.getElementById('ns-cert-expiry').value,
+      certExpiryFlagged: false,
+      notes: document.getElementById('ns-notes').value,
+      suppliedMaterials: []
     };
     state.suppliers.unshift(supplier);
     openSupplierId = supplier.id; showNewSupplier=false; persist(); render();
     pushToCloud("suppliers", supplier);
+    checkSupplierCertExpiries();
   };
   document.querySelectorAll('[data-toggle-supplier]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleSupplier; openSupplierId = openSupplierId===id ? null : id; render();
@@ -9724,9 +9957,91 @@ function attachHandlers(){
       if(!s) return;
       s[field] = el.value;
       if(field==="approvalStatus" && el.value==="Approved") logActivity(`Supplier ${s.name} approved`);
+      if(field==="certExpiryDate") s.certExpiryFlagged = false; // re-arm the auto-downgrade check for the new date
       persist(); render();
       pushToCloud("suppliers", s);
+      if(field==="certExpiryDate") checkSupplierCertExpiries();
     };
+  });
+  document.querySelectorAll('[data-action="add-supplier-material"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.supplier;
+    const s = state.suppliers.find(x=>x.id===id);
+    const input = document.querySelector(`[data-supplier-material-input="${id}"]`);
+    if(!s || !input) return;
+    const value = input.value.trim();
+    if(!value) return;
+    if(!s.suppliedMaterials) s.suppliedMaterials = [];
+    if(!s.suppliedMaterials.some(m=>m.toLowerCase()===value.toLowerCase())){
+      s.suppliedMaterials.push(value);
+      persist(); render();
+      pushToCloud("suppliers", s);
+    }
+  });
+  document.querySelectorAll('[data-supplier-material-input]').forEach(el=>{
+    el.onkeydown = (e) => {
+      if(e.key==="Enter"){
+        e.preventDefault();
+        document.querySelector(`[data-action="add-supplier-material"][data-supplier="${el.dataset.supplierMaterialInput}"]`)?.click();
+      }
+    };
+  });
+  document.querySelectorAll('[data-action="remove-supplier-material"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.supplier;
+    const s = state.suppliers.find(x=>x.id===id);
+    if(!s) return;
+    s.suppliedMaterials = (s.suppliedMaterials||[]).filter(m=>m!==el.dataset.material);
+    persist(); render();
+    pushToCloud("suppliers", s);
+  });
+  document.querySelectorAll('[data-supplier-evidence-upload]').forEach(el=>el.onchange=()=>{
+    const file = el.files[0]; if(!file) return;
+    const id = el.dataset.supplierEvidenceUpload;
+    const s = state.suppliers.find(x=>x.id===id);
+    if(!s) return;
+    const nameInput = document.querySelector(`[data-supplier-evidence-name="${id}"]`);
+    const name = (nameInput?.value||'').trim() || file.name || 'Evidence file';
+    readFileAsAttachment(file, (dataUrl) => {
+      if(!s.evidenceFiles) s.evidenceFiles = [];
+      s.evidenceFiles.push({ id: uid(), name, dataUrl, isPdf: file.type==='application/pdf', uploadedAt: new Date().toISOString() });
+      if(nameInput) nameInput.value = '';
+      persist(); render();
+      pushToCloud("suppliers", s);
+    });
+  });
+  document.querySelectorAll('[data-action="remove-supplier-evidence"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Remove this evidence file? This cannot be undone.")) return;
+    const id = el.dataset.supplier;
+    const s = state.suppliers.find(x=>x.id===id);
+    if(!s) return;
+    s.evidenceFiles = (s.evidenceFiles||[]).filter(f=>f.id!==el.dataset.evidence);
+    persist(); render();
+    pushToCloud("suppliers", s);
+  });
+  document.querySelectorAll('[data-scar-evidence-upload]').forEach(el=>el.onchange=()=>{
+    const file = el.files[0]; if(!file) return;
+    const id = el.dataset.scarEvidenceUpload;
+    const r = state.supplierScars.find(x=>x.id===id);
+    if(!r) return;
+    const nameInput = document.querySelector(`[data-scar-evidence-name="${id}"]`);
+    const name = (nameInput?.value||'').trim() || file.name || 'Evidence file';
+    readFileAsAttachment(file, (dataUrl) => {
+      if(!r.evidenceFiles) r.evidenceFiles = [];
+      r.evidenceFiles.push({ id: uid(), name, dataUrl, isPdf: file.type==='application/pdf', uploadedAt: new Date().toISOString() });
+      if(nameInput) nameInput.value = '';
+      persist(); render();
+      const cfg = GENERIC_MODULES.find(m=>m.key==="supplier-scar");
+      if(cfg && cfg.cloudSynced) cloudSyncUpdate(cfg, r);
+    });
+  });
+  document.querySelectorAll('[data-action="remove-scar-evidence"]').forEach(el=>el.onclick=()=>{
+    if(!confirm("Remove this evidence file? This cannot be undone.")) return;
+    const id = el.dataset.scar;
+    const r = state.supplierScars.find(x=>x.id===id);
+    if(!r) return;
+    r.evidenceFiles = (r.evidenceFiles||[]).filter(f=>f.id!==el.dataset.evidence);
+    persist(); render();
+    const cfg = GENERIC_MODULES.find(m=>m.key==="supplier-scar");
+    if(cfg && cfg.cloudSynced) cloudSyncUpdate(cfg, r);
   });
   document.querySelectorAll('[data-action="delete-supplier"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this supplier record? This cannot be undone.")) return;
@@ -9738,8 +10053,8 @@ function attachHandlers(){
   const suppliersCsvBtn = document.querySelector('[data-action="export-suppliers-csv"]');
   if(suppliersCsvBtn) suppliersCsvBtn.onclick=()=>{
     downloadCsv(
-      ["Name","Category","Approval Status","Risk Rating","Last Assessment Date","Contact Person","Quality Score","Last Audit Date","Last Audit Result","Notes"],
-      state.suppliers.map(s=>[s.name, s.category||'', s.approvalStatus, s.riskRating||'', s.lastAssessmentDate||'', s.contactPerson||'', s.qualityScore||'', s.lastAuditDate||'', s.lastAuditResult||'', s.notes||'']),
+      ["Name","Category","Approval Status","Risk Rating","Last Assessment Date","Contact Person","Quality Score","Last Audit Date","Last Audit Result","Certificate Type","Certificate Number","Certificate Expiry","Supplied Materials","Notes"],
+      state.suppliers.map(s=>[s.name, s.category||'', s.approvalStatus, s.riskRating||'', s.lastAssessmentDate||'', s.contactPerson||'', s.qualityScore||'', s.lastAuditDate||'', s.lastAuditResult||'', s.certType||'', s.certNumber||'', s.certExpiryDate||'', (s.suppliedMaterials||[]).join('; '), s.notes||'']),
       `aqms-suppliers-${today()}.csv`
     );
   };
@@ -10617,8 +10932,30 @@ function attachHandlers(){
   });
 }
 
+function checkSupplierCertExpiries(){
+  let changed = false;
+  state.suppliers.forEach(s=>{
+    if(!s.certExpiryDate) return;
+    const expired = daysUntil(s.certExpiryDate) < 0;
+    if(expired && s.approvalStatus==="Approved" && !s.certExpiryFlagged){
+      s.approvalStatus = "Conditional";
+      s.certExpiryFlagged = true;
+      logActivity(`Supplier ${s.name} moved to Conditional — ${s.certType||'certificate'} expired ${s.certExpiryDate}`);
+      pushToCloud("suppliers", s);
+      changed = true;
+    } else if(!expired && s.certExpiryFlagged){
+      // Certificate was renewed with a future date — clear the flag so a
+      // future expiry can trigger the downgrade again.
+      s.certExpiryFlagged = false;
+      changed = true;
+    }
+  });
+  if(changed){ persist(); render(); }
+}
+
 render();
 initCloudSession();
+checkSupplierCertExpiries();
 
 /* auto-save safety net — quietly persists every 5s in case a change slipped through */
 setInterval(() => { saveStore(state); }, 5000);
