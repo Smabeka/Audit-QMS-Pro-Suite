@@ -1103,7 +1103,8 @@ function unsubscribeFindingEventsRealtime(){
 }
 
 function disputeEventTone(type){
-  return { PROPOSED_RECLASSIFICATION:"amber", CHALLENGED:"rust", APPROVED:"green", REJECTED:"rust", CLOSED:"navy" }[type] || "neutral";
+  return { PROPOSED_RECLASSIFICATION:"amber", CHALLENGED:"rust", APPROVED:"green", REJECTED:"rust", CLOSED:"navy",
+    CORRECTION_REQUESTED:"amber", CORRECTION_APPROVED:"green", CORRECTION_REJECTED:"rust" }[type] || "neutral";
 }
 function documentSelectOptions(){
   return ["None / Not linked", ...state.documents.map(d=>`${d.title}${d.docNumber?` (${d.docNumber})`:''}`)];
@@ -1160,6 +1161,104 @@ function renderFindingDispute(a, f){
       </div>
     </div>
   `;
+}
+
+/* ---------------- Finding Correction / Amendment Workflow ----------------
+   Handles mistakes discovered AFTER a finding has been signed off (wrong
+   department, wrong description, wrong owner, etc.) without unsigning the
+   audit and without silently overwriting history. Reuses the same
+   capa_finding_events log + RPC as the dispute trail above (event_type
+   CORRECTION_REQUESTED / CORRECTION_APPROVED / CORRECTION_REJECTED), so no
+   new Supabase table or RPC is required. Field/old/new-value are encoded in
+   the existing justification text field in a fixed, parseable format:
+     Field: <label> | From: "<old>" | To: "<new>" | Reason: <reason>
+   Independence is enforced in the UI: whoever requested a correction cannot
+   also approve or reject it — the buttons are disabled and a message
+   explains why, exactly mirroring the "Creator ≠ Independent Approver"
+   principle. This is a UI-layer control; a determined user with backend
+   access could bypass it, same caveat that already applies to role checks
+   elsewhere in this app (see the "Permission ≠ Workflow authorization"
+   note in the finding-lifecycle design). */
+let correctionModalTarget = null; // { auditId, findingId }
+let correctionField = "";
+const CORRECTION_FIELDS = [
+  { id:"clause", label:"Department / Section", type:"select", options: DEPARTMENTS },
+  { id:"desc", label:"Finding Description", type:"text" },
+  { id:"severity", label:"Severity", type:"select", options: SEVERITIES },
+  { id:"owner", label:"Owner", type:"text" },
+  { id:"dueDate", label:"CAPA Due Date", type:"date" },
+  { id:"clauseRef", label:"Clause Reference", type:"text" },
+];
+function lastPendingCorrection(f){
+  const events = (f.disputeEvents||[]).filter(e=>(e.event_type||'').startsWith("CORRECTION_"));
+  if(!events.length) return null;
+  const last = events[events.length-1];
+  return last.event_type === "CORRECTION_REQUESTED" ? last : null;
+}
+function parseCorrectionJustification(text){
+  const m = /Field:\s*(.+?)\s*\|\s*From:\s*"([^"]*)"\s*\|\s*To:\s*"([^"]*)"\s*\|\s*Reason:/.exec(text||'');
+  if(!m) return null;
+  const fieldLabel = m[1];
+  const fieldDef = CORRECTION_FIELDS.find(fd=>fd.label===fieldLabel);
+  return { fieldLabel, oldValue: m[2], newValue: m[3], fieldId: fieldDef ? fieldDef.id : null };
+}
+function renderFindingCorrection(a, f){
+  const pending = lastPendingCorrection(f);
+  const canReview = can("manageCapa") || can("closeOthersCapa");
+  const canRequest = can("respondFindings") || can("addFindings") || canReview;
+  const isOwnRequest = pending && pending.actor_name === currentUser()?.fullName;
+  return `
+    <div class="top-border" style="margin-top:10px;padding-top:10px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Correction / Amendment</div>
+      ${pending ? `
+        <div class="card p4" style="background:#fdf6e3;border-color:var(--amber);margin-bottom:4px;">
+          <p style="font-size:12.5px;margin:0;"><strong>Pending correction</strong> — ${esc(pending.justification)}</p>
+          <div class="muted-italic" style="font-size:11px;margin-top:4px;">Requested by ${esc(pending.actor_name)} — ${new Date(pending.created_at).toLocaleString()}</div>
+          <div class="flex-wrap" style="margin-top:8px;">
+            ${canReview ? `
+              <button class="btn btn-primary" style="font-size:12px;" data-action="approve-correction" data-audit="${a.id}" data-finding="${f.id}" ${isOwnRequest?'disabled':''}>Approve</button>
+              <button class="btn btn-ghost" style="font-size:12px;" data-action="reject-correction" data-audit="${a.id}" data-finding="${f.id}" ${isOwnRequest?'disabled':''}>Reject</button>
+            ` : ''}
+          </div>
+          ${isOwnRequest ? `<p class="muted-italic" style="font-size:11px;margin-top:6px;">You requested this correction — separation of duties means you can't also approve it. Waiting on an independent reviewer.</p>` : ''}
+        </div>
+      ` : (canRequest ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-correction-modal" data-audit="${a.id}" data-finding="${f.id}">📝 Request Correction</button>` : `<p class="muted-italic" style="font-size:12px;">No corrections requested.</p>`)}
+    </div>
+  `;
+}
+function renderCorrectionModal(){
+  if(!correctionModalTarget) return '';
+  const a = state.audits.find(x=>x.id===correctionModalTarget.auditId);
+  const f = a && a.findings.find(x=>x.id===correctionModalTarget.findingId);
+  if(!f) return '';
+  const fieldDef = CORRECTION_FIELDS.find(fd=>fd.id===correctionField) || CORRECTION_FIELDS[0];
+  const currentValue = f[fieldDef.id] || '';
+  const valueInput = fieldDef.type==='select'
+    ? `<select id="corr-new-value">${(fieldDef.options||[]).map(o=>`<option ${o===currentValue?'selected':''}>${esc(o)}</option>`).join('')}</select>`
+    : fieldDef.type==='date'
+    ? `<input type="date" id="corr-new-value" value="${esc(currentValue)}" />`
+    : `<input id="corr-new-value" value="${esc(currentValue)}" />`;
+  return `
+    <div class="modal-overlay" data-action="close-correction-modal">
+      <div class="modal-card" style="max-width:460px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:16px;color:var(--navy);">Request Finding Correction</h3>
+        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">Corrections require independent review before they're applied. The original value stays visible in this finding's history — nothing is overwritten silently.</p>
+        <label class="field">Field to Correct<select id="corr-field">${CORRECTION_FIELDS.map(fd=>`<option value="${fd.id}" ${fd.id===fieldDef.id?'selected':''}>${esc(fd.label)}</option>`).join('')}</select></label>
+        <label class="field" style="margin-top:8px;">Current Value<input value="${esc(currentValue)}" disabled style="opacity:.7;" /></label>
+        <label class="field" style="margin-top:8px;">Corrected Value${valueInput}</label>
+        <label class="field" style="margin-top:8px;">Reason for Correction<textarea id="corr-reason" rows="3" placeholder="Why is this correction needed? (min 15 characters)"></textarea></label>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button class="btn btn-ghost" data-action="close-correction-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="submit-correction-request">Submit for Review</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function bindCorrectionModalField(){
+  const sel = document.getElementById('corr-field');
+  if(!sel) return;
+  sel.onchange = () => { correctionField = sel.value; render(); };
 }
 
 /* ---------------- Shared Risk Management (Day 3) ----------------
@@ -1897,6 +1996,17 @@ let jumpTo = null;
 let showNewAudit = false;
 let auditPlanOpenIds = {};
 let openAuditId = null;
+/* ---------------- E-Signature Pad ----------------
+   Canvas-drawn signature capture, replacing free-text "type your name to sign"
+   fields across Audit Sign-Off and generic module approval fields. Signatures
+   are stored as base64 PNG data URLs alongside the signer's name and timestamp
+   directly on the record (audits are local-only; generic modules store the
+   whole record as JSONB, so extra keys like fooSignature/fooSignedAt persist
+   safely through cloud sync with no schema changes needed). */
+let sigPadTarget = null; // { kind:"audit", auditId, role } | { kind:"generic", moduleKey, recordId, fieldId }
+let sigPadTypedName = "";
+let sigPadDrawingDataUrl = null;
+let sigPadHasDrawn = false;
 function clearOpenDetailViews(){
   openAuditId=null; openRiskId=null; openDocumentId=null; openTrainingId=null; openHaccpId=null;
   openRecallId=null; openSupplierId=null; openAllergenProductId=null; openCipId=null; openSensoryId=null;
@@ -2235,12 +2345,13 @@ function genericDefaultValue(field){
 function renderGenericNewForm(cfg){
   return `
     <div class="card p4 grid3" style="margin-bottom:16px;">
-      ${cfg.fields.filter(f=>!f.hidden).map(f=>{
+      ${cfg.fields.filter(f=>!f.hidden && f.type!=='esignature').map(f=>{
         if(f.type==='checkboxes'){
           return `<label class="field" style="grid-column:1/-1;">${esc(f.label)}${renderCheckboxGroup(`cb-new::${cfg.key}::${f.id}`, f.options, '')}</label>`;
         }
         return `<label class="field" ${f.full?'style="grid-column:1/-1;"':''}>${esc(f.label)}${genericInputEl(f, genericDefaultValue(f), `id="gn-${cfg.key}-${f.id}"`)}</label>`;
       }).join('')}
+      <p class="muted-italic" style="grid-column:1/-1;font-size:11px;margin:-4px 0 0;">Signature fields become available for e-signing once the record is saved.</p>
       <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn btn-ghost" data-generic-cancel="${cfg.key}">Cancel</button>
         <button class="btn btn-primary" data-generic-create="${cfg.key}">Save</button>
@@ -2307,6 +2418,9 @@ function renderGenericRow(cfg, r){
             ${cfg.fields.map(f=>{
               if(f.type==='checkboxes'){
                 return `<label class="field" style="grid-column:1/-1;">${esc(f.label)}${renderCheckboxGroup(`cb-edit::${cfg.key}::${r.id}::${f.id}`, f.options, r[f.id])}</label>`;
+              }
+              if(f.type==='esignature'){
+                return `<label class="field">${esc(f.label)}${renderEsignatureField(cfg.key, r.id, f, r)}</label>`;
               }
               return `<label class="field" ${f.full?'style="grid-column:1/-1;"':''}>${esc(f.label)}${genericInputEl(f, r[f.id], `data-generic-field="${cfg.key}:${r.id}:${f.id}"`)}</label>`;
             }).join('')}
@@ -2855,7 +2969,7 @@ const GENERIC_MODULES = [
       {id:"status", label:"Status", type:"select", options:["Draft","Under Review","Approved","Implemented","Verified","Closed","Rejected"]},
       {id:"reviewedBy", label:"Reviewed By"},
       {id:"reviewedAt", label:"Reviewed At", type:"date"},
-      {id:"approvedBy", label:"Approved By (signature name)"},
+      {id:"approvedBy", label:"Approved By (e-signature)", type:"esignature"},
       {id:"approvedAt", label:"Approved At", type:"date"},
       {id:"implementedBy", label:"Implemented By"},
       {id:"verifiedBy", label:"Verified By (effectiveness)"},
@@ -2893,7 +3007,7 @@ const GENERIC_MODULES = [
       {id:"result", label:"Result", type:"select", options:["Pending","Pass","Conditional Pass","Fail"]},
       {id:"reviewedBy", label:"Reviewed By"},
       {id:"reviewedAt", label:"Reviewed At", type:"date"},
-      {id:"approvedBy", label:"Approved By (signature name)"},
+      {id:"approvedBy", label:"Approved By (e-signature)", type:"esignature"},
       {id:"approvedAt", label:"Approved At", type:"date"},
       {id:"revalidationDueDate", label:"Revalidation Due Date", type:"date"},
       {id:"status", label:"Status", type:"select", options:["Draft","Under Review","Approved","Executing","Completed","Closed","Rejected"]},
@@ -2974,7 +3088,7 @@ const GENERIC_MODULES = [
       {id:"designTransferDate", label:"Design Transfer Date", type:"date"},
       {id:"linkedChangeControl", label:"Linked Change Control", type:"select", optionsFn:changeControlOptionsList},
       {id:"status", label:"Status", type:"select", options:["Planning","Design Input","Design Output","Design Review","Verification","Validation","Transfer","Complete","On Hold"]},
-      {id:"approvedBy", label:"Approved By (signature name)"},
+      {id:"approvedBy", label:"Approved By (e-signature)", type:"esignature"},
       {id:"approvedAt", label:"Approved At", type:"date"},
       {id:"notes", label:"Notes", full:true}
     ],
@@ -3745,6 +3859,105 @@ function renderAccountModal(){
     </div>
   `;
 }
+function renderSignaturePadModal(){
+  if(!sigPadTarget) return '';
+  return `
+    <div class="modal-overlay" data-action="close-sig-pad">
+      <div class="modal-card" style="max-width:460px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">✍️ Sign Here</h3>
+        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">Draw your signature with mouse, trackpad or finger. This is captured as an authenticated e-signature, not a typed name.</p>
+        <label class="field" style="margin-bottom:8px;">Full Name<input id="sig-pad-name" value="${esc(sigPadTypedName)}" placeholder="Full name" /></label>
+        <div style="border:1px solid var(--line2);border-radius:8px;background:#fff;">
+          <canvas id="sig-pad-canvas" style="width:100%;height:160px;display:block;touch-action:none;cursor:crosshair;border-radius:8px;"></canvas>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+          <button class="btn btn-ghost" style="font-size:12px;" data-action="clear-sig-pad">Clear</button>
+          <span class="muted-italic" style="font-size:11px;">${new Date().toLocaleString()}</span>
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+          <button class="btn btn-ghost" data-action="close-sig-pad">Cancel</button>
+          <button class="btn btn-primary" data-action="save-sig-pad">Save Signature</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function bindSignaturePadCanvas(){
+  const canvas = document.getElementById('sig-pad-canvas');
+  if(!canvas) return;
+  const rect = canvas.getBoundingClientRect();
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.round(rect.width * ratio));
+  canvas.height = Math.max(1, Math.round(rect.height * ratio));
+  const ctx = canvas.getContext('2d');
+  ctx.scale(ratio, ratio);
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#1c2b4a';
+  if(sigPadDrawingDataUrl){
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, rect.width, rect.height);
+    img.src = sigPadDrawingDataUrl;
+  }
+  let drawing = false;
+  function pos(e){
+    const r = canvas.getBoundingClientRect();
+    const t = (e.touches && e.touches[0]) || e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+  function start(e){ drawing = true; sigPadHasDrawn = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); }
+  function move(e){ if(!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }
+  function end(){ if(!drawing) return; drawing = false; sigPadDrawingDataUrl = canvas.toDataURL('image/png'); }
+  canvas.onmousedown = start; canvas.onmousemove = move;
+  canvas.onmouseup = end; canvas.onmouseleave = end;
+  canvas.ontouchstart = start; canvas.ontouchmove = move; canvas.ontouchend = end;
+}
+function applySignature(target, name, imageDataUrl){
+  const signedAt = new Date().toISOString();
+  if(target.kind === "audit"){
+    const a = state.audits.find(x=>x.id===target.auditId);
+    if(!a) return;
+    if(!a.signOff) a.signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
+    if(target.role === "auditor"){
+      a.signOff.auditorName = name; a.signOff.auditorSignedAt = signedAt; a.signOff.auditorSignature = imageDataUrl;
+      logHistory(a, `Signed off by auditor: ${name} (e-signature)`);
+    } else {
+      a.signOff.approverName = name; a.signOff.approverSignedAt = signedAt; a.signOff.approverSignature = imageDataUrl;
+      logHistory(a, `Approved and signed off: ${name} (e-signature)`);
+    }
+    persist(); render();
+    return;
+  }
+  if(target.kind === "generic"){
+    const cfg = GENERIC_MODULES.find(m=>m.key===target.moduleKey);
+    if(!cfg) return;
+    const rec = (state[cfg.stateArr]||[]).find(r=>r.id===target.recordId);
+    if(!rec) return;
+    rec[target.fieldId] = name;
+    rec[target.fieldId + "Signature"] = imageDataUrl;
+    rec[target.fieldId + "SignedAt"] = signedAt;
+    persist(); render();
+    if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+    return;
+  }
+}
+function renderEsignatureField(moduleKey, recordId, field, r){
+  const name = r[field.id];
+  const sigImg = r[field.id + "Signature"];
+  const signedAt = r[field.id + "SignedAt"];
+  if(name && sigImg){
+    return `
+      <div style="border:1px solid var(--line2);border-radius:8px;padding:8px;background:#fff;">
+        <img src="${sigImg}" style="max-height:46px;display:block;margin-bottom:4px;" />
+        <div style="font-size:12px;">✓ Signed by <strong>${esc(name)}</strong></div>
+        <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">${signedAt?new Date(signedAt).toLocaleString():''}</div>
+        <button class="btn btn-ghost" style="font-size:11px;" data-action="clear-esignature" data-module="${moduleKey}" data-record="${recordId}" data-field="${field.id}">Clear &amp; Re-sign</button>
+      </div>
+    `;
+  }
+  return `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-sig-pad" data-kind="generic" data-module="${moduleKey}" data-record="${recordId}" data-field="${field.id}">✍️ Click to Sign</button>`;
+}
 function renderMainNav(){
   let html = `<div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
     <button data-action="toggle-nav-menu" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:6px 0;">
@@ -3864,6 +4077,8 @@ function render(){
       ${showWorkspaceModal ? renderWorkspaceModal() : ''}
       ${showCloudModal ? renderCloudModal() : ''}
       ${showAccountModal ? renderAccountModal() : ''}
+      ${sigPadTarget ? renderSignaturePadModal() : ''}
+      ${correctionModalTarget ? renderCorrectionModal() : ''}
     `;
   } catch(err){
     console.error("Render error:", err);
@@ -3878,6 +4093,8 @@ function render(){
     return;
   }
   attachHandlers();
+  if(sigPadTarget) bindSignaturePadCanvas();
+  if(correctionModalTarget) bindCorrectionModalField();
   if(tab==="analytics") renderCharts();
   if(tab==="metrics") renderMetricCharts();
   if(tab==="dashboard") renderComplianceChart();
@@ -5245,7 +5462,6 @@ function renderAuditDetail(a){
           ${f.status==="Closed" && f.verifiedBy ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">✓ Verified by <strong>${esc(f.verifiedBy)}</strong> — ${new Date(f.verifiedAt).toLocaleString()}</div>` : ''}
           ${renderFindingDocumentWarning(f)}
           ${renderFindingRequiresDocUpdateToggle(a, f)}
-          ${renderFindingDispute(a, f)}
         </div>
       `).join('')}
       <div class="grid2 top-border">
@@ -5263,6 +5479,18 @@ function renderAuditDetail(a){
         <button class="btn btn-primary" style="grid-column:1/-1;justify-content:center;" data-action="add-finding" data-audit="${a.id}">+ Log Finding</button>
       </div>
       </div>
+      ${a.findings.length ? `
+      <div class="top-border" style="margin-top:12px;padding-top:12px;">
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Dispute and correction actions below stay available even when the audit is signed off and locked — this is the controlled path for amending a signed finding without unsigning it.</div>
+        ${a.findings.map(f => `
+          <div class="finding-box">
+            <div style="font-size:13px;font-weight:600;">${esc(f.refNo)||'—'} — ${esc(f.desc).slice(0,70)}${(f.desc||'').length>70?'…':''}</div>
+            ${renderFindingDispute(a, f)}
+            ${renderFindingCorrection(a, f)}
+          </div>
+        `).join('')}
+      </div>
+      ` : ''}
     </div>
 
     <div class="card p4" style="margin-top:12px;">
@@ -5301,23 +5529,23 @@ function renderAuditDetail(a){
         <div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">AUDITOR SIGN-OFF</div>
           ${signOff.auditorSignedAt ? `
+            ${signOff.auditorSignature ? `<img src="${signOff.auditorSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
             <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.auditorName)}</strong></div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.auditorSignedAt).toLocaleString()}</div>
             <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="auditor">Unsign</button>
           ` : `
-            <input placeholder="Type full name to sign" id="sign-auditor-${a.id}" style="margin-bottom:6px;" />
-            <button class="btn btn-primary" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="auditor">Sign as Auditor</button>
+            <button class="btn btn-primary" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="auditor">✍️ Sign as Auditor</button>
           `}
         </div>
         <div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">APPROVAL SIGN-OFF</div>
           ${signOff.approverSignedAt ? `
+            ${signOff.approverSignature ? `<img src="${signOff.approverSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
             <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.approverName)}</strong></div>
             <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.approverSignedAt).toLocaleString()}</div>
             <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="approver">Unsign</button>
           ` : `
-            <input placeholder="Type full name to sign" id="sign-approver-${a.id}" style="margin-bottom:6px;" ${!locked?'disabled title="Auditor must sign first"':''} />
-            <button class="btn ${locked?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="approver" ${!locked?'disabled':''}>Sign as Approver</button>
+            <button class="btn ${locked?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="approver" ${!locked?'disabled title="Auditor must sign first"':''}>✍️ Sign as Approver</button>
           `}
         </div>
       </div>
@@ -7890,6 +8118,14 @@ function renderSettings(){
 }
 
 /* ---------- PDF audit report ---------- */
+async function sha256Hex(str){
+  try{
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(str||'')));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,16) + '…';
+  }catch(e){
+    return 'unavailable';
+  }
+}
 function buildMetricsPrintReport(){
   const CATEGORY_ORDER = ["Process","Customer","Food Safety","Manufacturing","Supply Chain","Safety","Engineering","Recall & Traceability"];
   const metrics = state.metrics;
@@ -8083,7 +8319,7 @@ function buildMgmtReviewPrintReport(){
   `;
 }
 
-function buildAuditPrintReport(a){
+async function buildAuditPrintReport(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
   const conforming = items.filter(i=>i.result==="Pass").length;
@@ -8220,13 +8456,18 @@ function buildAuditPrintReport(a){
     ${findingsRows}
     ${conclusionSection}
     ${approvalSection}
+    <div class="section-title">Digital Sign-Off &amp; Verification Log</div>
     <div class="sig-row">
-      <div class="sig-line">${a.signOff && a.signOff.auditorSignedAt
-        ? `Auditor Signature: <strong>${esc(a.signOff.auditorName)}</strong> — signed electronically ${new Date(a.signOff.auditorSignedAt).toLocaleString()}`
-        : `Auditor Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________`}</div>
-      <div class="sig-line">${a.signOff && a.signOff.approverSignedAt
-        ? `Approval Signature: <strong>${esc(a.signOff.approverName)}</strong> — signed electronically ${new Date(a.signOff.approverSignedAt).toLocaleString()}`
-        : `Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________`}</div>
+      <div class="sig-line">
+        ${a.signOff && a.signOff.auditorSignedAt
+          ? `${a.signOff.auditorSignature ? `<img src="${a.signOff.auditorSignature}" style="max-height:40px;display:block;margin-bottom:4px;" />` : ''}Auditor Signature: <strong>${esc(a.signOff.auditorName)}</strong><br/>Signed electronically — ${new Date(a.signOff.auditorSignedAt).toLocaleString()}<br/>Hash: ${esc(await sha256Hex(a.signOff.auditorName + a.signOff.auditorSignedAt + (a.id||'')))}`
+          : `Auditor Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________`}
+      </div>
+      <div class="sig-line">
+        ${a.signOff && a.signOff.approverSignedAt
+          ? `${a.signOff.approverSignature ? `<img src="${a.signOff.approverSignature}" style="max-height:40px;display:block;margin-bottom:4px;" />` : ''}Approval Signature: <strong>${esc(a.signOff.approverName)}</strong><br/>Signed electronically — ${new Date(a.signOff.approverSignedAt).toLocaleString()}<br/>Hash: ${esc(await sha256Hex(a.signOff.approverName + a.signOff.approverSignedAt + (a.id||'')))}`
+          : `Approval Signature &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Date: ______________`}
+      </div>
     </div>
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
       ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by AuditQMS Pro Suite ${APP_VERSION}
@@ -8976,19 +9217,10 @@ function attachHandlers(){
   document.querySelectorAll('[data-action="sign-audit"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     if(!a) return;
-    const role = el.dataset.role; // "auditor" | "approver"
-    const input = document.getElementById(role==="auditor" ? `sign-auditor-${a.id}` : `sign-approver-${a.id}`);
-    const name = (input && input.value || "").trim();
-    if(!name){ alert("Please type your full name to sign."); return; }
-    if(!a.signOff){ a.signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null }; }
-    if(role==="auditor"){
-      a.signOff.auditorName = name; a.signOff.auditorSignedAt = new Date().toISOString();
-      logHistory(a, `Signed off by auditor: ${name}`);
-    } else {
-      a.signOff.approverName = name; a.signOff.approverSignedAt = new Date().toISOString();
-      logHistory(a, `Approved and signed off: ${name}`);
-    }
-    persist(); render();
+    sigPadTarget = { kind:"audit", auditId: a.id, role: el.dataset.role };
+    sigPadTypedName = currentUser()?.fullName || "";
+    sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
+    render();
   });
   document.querySelectorAll('[data-action="unsign-audit"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
@@ -8997,14 +9229,49 @@ function attachHandlers(){
     if(!confirm("Unsigning will re-open this audit for editing. Continue?")) return;
     if(role==="auditor"){
       logHistory(a, `Auditor sign-off revoked (was: ${a.signOff.auditorName})`);
-      a.signOff.auditorName = ""; a.signOff.auditorSignedAt = null;
+      a.signOff.auditorName = ""; a.signOff.auditorSignedAt = null; a.signOff.auditorSignature = null;
       // revoking the auditor signature also revokes approval, since approval depended on the locked record
-      if(a.signOff.approverSignedAt){ a.signOff.approverName = ""; a.signOff.approverSignedAt = null; }
+      if(a.signOff.approverSignedAt){ a.signOff.approverName = ""; a.signOff.approverSignedAt = null; a.signOff.approverSignature = null; }
     } else {
       logHistory(a, `Approval sign-off revoked (was: ${a.signOff.approverName})`);
-      a.signOff.approverName = ""; a.signOff.approverSignedAt = null;
+      a.signOff.approverName = ""; a.signOff.approverSignedAt = null; a.signOff.approverSignature = null;
     }
     persist(); render();
+  });
+  document.querySelectorAll('[data-action="open-sig-pad"]').forEach(el=>el.onclick=()=>{
+    if(el.dataset.kind === "generic"){
+      sigPadTarget = { kind:"generic", moduleKey: el.dataset.module, recordId: el.dataset.record, fieldId: el.dataset.field };
+      sigPadTypedName = currentUser()?.fullName || "";
+      sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
+      render();
+    }
+  });
+  document.querySelectorAll('[data-action="clear-esignature"]').forEach(el=>el.onclick=()=>{
+    const cfg = GENERIC_MODULES.find(m=>m.key===el.dataset.module);
+    const rec = cfg && (state[cfg.stateArr]||[]).find(r=>r.id===el.dataset.record);
+    if(!rec) return;
+    if(!confirm("Clear this signature? You'll need to sign again.")) return;
+    const f = el.dataset.field;
+    rec[f] = ""; rec[f+"Signature"] = ""; rec[f+"SignedAt"] = null;
+    persist(); render();
+    if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+  });
+  document.querySelectorAll('[data-action="close-sig-pad"]').forEach(el=>el.onclick=()=>{
+    sigPadTarget = null; sigPadDrawingDataUrl = null; sigPadHasDrawn = false; render();
+  });
+  document.querySelectorAll('[data-action="clear-sig-pad"]').forEach(el=>el.onclick=()=>{
+    sigPadDrawingDataUrl = null; sigPadHasDrawn = false; render();
+  });
+  document.querySelectorAll('[data-action="save-sig-pad"]').forEach(el=>el.onclick=()=>{
+    if(!sigPadTarget) return;
+    const nameInput = document.getElementById('sig-pad-name');
+    const name = (nameInput && nameInput.value || "").trim();
+    if(!name){ alert("Please enter your full name."); return; }
+    if(!sigPadHasDrawn || !sigPadDrawingDataUrl){ alert("Please draw your signature before saving."); return; }
+    const target = sigPadTarget;
+    const imageDataUrl = sigPadDrawingDataUrl;
+    sigPadTarget = null; sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
+    applySignature(target, name, imageDataUrl);
   });
   document.querySelectorAll('[data-action="cancel-delete-audit"]').forEach(el=>el.onclick=()=>{
     pendingDeleteAuditId = null; render();
@@ -9171,6 +9438,86 @@ function attachHandlers(){
     }
     if(status!=="Closed"){ f.verifiedBy = null; f.verifiedAt = null; } // reopening clears prior verification
     f.status = status; persist(); render();
+  });
+
+  document.querySelectorAll('[data-action="open-correction-modal"]').forEach(el=>el.onclick=()=>{
+    correctionModalTarget = { auditId: el.dataset.audit, findingId: el.dataset.finding };
+    correctionField = CORRECTION_FIELDS[0].id;
+    render();
+  });
+  document.querySelectorAll('[data-action="close-correction-modal"]').forEach(el=>el.onclick=()=>{
+    correctionModalTarget = null; correctionField = ""; render();
+  });
+  document.querySelectorAll('[data-action="submit-correction-request"]').forEach(el=>el.onclick=()=>{
+    if(!correctionModalTarget) return;
+    const a = state.audits.find(x=>x.id===correctionModalTarget.auditId);
+    const f = a && a.findings.find(x=>x.id===correctionModalTarget.findingId);
+    if(!f) return;
+    const fieldEl = document.getElementById('corr-field');
+    const fieldDef = CORRECTION_FIELDS.find(fd=>fd.id===(fieldEl && fieldEl.value)) || CORRECTION_FIELDS[0];
+    const newValueEl = document.getElementById('corr-new-value');
+    const newValue = (newValueEl && newValueEl.value || '').trim();
+    const reasonEl = document.getElementById('corr-reason');
+    const reason = (reasonEl && reasonEl.value || '').trim();
+    const oldValue = f[fieldDef.id] || '';
+    if(!reason || reason.length < 15){ alert("Reason must be at least 15 characters."); return; }
+    if(newValue === oldValue){ alert("The corrected value is the same as the current value."); return; }
+    if(lastPendingCorrection(f)){ alert("There's already a pending correction on this finding — it must be reviewed before requesting another."); return; }
+    const justification = `Field: ${fieldDef.label} | From: "${oldValue||'—'}" | To: "${newValue}" | Reason: ${reason}`;
+    logFindingEvent(a, f, "CORRECTION_REQUESTED", { justification }).then(eventId=>{
+      if(eventId){
+        logActivity(`Correction requested on finding "${(f.desc||'').slice(0,50)}": ${fieldDef.label}`);
+        correctionModalTarget = null; correctionField = "";
+        render();
+      }
+    });
+  });
+  document.querySelectorAll('[data-action="approve-correction"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a && a.findings.find(x=>x.id===el.dataset.finding);
+    if(!f) return;
+    const pending = lastPendingCorrection(f);
+    if(!pending) return;
+    if(pending.actor_name === currentUser()?.fullName){
+      alert("You cannot approve your own correction request — an independent reviewer must decide. This separation of duties protects the integrity of the audit trail.");
+      return;
+    }
+    const parsed = parseCorrectionJustification(pending.justification);
+    if(!parsed || !parsed.fieldId){ alert("Could not parse this correction request."); return; }
+    const decisionReason = prompt(`Approve correction: ${parsed.fieldLabel} → "${parsed.newValue}"?\n\nEnter your review reasoning (min 15 characters):`);
+    if(!decisionReason || decisionReason.trim().length < 15){
+      if(decisionReason !== null) alert("Reasoning must be at least 15 characters.");
+      return;
+    }
+    logFindingEvent(a, f, "CORRECTION_APPROVED", { justification: `${pending.justification} | Reviewer decision: ${decisionReason.trim()}` }).then(eventId=>{
+      if(!eventId) return;
+      f[parsed.fieldId] = parsed.newValue;
+      persist();
+      logHistory(a, `Correction approved on finding "${(f.desc||'').slice(0,50)}${(f.desc||'').length>50?'…':''}": ${parsed.fieldLabel} → "${parsed.newValue}"`);
+      logActivity(`Correction approved: ${parsed.fieldLabel} on finding`);
+      render();
+    });
+  });
+  document.querySelectorAll('[data-action="reject-correction"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a && a.findings.find(x=>x.id===el.dataset.finding);
+    if(!f) return;
+    const pending = lastPendingCorrection(f);
+    if(!pending) return;
+    if(pending.actor_name === currentUser()?.fullName){
+      alert("You cannot decide on your own correction request — an independent reviewer must review it.");
+      return;
+    }
+    const decisionReason = prompt("Reasoning for rejecting this correction (min 15 characters):");
+    if(!decisionReason || decisionReason.trim().length < 15){
+      if(decisionReason !== null) alert("Reasoning must be at least 15 characters.");
+      return;
+    }
+    logFindingEvent(a, f, "CORRECTION_REJECTED", { justification: `${pending.justification} | Reviewer decision: ${decisionReason.trim()}` }).then(eventId=>{
+      if(!eventId) return;
+      logActivity(`Correction rejected on finding "${(f.desc||'').slice(0,50)}${(f.desc||'').length>50?'…':''}"`);
+      render();
+    });
   });
 
   document.querySelectorAll('[data-action="challenge-finding"]').forEach(el=>el.onclick=()=>{
@@ -11014,10 +11361,10 @@ function attachHandlers(){
     buildMicroCertificatePrintReport(el.dataset.printMicroCert);
     window.print();
   });
-  document.querySelectorAll('[data-action="export-audit-pdf"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="export-audit-pdf"]').forEach(el=>el.onclick=async ()=>{
     if(!isPro()){ showProModal=true; render(); return; }
     const a = state.audits.find(x=>x.id===el.dataset.audit);
-    buildAuditPrintReport(a);
+    await buildAuditPrintReport(a);
     window.print();
   });
 }
