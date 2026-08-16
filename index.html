@@ -1113,16 +1113,36 @@ function findingDocumentLookup(f){
   if(!f.documentRef || f.documentRef==="None / Not linked") return null;
   return state.documents.find(d=>`${d.title}${d.docNumber?` (${d.docNumber})`:''}`===f.documentRef) || null;
 }
+function snapshotObservedDocumentVersion(documentRef, observedVersion){
+  if(!documentRef || documentRef==="None / Not linked" || !observedVersion || !observedVersion.trim()) return null;
+  const doc = state.documents.find(d=>`${d.title}${d.docNumber?` (${d.docNumber})`:''}`===documentRef);
+  if(!doc) return null;
+  const match = (doc.versions||[]).find(v=>v.versionNumber.toLowerCase()===observedVersion.trim().toLowerCase());
+  if(!match) return null;
+  // Frozen at the moment the finding is raised — this is what was actually in
+  // effect during the audit, regardless of how the document's history changes later.
+  return {
+    documentId: doc.id, versionNumber: match.versionNumber, status: match.status,
+    effectiveDate: match.effectiveDate, obsoleteDate: match.obsoleteDate,
+    integrityHash: match.integrityHash || null, snapshotAt: new Date().toISOString()
+  };
+}
 function renderFindingDocumentWarning(f){
   const doc = findingDocumentLookup(f);
   if(!doc || !f.observedVersion || !f.observedVersion.trim()) return '';
   const versions = doc.versions||[];
   const match = versions.find(v=>v.versionNumber.toLowerCase()===f.observedVersion.trim().toLowerCase());
+  const snap = f.documentVersionSnapshot;
+  const snapMismatch = snap && match && (snap.status !== match.status || snap.integrityHash !== (match.integrityHash||null));
+  const integrityNote = snapMismatch
+    ? `<p style="color:var(--rust);font-size:11.5px;margin-top:6px;font-weight:600;">⚠ This version's recorded status/hash has changed since this finding was raised (was "${esc(snap.status)}" at audit time, now "${esc(match.status)}"). Investigate before relying on this finding's document evidence.</p>`
+    : (snap ? `<p class="muted-italic" style="font-size:10.5px;margin-top:6px;">Evidence anchored to the version as it stood when this finding was raised — unaffected by later document edits.</p>` : '');
   if(!match) return `<div class="card p4" style="background:#fdf6e3;border-color:var(--amber);margin-top:10px;"><p style="color:#8a6d1a;font-size:12.5px;margin:0;">⚠ "${esc(f.observedVersion)}" doesn't match any recorded version of ${esc(doc.title)}. Check the version number, or record it as a new version on the document if it's genuinely a version not yet logged.</p></div>`;
-  if(match.status==="CURRENT") return `<div class="card p4" style="background:#eefbf1;border-color:var(--green);margin-top:10px;"><p style="color:#1a7a3d;font-size:12.5px;margin:0;">✓ v${esc(match.versionNumber)} was the current, approved version of ${esc(doc.title)}.</p></div>`;
+  if(match.status==="CURRENT") return `<div class="card p4" style="background:#eefbf1;border-color:var(--green);margin-top:10px;"><p style="color:#1a7a3d;font-size:12.5px;margin:0;">✓ v${esc(match.versionNumber)} was the current, approved version of ${esc(doc.title)}.</p>${integrityNote}</div>`;
   return `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-top:10px;">
     <p style="color:var(--rust);font-size:12.5px;margin:0;font-weight:600;">⚠ Obsolete document version in use: ${esc(doc.title)} v${esc(match.versionNumber)}</p>
     <p class="muted-italic" style="font-size:11.5px;margin-top:4px;">This version became obsolete on ${match.obsoleteDate||'an earlier date'}. The current approved version is ${doc.version ? 'v'+esc(doc.version) : 'not set'}. As with any document-control finding, confirm the approval and effective dates before classifying severity — an approved-but-not-yet-effective version doesn't automatically make prior use non-conforming.</p>
+    ${integrityNote}
   </div>`;
 }
 function renderFindingRequiresDocUpdateToggle(a, f){
@@ -5933,6 +5953,7 @@ function renderDocumentDetail(d){
           <span>
             <span class="tag tag-${v.status==='CURRENT'?'green':'rust'}" style="font-size:10px;">${v.status}</span>
             v${esc(v.versionNumber)} — effective ${v.effectiveDate||'—'}${v.obsoleteDate?`, obsolete ${v.obsoleteDate}`:''}
+            ${v.integrityHash ? `<span class="muted-italic" style="font-size:10px;display:block;">🔒 ${esc(v.integrityHash)}</span>` : ''}
           </span>
           <span class="muted-italic" style="font-size:11px;">${esc(v.notedBy)||''}</span>
         </div>
@@ -8347,17 +8368,46 @@ async function buildAuditPrintReport(a){
     : '—';
 
   const execSummary = `
-    <div class="section-title">Executive Summary</div>
+    <div class="section-title">Executive Score &amp; Risk Index</div>
+    <div style="border:2px solid ${overallResultTone==='rust'?'#9b3f28':overallResultTone==='amber'?'#8a5a10':'#3f6b2e'};border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.05em;">Overall Compliance</div>
+        <div style="font-size:28px;font-weight:700;color:${overallResultTone==='rust'?'#9b3f28':overallResultTone==='amber'?'#8a5a10':'#3f6b2e'};">${score!==null? score+'%' : '—'} ${printBadge(overallResultLabel, overallResultTone)}</div>
+      </div>
+      <div style="display:flex;gap:20px;">
+        <div><div style="font-size:11px;color:#555;">Critical</div><div style="font-size:20px;font-weight:700;color:#9b3f28;">${findingCounts.Critical}</div></div>
+        <div><div style="font-size:11px;color:#555;">Major</div><div style="font-size:20px;font-weight:700;color:#8a5a10;">${findingCounts.Major}</div></div>
+        <div><div style="font-size:11px;color:#555;">Minor</div><div style="font-size:20px;font-weight:700;color:#555;">${findingCounts.Minor}</div></div>
+      </div>
+    </div>
     <table>
       <tbody>
-        <tr><th>Overall Result</th><td colspan="3">${printBadge(overallResultLabel, overallResultTone)}</td></tr>
-        <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
         <tr><th>Checklist Items</th><td colspan="3">✓ Conforming: ${conforming} &nbsp;&nbsp; ✕ Non-conforming: ${nonConforming} &nbsp;&nbsp; Observations: ${observations}</td></tr>
-        <tr><th>Findings</th><td colspan="3">Critical: ${findingCounts.Critical} &nbsp;&nbsp; Major: ${findingCounts.Major} &nbsp;&nbsp; Minor: ${findingCounts.Minor}</td></tr>
         <tr><th>CAPAs Created</th><td colspan="3">${a.findings.length}</td></tr>
       </tbody>
     </table>
   `;
+
+  const criticalMajorFindings = a.findings.filter(f=>f.severity==="Critical" || f.severity==="Major");
+  const criticalMajorSection = criticalMajorFindings.length ? `
+    <div class="section-title">Critical &amp; Major Findings Breakdown</div>
+    ${criticalMajorFindings.map(f=>{
+      const tone = f.severity==="Critical" ? PRINT_TONES.rust : PRINT_TONES.amber;
+      const overdue = f.dueDate && f.status!=="Closed" && new Date(f.dueDate) < new Date(new Date().toDateString());
+      return `
+        <div style="border-left:4px solid ${tone.fg};background:${tone.bg}22;padding:8px 12px;margin-bottom:8px;border-radius:0 6px 6px 0;">
+          <div style="font-weight:700;font-size:13px;">[${esc(f.refNo)||'—'}] ${esc(f.desc)}</div>
+          <div style="font-size:11.5px;color:#444;margin-top:3px;">
+            Severity: ${printBadge(f.severity, sevTone[f.severity])} &nbsp;&nbsp;
+            Status: ${printBadge(f.status, statusTone[f.status])} &nbsp;&nbsp;
+            CAPA Due: ${f.dueDate||'—'}${overdue?' <strong style="color:#9b3f28;">(OVERDUE)</strong>':''} &nbsp;&nbsp;
+            Department: ${esc(f.clause)||'—'}
+          </div>
+          ${f.actionText ? `<div style="font-size:11.5px;margin-top:3px;">Corrective Action: ${esc(f.actionText)}</div>` : ''}
+        </div>
+      `;
+    }).join('')}
+  ` : '';
 
   const ap = a.auditPlan || {};
   const hasPlanDetails = ap.organization || ap.visitNumber || ap.leadAuditor || ap.scope || (ap.itinerary && ap.itinerary.length);
@@ -8383,13 +8433,23 @@ async function buildAuditPrintReport(a){
     ` : ''}
   ` : '';
 
-  const checklistRows = a.sections.map(sec => `
-    <div class="section-title">${esc(sec.name)}</div>
+  const checklistRows = a.sections.map(sec => {
+    const secItems = sec.items.filter(i=>i.result==="Pass"||i.result==="Fail");
+    const secPass = secItems.filter(i=>i.result==="Pass").length;
+    const secPct = secItems.length ? Math.round((secPass/secItems.length)*100) : null;
+    const secTone = secPct===null ? null : secPct>=90 ? "PASS" : secPct>=70 ? "WARN" : "FAIL";
+    const secToneColor = secTone==="PASS" ? PRINT_TONES.green : secTone==="WARN" ? PRINT_TONES.amber : secTone==="FAIL" ? PRINT_TONES.rust : null;
+    return `
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>${esc(sec.name)}</span>
+      ${secPct!==null ? `<span style="font-size:11px;font-weight:600;text-transform:none;letter-spacing:0;color:${secToneColor.fg};">${secPct}% (${secTone})</span>` : `<span style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:#888;">not scored</span>`}
+    </div>
     <table><thead><tr><th>Item</th><th>Clause</th><th>Result</th><th>Note</th><th>Photo</th></tr></thead>
     <tbody>
       ${sec.items.map(it=>`<tr><td>${esc(it.text)}</td><td>${esc(sec.name)}</td><td>${it.result||'—'}</td><td>${esc(it.note)||''}</td><td>${printPhoto(it.photo)}</td></tr>`).join('')}
     </tbody></table>
-  `).join('');
+  `;
+  }).join('');
 
   const findingsRows = a.findings.length ? `
     <div class="section-title">Findings & CAPA</div>
@@ -8432,12 +8492,19 @@ async function buildAuditPrintReport(a){
   const brandAddress = c.address ? `<div class="meta">${esc(c.address)}${c.email?` &nbsp;·&nbsp; ${esc(c.email)}`:''}</div>` : (c.email ? `<div class="meta">${esc(c.email)}</div>` : '');
 
   document.getElementById('print-report').innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-      ${logoHtml}
-      <div>
-        <h1>${brandName}</h1>
-        ${brandAddress}
-        <div class="meta">Audit Report — Generated ${new Date().toLocaleString()}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;gap:10px;">
+        ${logoHtml}
+        <div>
+          <h1>${brandName}</h1>
+          ${brandAddress}
+          <div class="meta">Audit Summary Report — Generated ${new Date().toLocaleString()}</div>
+        </div>
+      </div>
+      <div style="text-align:right;font-size:11px;color:#555;">
+        <div><strong>Doc ID:</strong> ${esc(a.auditNumber ? 'AUD-'+a.auditNumber : 'AUD-'+a.id.slice(0,8).toUpperCase())}</div>
+        <div>${esc(a.standard)}</div>
+        <div>${a.date}</div>
       </div>
     </div>
     <table>
@@ -8447,10 +8514,10 @@ async function buildAuditPrintReport(a){
         <tr><th>Department / Area</th><td>${esc(a.area)||'—'}</td><th>Auditor</th><td>${esc(a.auditor)||'—'}</td></tr>
         <tr><th>Auditee</th><td colspan="3">${esc(a.auditee)||'—'}</td></tr>
         <tr><th>Date</th><td>${a.date}</td><th>Status</th><td>${a.status}</td></tr>
-        <tr><th>Compliance Score</th><td colspan="3">${score!==null? score+'%' : 'Not yet scored'}</td></tr>
       </tbody>
     </table>
     ${execSummary}
+    ${criticalMajorSection}
     ${auditPlanSection}
     ${checklistRows}
     ${findingsRows}
@@ -9610,7 +9677,8 @@ function attachHandlers(){
       linkedRiskId,
       documentRef,
       observedVersion,
-      requiresDocumentUpdate
+      requiresDocumentUpdate,
+      documentVersionSnapshot: snapshotObservedDocumentVersion(documentRef, observedVersion)
     });
     logHistory(a, `Finding logged: "${desc.slice(0,50)}${desc.length>50?'…':''}"${linkedRiskId?' — linked risk assessment auto-created':''}`);
     logActivity(`CAPA created: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
@@ -9879,18 +9947,22 @@ function attachHandlers(){
   const toggleNewDocument = document.querySelector('[data-action="toggle-new-document"]'); if(toggleNewDocument) toggleNewDocument.onclick=()=>{ showNewDocument=!showNewDocument; render(); };
   const cancelNewDocument = document.querySelector('[data-action="cancel-new-document"]'); if(cancelNewDocument) cancelNewDocument.onclick=()=>{ showNewDocument=false; render(); };
   const createDocument = document.querySelector('[data-action="create-document"]');
-  if(createDocument) createDocument.onclick=()=>{
+  if(createDocument) createDocument.onclick=async ()=>{
     const title = document.getElementById('nd-title').value.trim();
     if(!title) return;
+    const versionNumber = document.getElementById('nd-version').value || "1";
+    const effectiveDate = document.getElementById('nd-issue-date').value || today();
+    const docId = uid();
+    const integrityHash = await sha256Hex(`${docId}|${versionNumber}|${effectiveDate}|${currentUser()?.fullName||''}`);
     const doc = {
-      id: uid(),
+      id: docId,
       title,
       docNumber: document.getElementById('nd-number').value,
       category: document.getElementById('nd-category').value,
-      version: document.getElementById('nd-version').value || "1",
+      version: versionNumber,
       status: document.getElementById('nd-status').value,
       owner: document.getElementById('nd-owner').value,
-      issueDate: document.getElementById('nd-issue-date').value || today(),
+      issueDate: effectiveDate,
       reviewDate: document.getElementById('nd-review-date').value,
       reviewedBy: document.getElementById('nd-reviewed-by').value,
       reviewedDate: document.getElementById('nd-reviewed-date').value,
@@ -9898,7 +9970,7 @@ function attachHandlers(){
       approvedDate: document.getElementById('nd-approved-date').value,
       notes: document.getElementById('nd-notes').value,
       history: [{ stage: document.getElementById('nd-status').value || "Draft", by: currentUser()?.fullName||"Unknown", date: today() }],
-      versions: [{ versionNumber: document.getElementById('nd-version').value || "1", status: "CURRENT", effectiveDate: document.getElementById('nd-issue-date').value || today(), obsoleteDate: null, notedBy: currentUser()?.fullName||"Unknown", createdAt: new Date().toISOString() }]
+      versions: [{ versionNumber, status: "CURRENT", effectiveDate, obsoleteDate: null, notedBy: currentUser()?.fullName||"Unknown", createdAt: new Date().toISOString(), integrityHash }]
     };
     state.documents.unshift(doc);
     logActivity(`Document ${doc.docNumber||title} created by ${currentUser()?.fullName||'Unknown'}`);
@@ -9908,7 +9980,7 @@ function attachHandlers(){
   document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleDocument; openDocumentId = openDocumentId===id ? null : id; render();
   });
-  document.querySelectorAll('[data-action="new-document-version"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="new-document-version"]').forEach(el=>el.onclick=async ()=>{
     const d = state.documents.find(x=>x.id===el.dataset.document);
     if(!d) return;
     const newVersionNumber = prompt(`Current version: ${d.version||'1'}\n\nEnter the new version number:`, "");
@@ -9921,10 +9993,11 @@ function attachHandlers(){
       currentEntry.status = "OBSOLETE";
       currentEntry.obsoleteDate = effectiveDate;
     }
+    const integrityHash = await sha256Hex(`${d.id}|${newVersionNumber.trim()}|${effectiveDate}|${currentUser()?.fullName||''}`);
     d.versions.push({
       versionNumber: newVersionNumber.trim(), status: "CURRENT",
       effectiveDate, obsoleteDate: null,
-      notedBy: currentUser()?.fullName||"Unknown", createdAt: new Date().toISOString()
+      notedBy: currentUser()?.fullName||"Unknown", createdAt: new Date().toISOString(), integrityHash
     });
     d.version = newVersionNumber.trim();
     logActivity(`Document ${d.docNumber||d.title} bumped to v${newVersionNumber.trim()} — v${currentEntry?currentEntry.versionNumber:'—'} now obsolete`);
