@@ -1,0 +1,9 @@
+<div id="test-container"></div>
+<script type="module">
+  import { renderHiraModal } from './js/ohs-core/ohs-ui.js';
+  renderHiraModal(document.getElementById('test-container'), {
+    userRole: 'Quality Manager',
+    onSubmit: (data) => console.log('HIRA submitted:', data),
+    onCancel: () => console.log('cancelled'),
+  });
+</script>
