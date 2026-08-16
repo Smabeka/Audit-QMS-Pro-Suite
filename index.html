@@ -33,8 +33,14 @@
   h1,h2,h3,.serif{font-family:'Fraunces',serif;}
   .wrap{max-width:900px;margin:0 auto;padding:0 20px;}
   header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,245,238,.95);backdrop-filter:blur(6px);z-index:10;}
-  .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;flex-wrap:wrap;gap:10px;}
+  .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;flex-wrap:wrap;gap:10px;row-gap:14px;}
   .brand{display:flex;align-items:flex-start;gap:10px;}
+  .sig-box{border:1px dashed var(--line);border-radius:8px;padding:10px;background:#faf8f2;}
+  body.dark .sig-box{background:rgba(255,255,255,.03);}
+  @media(max-width:480px){
+    .headrow{padding:14px 0 18px;}
+    .headrow>div:last-child{margin-top:2px;}
+  }
   .logo{width:44px;height:44px;border-radius:10px;background:var(--navy);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;flex-shrink:0;}
   .brand h1{font-size:21px;font-weight:600;margin:0;color:var(--navy);}
   .brand p{font-size:11px;color:var(--muted);margin:2px 0 0;text-transform:uppercase;letter-spacing:.12em;}
@@ -42,6 +48,7 @@
   .tabnav button{background:none;border:none;border-bottom:2px solid transparent;padding:10px 14px;font-size:14px;color:var(--muted);cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;}
   .tabnav button.active{color:var(--rust);border-color:var(--rust);}
   .tabnav::-webkit-scrollbar{display:none;}
+  [data-action="breadcrumb-back"]::-webkit-scrollbar{display:none;}
   main{padding:24px 0 60px;}
   .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(30,25,15,.04);}
   .p4{padding:16px;}
@@ -1177,7 +1184,7 @@ function renderFindingDispute(a, f){
       }
       <div class="flex-wrap" style="margin-top:8px;">
         ${canChallenge ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="challenge-finding" data-audit="${a.id}" data-finding="${f.id}">Challenge Classification</button>` : ''}
-        ${canDecide ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="decide-finding-dispute" data-audit="${a.id}" data-finding="${f.id}">Review & Decide</button>` : ''}
+        ${canDecide ? `<button class="btn btn-primary" style="font-size:12px;" data-action="decide-finding-dispute" data-audit="${a.id}" data-finding="${f.id}">Review & Decide</button>` : ''}
       </div>
     </div>
   `;
@@ -2046,8 +2053,7 @@ let darkMode = localStorage.getItem("aqms-dark") === "true";
 let pendingDeleteAuditId = null;
 let showCompanyModal = false;
 let settingsOpenSection = null;
-let navGroupOpen = null;
-let navSubGroupOpen = null;
+let navOpenStack = []; // navOpenStack[depth] = id of the open node at that depth (accordion, one open per level)
 let navMenuOpen = false;
 let loginMode = "login"; // login | register | reset
 let loginError = "";
@@ -3574,7 +3580,7 @@ function renderLabTrendAnalysis(){
   `;
 }
 
-const NAV_TREE = [
+const NAV_MODULES = [
   { id:"nav-dashboard", icon:"📊", label:"Dashboard", isActive(){ return tab==="dashboard"; }, action(){ tab="dashboard"; } },
   { id:"nav-documents", icon:"📁", label:"Document Control", isActive(){ return tab==="documents"; }, action(){ tab="documents"; } },
   { id:"nav-audit", icon:"🔍", label:"Audit Management", children:[
@@ -3671,6 +3677,51 @@ const NAV_TREE = [
     ]
   }
 ];
+const navModule = id => NAV_MODULES.find(n=>n.id===id);
+
+// Pillars group the flat module list above into the 7 operational areas used
+// for the sidebar. Pillars simply reference the existing module nodes, so
+// module actions/isActive logic is untouched — only the grouping changes.
+const NAV_TREE = [
+  { id:"pillar-overview", icon:"📊", label:"Overview", children:[
+      navModule("nav-dashboard")
+    ]
+  },
+  { id:"pillar-governance", icon:"📜", label:"Governance & Compliance", children:[
+      navModule("nav-documents"),
+      navModule("nav-compliance-framework"),
+      navModule("nav-org-context"),
+      navModule("nav-change-control")
+    ]
+  },
+  { id:"pillar-audit-risk-capa", icon:"🛡️", label:"Audits, Risk & CAPA", children:[
+      navModule("nav-audit"),
+      navModule("nav-risk"),
+      navModule("nav-capa")
+    ]
+  },
+  { id:"pillar-food-safety", icon:"🧪", label:"Food Safety & Operations", children:[
+      navModule("nav-foodsafe"),
+      navModule("nav-traceability"),
+      navModule("nav-lab"),
+      navModule("nav-sensory")
+    ]
+  },
+  { id:"pillar-supply-workforce", icon:"🤝", label:"Supply Chain & Workforce", children:[
+      navModule("nav-suppliers"),
+      navModule("nav-people"),
+      navModule("nav-ppd")
+    ]
+  },
+  { id:"pillar-performance", icon:"📈", label:"Performance & Insights", children:[
+      navModule("nav-mgmt-review"),
+      navModule("nav-metrics"),
+      navModule("nav-quality-cycle"),
+      navModule("nav-analytics")
+    ]
+  },
+  { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
+];
 
 function navNodeActive(node){
   if(node.children) return node.children.some(navNodeActive);
@@ -3693,18 +3744,18 @@ function navHandleClick(id){
   const path = navFindPath(id);
   if(!path) return;
   const node = path[path.length-1];
+  const depth = path.length-1;
   if(node.children){
-    const depth = path.length;
-    if(depth===1){
-      navGroupOpen = navGroupOpen===node.id ? null : node.id;
-      navSubGroupOpen = null;
+    if(navOpenStack[depth]===node.id){
+      navOpenStack.length = depth; // close this node and anything open beneath it
     } else {
-      navSubGroupOpen = navSubGroupOpen===node.id ? null : node.id;
+      navOpenStack.length = depth;
+      navOpenStack[depth] = node.id;
     }
   } else {
     node.action();
-    navGroupOpen = path.length>=2 ? path[0].id : null;
-    navSubGroupOpen = path.length>=3 ? path[1].id : null;
+    // keep the path to the clicked leaf expanded, so re-opening the menu shows where you are
+    navOpenStack = path.slice(0, -1).map(n=>n.id);
     navMenuOpen = false;
   }
 }
@@ -3712,7 +3763,7 @@ function navRowHtml(node, depth){
   const active = navNodeActive(node);
   const icon = node.icon ? node.icon+" " : "";
   const hasChildren = !!node.children;
-  const isOpen = depth===0 ? navGroupOpen===node.id : navSubGroupOpen===node.id;
+  const isOpen = navOpenStack[depth]===node.id;
   const pad = 14 + depth*18;
   return `
     <button data-navid="${node.id}" class="${active?'active':''}" style="display:flex;align-items:center;justify-content:space-between;width:100%;text-align:left;padding:10px 14px 10px ${pad}px;background:none;border:none;border-bottom:1px solid var(--line2);font-size:${depth===0?'14px':'13px'};color:inherit;">
@@ -3722,18 +3773,21 @@ function navRowHtml(node, depth){
     ${hasChildren && isOpen ? node.children.map(c=>navRowHtml(c, depth+1)).join('') : ''}
   `;
 }
-function activeBreadcrumb(){
-  for(const g of NAV_TREE){
-    if(!g.children){ if(navNodeActive(g)) return g.label; continue; }
-    for(const c of g.children){
-      if(c.children){
-        for(const gc of c.children){ if(navNodeActive(gc)) return `${g.label} › ${c.label} › ${gc.label}`; }
-      }
-      if(navNodeActive(c)) return `${g.label} › ${c.label}`;
+function navActivePath(nodes=NAV_TREE, trail=[]){
+  for(const n of nodes){
+    const nextTrail = [...trail, n.label];
+    if(n.children){
+      const found = navActivePath(n.children, nextTrail);
+      if(found) return found;
+    } else if(n.isActive && n.isActive()){
+      return nextTrail;
     }
-    if(navNodeActive(g)) return g.label;
   }
-  return "Dashboard";
+  return null;
+}
+function activeBreadcrumb(){
+  const path = navActivePath();
+  return path ? path.join(" › ") : "Dashboard";
 }
 function cloudReady(){ return CLOUD_ENABLED && !!supabaseClient; }
 function renderLoginScreen(){
@@ -3968,7 +4022,7 @@ function renderEsignatureField(moduleKey, recordId, field, r){
   const signedAt = r[field.id + "SignedAt"];
   if(name && sigImg){
     return `
-      <div style="border:1px solid var(--line2);border-radius:8px;padding:8px;background:#fff;">
+      <div class="sig-box">
         <img src="${sigImg}" style="max-height:46px;display:block;margin-bottom:4px;" />
         <div style="font-size:12px;">✓ Signed by <strong>${esc(name)}</strong></div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:6px;">${signedAt?new Date(signedAt).toLocaleString():''}</div>
@@ -3983,7 +4037,7 @@ function renderMainNav(){
     <button data-action="toggle-nav-menu" style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;background:none;border:none;color:inherit;padding:6px 0;">
       <span style="font-size:16px;">${navMenuOpen?'✕':'☰'}</span> Platform Modules
     </button>
-    <button data-action="breadcrumb-back" style="font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:none;border:none;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;" title="Back to list">${esc(activeBreadcrumb())}</button>
+    <button data-action="breadcrumb-back" style="font-size:12px;color:var(--muted);white-space:nowrap;overflow-x:auto;max-width:52vw;background:none;border:none;padding:0;cursor:pointer;text-decoration:underline;text-decoration-color:transparent;scrollbar-width:none;" title="${esc(activeBreadcrumb())} — tap to go back, scroll to see full path">${esc(activeBreadcrumb())}</button>
   </div>`;
   if(navMenuOpen){
     html += `<div class="card" style="margin-top:8px;max-height:60vh;overflow-y:auto;">
@@ -5549,10 +5603,12 @@ function renderAuditDetail(a){
         <div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">AUDITOR SIGN-OFF</div>
           ${signOff.auditorSignedAt ? `
-            ${signOff.auditorSignature ? `<img src="${signOff.auditorSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
-            <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.auditorName)}</strong></div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.auditorSignedAt).toLocaleString()}</div>
-            <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="auditor">Unsign</button>
+            <div class="sig-box">
+              ${signOff.auditorSignature ? `<img src="${signOff.auditorSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
+              <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.auditorName)}</strong></div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.auditorSignedAt).toLocaleString()}</div>
+              <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="auditor">Unsign</button>
+            </div>
           ` : `
             <button class="btn btn-primary" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="auditor">✍️ Sign as Auditor</button>
           `}
@@ -5560,10 +5616,12 @@ function renderAuditDetail(a){
         <div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">APPROVAL SIGN-OFF</div>
           ${signOff.approverSignedAt ? `
-            ${signOff.approverSignature ? `<img src="${signOff.approverSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
-            <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.approverName)}</strong></div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.approverSignedAt).toLocaleString()}</div>
-            <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="approver">Unsign</button>
+            <div class="sig-box">
+              ${signOff.approverSignature ? `<img src="${signOff.approverSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
+              <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.approverName)}</strong></div>
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.approverSignedAt).toLocaleString()}</div>
+              <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="approver">Unsign</button>
+            </div>
           ` : `
             <button class="btn ${locked?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="approver" ${!locked?'disabled title="Auditor must sign first"':''}>✍️ Sign as Approver</button>
           `}
@@ -8551,7 +8609,7 @@ function attachHandlers(){
     else if(action==="report-incident"){ tab="foodsafe"; foodsafeSubTab="ncr"; showNewNcr=true; }
     else if(action==="add-risk"){ tab="risk"; showNewRisk=true; }
     else if(action==="upload-document"){ tab="documents"; showNewDocument=true; }
-    navGroupOpen = null; navSubGroupOpen = null;
+    navOpenStack = [];
     render();
   });
   const loadDemoBtn = document.querySelector('[data-action="load-demo-data"]');
