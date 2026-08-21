@@ -4143,6 +4143,8 @@ function render(){
         : tab==="emergency-preparedness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="emergency-preparedness"))
         : tab==="calibration-dashboard" ? renderCalibrationDashboard()
         : tab==="fsms-checklist" ? renderFsmsChecklist()
+        : tab==="ohs-hira" ? `<div id="ohs-mount-hira"></div>`
+        : tab==="ohs-ptw" ? `<div id="ohs-mount-ptw"></div>`   
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
