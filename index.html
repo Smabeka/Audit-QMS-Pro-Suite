@@ -4176,13 +4176,21 @@ function render(){
     return;
   }
   attachHandlers();
-  if(tab==="ohs-hira" && window.ohsRegistry){
-  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-  window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
+if(tab==="ohs-hira"){
+  if(window.ohsRegistry){
+    const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
+    window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
+  } else {
+    document.getElementById('ohs-mount-hira').innerHTML = '<div style="padding:20px;color:red;">DEBUG: window.ohsRegistry is undefined</div>';
+  }
 }
-if(tab==="ohs-ptw" && window.ohsRegistry){
-  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-  window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
+if(tab==="ohs-ptw"){
+  if(window.ohsRegistry){
+    const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
+    window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
+  } else {
+    document.getElementById('ohs-mount-ptw').innerHTML = '<div style="padding:20px;color:red;">DEBUG: window.ohsRegistry is undefined</div>';
+  }
 }
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
