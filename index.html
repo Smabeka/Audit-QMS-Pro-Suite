@@ -3675,9 +3675,7 @@ const NAV_MODULES = [
       { id:"nav-audit-trail", label:"Audit Trail", isActive(){ return tab==="audit-trail"; }, action(){ tab="audit-trail"; } },
       { id:"nav-settings", label:"Settings", isActive(){ return tab==="settings"; }, action(){ tab="settings"; } }
     ]
-  },
-  { id:"nav-ohs-hira", icon:"⚠️", label:"HIRA Assessments", isActive(){ return tab==="ohs-hira"; }, action(){ tab="ohs-hira"; } },
-{ id:"nav-ohs-ptw", icon:"📋", label:"Permit to Work", isActive(){ return tab==="ohs-ptw"; }, action(){ tab="ohs-ptw"; } },
+  }
 ];
 const navModule = id => NAV_MODULES.find(n=>n.id===id);
 
@@ -3720,12 +3718,7 @@ const NAV_TREE = [
       navModule("nav-metrics"),
       navModule("nav-quality-cycle"),
       navModule("nav-analytics")
-    ] 
-    },
-  { id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
-    navModule("nav-ohs-hira"),
-    navModule("nav-ohs-ptw")
-  ]
+    ]
   },
   { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
 ];
@@ -4150,8 +4143,6 @@ function render(){
         : tab==="emergency-preparedness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="emergency-preparedness"))
         : tab==="calibration-dashboard" ? renderCalibrationDashboard()
         : tab==="fsms-checklist" ? renderFsmsChecklist()
-        : tab==="ohs-hira" ? `<div id="ohs-mount-hira"></div>`
-        : tab==="ohs-ptw" ? `<div id="ohs-mount-ptw"></div>`   
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
@@ -4176,15 +4167,6 @@ function render(){
     return;
   }
   attachHandlers();
-if(tab==="ohs-hira" && window.ohsRegistry){
-  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-  window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
-}
-if(tab==="ohs-ptw" && window.ohsRegistry){
-  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-  window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
-}
-}
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
   if(tab==="analytics") renderCharts();
@@ -11572,7 +11554,5 @@ function showUpdateBanner(){
   document.getElementById('reload-app-btn').onclick = () => window.location.reload();
 }
 </script>
-    <script type="module" src="/js/ohs-core/ohs-ui.js"></script>  <!-- optional now, can remove -->
-    <script type="module" src="/js/modules/ohs-manifest.js"></script>
-  </body>
+</body>
 </html>
