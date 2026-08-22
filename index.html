@@ -3675,6 +3675,8 @@ const NAV_MODULES = [
       { id:"nav-users", label:"Users & Roles", isActive(){ return tab==="users"; }, action(){ tab="users"; if(cloudReady()) fetchAllProfiles(); } },
       { id:"nav-audit-trail", label:"Audit Trail", isActive(){ return tab==="audit-trail"; }, action(){ tab="audit-trail"; } },
       { id:"nav-settings", label:"Settings", isActive(){ return tab==="settings"; }, action(){ tab="settings"; } }
+      { id:"nav-ohs-hira", icon:"⚠️", label:"HIRA Assessments", isActive(){ return tab==="ohs-hira"; }, action(){ tab="ohs-hira"; } },
+      { id:"nav-ohs-ptw", icon:"📋", label:"Permit to Work", isActive(){ return tab==="ohs-ptw"; }, action(){ tab="ohs-ptw"; } },
     ]
   }
 ];
