@@ -3720,7 +3720,12 @@ const NAV_TREE = [
       navModule("nav-mgmt-review"),
       navModule("nav-metrics"),
       navModule("nav-quality-cycle"),
-      navModule("nav-analytics")
+      navModule("nav-analytics"),
+    ]
+  },
+  { id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
+    navModule("nav-ohs-hira"),
+    navModule("nav-ohs-ptw")
     ]
   },
   { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
