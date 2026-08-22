@@ -4187,8 +4187,14 @@ function render(){
 }             
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
-  if(tab==="ohs-hira") renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: /* ??? */, supabase: /* ??? */ });
-  if(tab==="ohs-ptw") renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: /* ??? */, supabase: /* ??? */ });
+  if(tab==="ohs-hira" && window.ohsRegistry){
+  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
+  window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
+}
+if(tab==="ohs-ptw" && window.ohsRegistry){
+  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
+  window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
+}
   if(tab==="analytics") renderCharts();
   if(tab==="metrics") renderMetricCharts();
   if(tab==="dashboard") renderComplianceChart();
