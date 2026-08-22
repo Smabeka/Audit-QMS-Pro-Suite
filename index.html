@@ -4170,6 +4170,14 @@ function render(){
     return;
   }
   attachHandlers();
+  if(tab==="ohs-hira" && window.ohsRegistry){
+  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
+  window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
+ }
+  if(tab==="ohs-ptw" && window.ohsRegistry){
+  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
+  window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
+}             
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
   if(tab==="ohs-hira") renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: /* ??? */, supabase: /* ??? */ });
