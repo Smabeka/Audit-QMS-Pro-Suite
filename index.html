@@ -3676,6 +3676,8 @@ const NAV_MODULES = [
       { id:"nav-settings", label:"Settings", isActive(){ return tab==="settings"; }, action(){ tab="settings"; } }
     ]
   }
+{ id:"nav-ohs-hira", icon:"⚠️", label:"HIRA Assessments", isActive(){ return tab==="ohs-hira"; }, action(){ tab="ohs-hira"; } },
+{ id:"nav-ohs-ptw", icon:"📋", label:"Permit to Work", isActive(){ return tab==="ohs-ptw"; }, action(){ tab="ohs-ptw"; } },             
 ];
 const navModule = id => NAV_MODULES.find(n=>n.id===id);
 
