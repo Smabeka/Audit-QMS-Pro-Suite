@@ -4172,6 +4172,8 @@ function render(){
   attachHandlers();
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
+  if(tab==="ohs-hira") renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: /* ??? */, supabase: /* ??? */ });
+  if(tab==="ohs-ptw") renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: /* ??? */, supabase: /* ??? */ });
   if(tab==="analytics") renderCharts();
   if(tab==="metrics") renderMetricCharts();
   if(tab==="dashboard") renderComplianceChart();
