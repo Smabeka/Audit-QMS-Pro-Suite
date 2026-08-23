@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+window.onerror = function(msg, url, line, col, error) {
+  document.body.innerHTML = '<pre style="white-space:pre-wrap;padding:20px;color:red;font-size:14px;">ERROR: ' + msg + '\nLine: ' + line + ':' + col + '\nFile: ' + url + '</pre>';
+  return true;
+};
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AuditQMS Pro Suite</title>
