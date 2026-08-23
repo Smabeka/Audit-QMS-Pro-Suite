@@ -3716,19 +3716,19 @@ const NAV_TREE = [
       navModule("nav-ppd")
     ]
   },
-  { id:"pillar-performance", icon:"📈", label:"Performance & Insights", children:[
-      navModule("nav-mgmt-review"),
-      navModule("nav-metrics"),
-      navModule("nav-quality-cycle"),
-      navModule("nav-analytics")
-    [
-  },
-    { id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
+{ id:"pillar-performance", icon:"📊", label:"Performance & Insights", children:[
+    navModule("nav-mgmt-review"),
+    navModule("nav-metrics"),
+    navModule("nav-quality-cycle"),
+    navModule("nav-analytics")
+  ]
+},
+{ id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
     navModule("nav-ohs-hira"),
     navModule("nav-ohs-ptw")
   ]
-  },
-  { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
+},
+{ id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
 ];
 
 function navNodeActive(node){
