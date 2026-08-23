@@ -12,7 +12,7 @@
  * Import this file once, near app startup, purely for its side effect
  * (the registerPillar/registerModule calls at module load time):
  *
- *   import './js/modules/ohs-manifest.js';
+ *   <script type="module" src="/ohs-manifest.js"></script>
  *
  * Expected ctx shape when renderModule() is called for these modules:
  *   { userRole: string, supabase: SupabaseClient }
@@ -26,12 +26,12 @@ import {
   renderPermitModal,
   canCreateHira,
   canCreatePermit,
-} from '../ohs-core/ohs-ui.js';
+} from './js/ohs-core/ohs-ui.js';
 
 import {
   createHiraAssessment,
   createPermit,
-} from '../ohs-core/ohs-supabase.js';
+} from './js/ohs-core/ohs-supabase.js';
 
 // ---- Pillar registration ------------------------------------------
 
