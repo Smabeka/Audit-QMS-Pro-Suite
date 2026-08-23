@@ -1,4 +1,4 @@
-i<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -3676,8 +3676,6 @@ const NAV_MODULES = [
       { id:"nav-settings", label:"Settings", isActive(){ return tab==="settings"; }, action(){ tab="settings"; } }
     ]
   }
-{ id:"nav-ohs-hira", icon:"⚠️", label:"HIRA Assessments", isActive(){ return tab==="ohs-hira"; }, action(){ tab="ohs-hira"; } },
-{ id:"nav-ohs-ptw", icon:"📋", label:"Permit to Work", isActive(){ return tab==="ohs-ptw"; }, action(){ tab="ohs-ptw"; } },             
 ];
 const navModule = id => NAV_MODULES.find(n=>n.id===id);
 
@@ -4145,8 +4143,6 @@ function render(){
         : tab==="emergency-preparedness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="emergency-preparedness"))
         : tab==="calibration-dashboard" ? renderCalibrationDashboard()
         : tab==="fsms-checklist" ? renderFsmsChecklist()
-        : tab==="ohs-hira" ? `<div id="ohs-mount-hira"></div>`
-        : tab==="ohs-ptw" ? `<div id="ohs-mount-ptw"></div>`
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
@@ -4171,22 +4167,6 @@ function render(){
     return;
   }
   attachHandlers();
-  if(tab==="ohs-hira"){
-  if(window.ohsRegistry){
-    const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-    window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
-  } else {
-    document.getElementById('ohs-mount-hira').innerHTML = '<div style="padding:20px;color:red;">DEBUG: window.ohsRegistry is undefined</div>';
-  }
-}
-if(tab==="ohs-ptw"){
-  if(window.ohsRegistry){
-    const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-    window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
-  } else {
-    document.getElementById('ohs-mount-ptw').innerHTML = '<div style="padding:20px;color:red;">DEBUG: window.ohsRegistry is undefined</div>';
-  }
-}
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
   if(tab==="analytics") renderCharts();
@@ -11572,8 +11552,7 @@ function showUpdateBanner(){
   banner.innerHTML = '<span>A new version of AuditQMS Pro Suite is available.</span><button id="reload-app-btn" style="background:#fff;color:#1c2b4a;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Reload</button>';
   document.body.appendChild(banner);
   document.getElementById('reload-app-btn').onclick = () => window.location.reload();
-} 
+}
 </script>
-<script type="module" src="/js/ohs-core/ohs-ui.js"></script>
 </body>
 </html>
