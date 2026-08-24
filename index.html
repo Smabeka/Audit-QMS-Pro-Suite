@@ -9082,6 +9082,18 @@ function attachHandlers(){
     if(cfg.cloudSynced) cloudSyncInsert(cfg, record);
     persist(); render();
     if(k==="supplier-scar" && record.severity==="Critical") evaluateSupplierCriticalScars(record.supplierName);
+    if(k==="ohs-appointments"){
+      logActivity(`OHS Appointment created: ${record.employee||'Unnamed'} — ${record.role||'—'}${record.department?` (${record.department})`:''} by ${currentUser()?.fullName||'Unknown'}`);
+    }
+    if(k==="ohs-medical-fitness"){
+      logActivity(`Medical Fitness record created: ${record.employee||'Unnamed'} — ${record.occupation||'—'} (${record.fitnessStatus||'Pending'}) by ${currentUser()?.fullName||'Unknown'}`);
+    }
+    if(k==="ohs-construction"){
+      logActivity(`Construction Notification created: ${record.projectName||'Unnamed Project'} — ${record.principalContractor||'—'} by ${currentUser()?.fullName||'Unknown'}`);
+    }
+    if(k==="samrass-reporting"){
+      logActivity(`SAMRASS report created: ${record.formType||'Unnamed form'} — ${record.employee||record.mineSection||'Unnamed'} (${record.severity||'—'}) by ${currentUser()?.fullName||'Unknown'}`);
+    }
   });
   document.querySelectorAll('[data-generic-toggle]').forEach(el=>el.onclick=()=>{
     const [k,id] = el.dataset.genericToggle.split(':');
@@ -9242,6 +9254,19 @@ function attachHandlers(){
       rec[field] = el.value;
       if(k==="supplier-scar" && field==="severity" && el.value==="Critical"){
         evaluateSupplierCriticalScars(rec.supplierName);
+      }
+      if(k==="ohs-appointments" && field==="letterSigned" && el.value==="Yes"){
+        logActivity(`OHS Appointment letter signed: ${rec.employee||'Unnamed'} — ${rec.role||'—'} by ${currentUser()?.fullName||'Unknown'}`);
+      }
+      if(k==="ohs-medical-fitness" && field==="fitnessStatus"){
+        logActivity(`Medical Fitness status changed: ${rec.employee||'Unnamed'} — ${rec.occupation||'—'} by ${currentUser()?.fullName||'Unknown'}`, { newStatus: el.value });
+      }
+      if(k==="ohs-construction" && field==="status"){
+        logActivity(`Construction Notification status changed: ${rec.projectName||'Unnamed Project'} by ${currentUser()?.fullName||'Unknown'}`, { newStatus: el.value });
+      }
+      if(k==="samrass-reporting" && (field==="status" || field==="reportedToInspectorate" || field==="severity")){
+        const label = field==="status" ? "status" : field==="reportedToInspectorate" ? "Inspectorate reporting status" : "severity classification";
+        logActivity(`SAMRASS report ${label} changed: ${rec.formType||'Unnamed form'} — ${rec.employee||rec.mineSection||'Unnamed'} by ${currentUser()?.fullName||'Unknown'}`, { newStatus: el.value });
       }
       if(k==="lab-sample-register" && field==="result" && el.value==="Out of Specification" && !rec.linkedFindingId){
         const oosAudit = getOrCreateOosFindingsAudit();
