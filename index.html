@@ -1455,6 +1455,12 @@ const MODULE_TAB_MAP = {
   "Emergency Preparedness":"emergency-preparedness",
   "Calibration Dashboard":"calibration-dashboard",
   "FSMS Checklist":"fsms-checklist",
+  "HIRA Assessments":"ohs-hira",
+  "Permit to Work":"ohs-ptw",
+  "OHS Appointments":"ohs-appointments",
+  "Medical Fitness Matrix":"ohs-medical-fitness",
+  "Construction Notification & Permits":"ohs-construction",
+  "SAMRASS Incident Reporting":"samrass-reporting",
   "Users":"users",
   "Audit Trail":"audit-trail",
   "Settings":"settings"
@@ -1590,6 +1596,33 @@ const COMPLIANCE_MAPPING = [
     { clause:"7.8", title:"Reporting of Results", primary:["Laboratory"], supporting:["Document Control"], coverage:"High" },
     { clause:"7.10", title:"Nonconforming Work", primary:["CAPA"], supporting:["Laboratory"], coverage:"High" },
     { clause:"8.8", title:"Internal Audits", primary:["Audit Management"], supporting:["CAPA"], coverage:"High" }
+  ]},
+  { standard:"OHS Act 85 of 1993 (incl. GNR.84 General Administrative Regulations & Construction Regulations)", clauses:[
+    { clause:"Sec. 8", title:"General duty of employer to employees", primary:["HIRA Assessments"], supporting:["Document Control","CAPA"], coverage:"High" },
+    { clause:"Sec. 9", title:"General duty of employer to non-employees", primary:["HIRA Assessments"], supporting:["Permit to Work"], coverage:"Medium" },
+    { clause:"Sec. 13", title:"Duty to inform of hazards", primary:["HIRA Assessments"], supporting:["Medical Fitness Matrix","People Compliance"], coverage:"Medium" },
+    { clause:"Sec. 16(1)/16(2)", title:"CEO duty & assignment of duties", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
+    { clause:"Sec. 17", title:"Health & Safety Representatives", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
+    { clause:"Sec. 19", title:"Health & Safety Committees", primary:["OHS Appointments"], supporting:["Management Review"], coverage:"Medium" },
+    { clause:"Sec. 24", title:"Reporting of incidents to the Chief Inspector", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
+    { clause:"GNR.84 (GAR) Reg 2(1)", title:"Appointment of Health & Safety Manager", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
+    { clause:"GNR.84 (GAR) Reg 2(7)", title:"Duties & functions of appointees", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
+    { clause:"GNR.84 (GAR) Reg 8/9", title:"Incident recording & investigation", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
+    { clause:"General Safety Reg. 3", title:"Risk assessment", primary:["HIRA Assessments"], supporting:["Risk Management"], coverage:"High" },
+    { clause:"Driven Machinery / General Safety Regs — Medical Surveillance", title:"Fitness certification for hazardous exposures", primary:["Medical Fitness Matrix"], supporting:["People Compliance"], coverage:"High" },
+    { clause:"Construction Reg. 4", title:"Notification of construction work", primary:["Construction Notification & Permits"], supporting:["Document Control"], coverage:"High" },
+    { clause:"Construction Reg. 5", title:"Health & Safety Specification and Plan", primary:["Construction Notification & Permits"], supporting:["Risk Management"], coverage:"High" },
+    { clause:"Construction Reg. 8", title:"Appointment of Construction Supervisor (CR8)", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"High" },
+    { clause:"Construction Reg. 21", title:"Fire precautions on construction sites", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"Medium" },
+    { clause:"General Machinery Reg. — Permit systems", title:"Permit-to-work for high-risk tasks", primary:["Permit to Work"], supporting:["HIRA Assessments"], coverage:"High" }
+  ]},
+  { standard:"Mine Health and Safety Act 29 of 1996 (SAMRASS statistics system)", clauses:[
+    { clause:"SAMRASS 1 & 2", title:"Accident / injury reporting", primary:["SAMRASS Incident Reporting"], supporting:["CAPA","Medical Fitness Matrix"], coverage:"Medium" },
+    { clause:"SAMRASS 3A–3D", title:"Fall of ground / rockburst reporting", primary:["SAMRASS Incident Reporting"], supporting:["HIRA Assessments"], coverage:"Medium" },
+    { clause:"SAMRASS 4", title:"Short-shift injuries", primary:["SAMRASS Incident Reporting"], supporting:["OHS Appointments"], coverage:"Medium" },
+    { clause:"SAMRASS 5–8", title:"Explosives, fire, subsidence & heat incidents", primary:["SAMRASS Incident Reporting"], supporting:["CAPA"], coverage:"Medium" },
+    { clause:"SAMRASS 9", title:"Return to work", primary:["SAMRASS Incident Reporting"], supporting:["Medical Fitness Matrix"], coverage:"Medium" },
+    { clause:"Hygiene exposure forms", title:"Occupational hygiene exposure monitoring", primary:["SAMRASS Incident Reporting"], supporting:["Medical Fitness Matrix"], coverage:"Medium" }
   ]}
 ];
 const COMPLIANCE_GAPS = [];
@@ -2577,6 +2610,130 @@ const GENERIC_MODULES = [
     rowTitle:r=>r.employee||"Unnamed",
     rowSub:r=>`${r.ppeItem||'—'} · issued ${r.issueDate||'—'}`,
     rowTag:r=>({label:r.condition||"—", tone:{New:"green",Good:"navy","Needs Replacement":"rust"}[r.condition]||"neutral"})
+  },
+  { key:"ohs-appointments", stateArr:"ohsAppointments", icon:"📝", title:"OHS Appointments",
+    blurb:"Statutory appointments under the OHS Act (GMR 2(1) employer/employer's rep, Health & Safety Reps, First Aiders, Fire Marshals, Incident Investigators, etc.) with review/expiry tracking.",
+    cloudSynced:true, supabaseTable:"ohs_appointments",
+    sortField:"appointmentDate",
+    fields:[
+      {id:"employee", label:"Appointee Name", required:true},
+      {id:"role", label:"Appointment Type", type:"select", required:true, options:["Employer / CEO (Section 16(1))","16(2) Assignee","GMR 2(1) Health & Safety Manager","Health & Safety Committee Chair","Health & Safety Representative","First Aider","Fire Marshal / Fire Fighting Team","Incident Investigator","Risk Assessor","Chemical/Hazardous Substances Officer","Machinery/Equipment Supervisor","Construction Supervisor (CR8)","Other"]},
+      {id:"department", label:"Department / Area"},
+      {id:"appointmentDate", label:"Appointment Date", type:"date", default:"today"},
+      {id:"reviewDate", label:"Review / Expiry Date", type:"date"},
+      {id:"appointedBy", label:"Appointed By"},
+      {id:"trainingRef", label:"Supporting Training / Certificate Ref"},
+      {id:"letterSigned", label:"Appointment Letter Signed?", type:"select", options:["Yes","No"]},
+      {id:"notes", label:"Notes", full:true}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.role||'—'}${r.department?` · ${r.department}`:''} · appointed ${r.appointmentDate||'—'}`,
+    rowTag:r=>{
+      if(!r.reviewDate) return {label: r.letterSigned==="Yes" ? "Signed" : "Unsigned", tone: r.letterSigned==="Yes" ? "green" : "amber"};
+      const d = daysUntil(r.reviewDate);
+      if(d<0) return {label:`Review overdue ${Math.abs(d)}d`, tone:"rust"};
+      if(d<=30) return {label:`Review due in ${d}d`, tone:"amber"};
+      return {label:"Current", tone:"green"};
+    }
+  },
+  { key:"ohs-medical-fitness", stateArr:"ohsMedicalFitness", icon:"🩺", title:"Medical Fitness Matrix",
+    blurb:"Occupational fitness certification per employee — occupation, exposures, required PPE and certificate expiry (Annexure 3 style).",
+    cloudSynced:true, supabaseTable:"ohs_medical_fitness",
+    sortField:"expiryDate",
+    fields:[
+      {id:"employee", label:"Employee Name", required:true},
+      {id:"occupation", label:"Occupation / Job Title", required:true},
+      {id:"exposures", label:"Occupational Exposures", placeholder:"e.g. Noise, Dust, Chemicals, Heights, Confined Space", full:true},
+      {id:"ppeRequired", label:"PPE Required", placeholder:"e.g. Hearing protection, Respirator, Harness", full:true},
+      {id:"fitnessStatus", label:"Fitness Status", type:"select", options:["Fit","Fit with Restriction","Temporarily Unfit","Unfit","Pending"]},
+      {id:"restrictions", label:"Restrictions (if any)", full:true},
+      {id:"examDate", label:"Exam Date", type:"date", default:"today"},
+      {id:"expiryDate", label:"Certificate Expiry Date", type:"date", required:true},
+      {id:"medicalPractitioner", label:"Examining / Occupational Health Practitioner"}
+    ],
+    rowTitle:r=>r.employee||"Unnamed",
+    rowSub:r=>`${r.occupation||'—'} · exam ${r.examDate||'—'}`,
+    rowTag:r=>{
+      if(r.fitnessStatus==="Unfit") return {label:"Unfit", tone:"rust"};
+      if(r.fitnessStatus==="Temporarily Unfit") return {label:"Temp. Unfit", tone:"rust"};
+      if(r.fitnessStatus==="Fit with Restriction") return {label:"Fit w/ Restriction", tone:"amber"};
+      if(!r.expiryDate) return {label:r.fitnessStatus||"Pending", tone:"neutral"};
+      const d = daysUntil(r.expiryDate);
+      if(d<0) return {label:`Expired ${Math.abs(d)}d ago`, tone:"rust"};
+      if(d<=30) return {label:`Expiring in ${d}d`, tone:"amber"};
+      return {label:"Fit", tone:"green"};
+    }
+  },
+  { key:"ohs-construction", stateArr:"ohsConstructionNotifications", icon:"🏗️", title:"Construction Notification & Permits",
+    blurb:"Notification of construction work and related permits under the Construction Regulations (Annexure 1 & 2 style records).",
+    cloudSynced:true, supabaseTable:"ohs_construction_notifications",
+    sortField:"expectedStartDate",
+    fields:[
+      {id:"projectName", label:"Project / Site Name", required:true},
+      {id:"principalContractor", label:"Principal Contractor", required:true},
+      {id:"clientRep", label:"Client / Agent Representative"},
+      {id:"constructionType", label:"Type of Construction Work", placeholder:"e.g. New build, Demolition, Excavation"},
+      {id:"notificationRef", label:"Dept. of Labour Notification Ref (Annexure 1)"},
+      {id:"notificationDate", label:"Notification Date", type:"date"},
+      {id:"expectedStartDate", label:"Expected Start Date", type:"date"},
+      {id:"expectedDuration", label:"Expected Duration", placeholder:"e.g. 6 weeks"},
+      {id:"constructionSupervisor", label:"Appointed Construction Supervisor (CR8)"},
+      {id:"healthSafetyPlanApproved", label:"Health & Safety Plan Approved?", type:"select", options:["Yes","No","Pending"]},
+      {id:"status", label:"Status", type:"select", options:["Planned","Notified","In Progress","Completed","Closed"]},
+      {id:"notes", label:"Notes", full:true}
+    ],
+    rowTitle:r=>r.projectName||"Unnamed Project",
+    rowSub:r=>`${r.principalContractor||'—'} · starts ${r.expectedStartDate||'—'}`,
+    rowTag:r=>({label:r.status||"Planned", tone:{Planned:"neutral",Notified:"navy","In Progress":"amber",Completed:"green",Closed:"green"}[r.status]||"neutral"})
+  },
+  { key:"samrass-reporting", stateArr:"samrassReports", icon:"⛏️", title:"SAMRASS Incident Reporting",
+    blurb:"Internal capture of Mine Health & Safety Inspectorate statistics-system data (SAMRASS-equivalent fields) for accidents, dangerous occurrences and hygiene exposure — for your own records and to prep statutory submissions. This does not submit anything to the Inspectorate/DMRE.",
+    cloudSynced:true, supabaseTable:"samrass_reports",
+    sortField:"incidentDate",
+    fields:[
+      {id:"formType", label:"SAMRASS Form Type", type:"select", required:true, options:[
+        "SAMRASS 1 & 2 — Accident / Injury",
+        "SAMRASS 3A–3D — Fall of Ground / Rockburst",
+        "SAMRASS 4 — Short-Shift Injury",
+        "SAMRASS 5 — Explosives Incident",
+        "SAMRASS 6 — Fire / Explosion",
+        "SAMRASS 7 — Subsidence / Sinkhole",
+        "SAMRASS 8 — Heat Illness",
+        "SAMRASS 9 — Return to Work",
+        "Hygiene Exposure Monitoring"
+      ]},
+      {id:"internalRef", label:"Internal Report Reference", placeholder:"e.g. auto-numbered or site incident log #"},
+      {id:"mineSection", label:"Mine / Shaft / Section"},
+      {id:"location", label:"Specific Location", placeholder:"e.g. Level 26, Stope 4W, Surface plant"},
+      {id:"incidentDate", label:"Incident Date", type:"date", default:"today"},
+      {id:"incidentTime", label:"Incident Time"},
+      {id:"employee", label:"Employee / Affected Person"},
+      {id:"occupation", label:"Occupation"},
+      {id:"shift", label:"Shift", type:"select", options:["Day","Afternoon","Night"]},
+      {id:"causeCategory", label:"Cause Category", type:"select", options:["Fall of Ground / Rockburst","Machinery / Equipment","Transport / Tramming","Explosives","Fire / Explosion","Subsidence","Heat / Illness","Electrical","Hygiene Exposure","Other"]},
+      {id:"natureOfInjury", label:"Nature of Injury / Illness / Occurrence", full:true},
+      {id:"severity", label:"Severity Classification", type:"select", options:["Fatal","Serious / Reportable","Lost Time Injury","Medical Treatment Case","First Aid Case","Dangerous Occurrence (no injury)"]},
+      {id:"daysLost", label:"Shifts / Days Lost"},
+      {id:"hygieneAgent", label:"Hygiene Agent (if exposure monitoring)", placeholder:"e.g. Noise, Respirable dust, Heat stress"},
+      {id:"exposureReading", label:"Exposure Reading vs OEL", placeholder:"e.g. 92 dB(A) vs 85 dB(A) OEL"},
+      {id:"immediateAction", label:"Immediate Action Taken", full:true},
+      {id:"witnesses", label:"Witnesses"},
+      {id:"reportedToInspectorate", label:"Reported to Mine Health & Safety Inspectorate?", type:"select", options:["Yes","No","Pending"]},
+      {id:"inspectorateNotifiedDate", label:"Inspectorate Notification Date", type:"date"},
+      {id:"inspectorateRef", label:"Inspectorate / DMRE Reference (once submitted externally)"},
+      {id:"returnToWorkDate", label:"Return to Work Date (SAMRASS 9)", type:"date"},
+      {id:"linkedCapaRef", label:"Linked CAPA / Investigation Reference"},
+      {id:"status", label:"Status", type:"select", options:["Draft","Internally Reviewed","Reported to Inspectorate","Closed"]},
+      {id:"notes", label:"Notes", full:true}
+    ],
+    rowTitle:r=>`${r.formType||'SAMRASS Report'} — ${r.employee||r.mineSection||'Unnamed'}`,
+    rowSub:r=>`${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}`,
+    rowTag:r=>{
+      if(r.severity==="Fatal") return {label:"Fatal", tone:"rust"};
+      if(r.reportedToInspectorate==="Yes") return {label:"Reported", tone:"navy"};
+      if(r.status==="Closed") return {label:"Closed", tone:"green"};
+      return {label:r.status||"Draft", tone: r.status==="Internally Reviewed" ? "amber" : "neutral"};
+    }
   },
   { key:"pest-control", stateArr:"pestControlLogs", icon:"🐀", title:"Pest Control",
     blurb:"Log pest control inspections, findings and corrective actions from your contracted service provider.",
@@ -3685,6 +3842,10 @@ const NAV_MODULES = [
   },
    { id:"nav-ohs-hira", icon:"⚠️", label:"HIRA Assessments", isActive(){ return tab==="ohs-hira"; }, action(){ tab="ohs-hira"; } },
    { id:"nav-ohs-ptw", icon:"📋", label:"Permit to Work", isActive(){ return tab==="ohs-ptw"; }, action(){ tab="ohs-ptw"; } },
+   { id:"nav-ohs-appointments", icon:"📝", label:"OHS Appointments", isActive(){ return tab==="ohs-appointments"; }, action(){ tab="ohs-appointments"; } },
+   { id:"nav-ohs-medical-fitness", icon:"🩺", label:"Medical Fitness Matrix", isActive(){ return tab==="ohs-medical-fitness"; }, action(){ tab="ohs-medical-fitness"; } },
+   { id:"nav-ohs-construction", icon:"🏗️", label:"Construction Notification & Permits", isActive(){ return tab==="ohs-construction"; }, action(){ tab="ohs-construction"; } },
+   { id:"nav-samrass", icon:"⛏️", label:"SAMRASS Incident Reporting", isActive(){ return tab==="samrass-reporting"; }, action(){ tab="samrass-reporting"; } },
 ];
 const navModule = id => NAV_MODULES.find(n=>n.id===id);
 
@@ -3731,7 +3892,11 @@ const NAV_TREE = [
 },
 { id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
     navModule("nav-ohs-hira"),
-    navModule("nav-ohs-ptw")
+    navModule("nav-ohs-ptw"),
+    navModule("nav-ohs-appointments"),
+    navModule("nav-ohs-medical-fitness"),
+    navModule("nav-ohs-construction"),
+    navModule("nav-samrass")
   ]
 },
 { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
@@ -4159,6 +4324,10 @@ function render(){
         : tab==="fsms-checklist" ? renderFsmsChecklist()
         : tab==="ohs-hira" ? `<div id="ohs-mount-hira"></div>`
         : tab==="ohs-ptw" ? `<div id="ohs-mount-ptw"></div>`
+        : tab==="ohs-appointments" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-appointments"))
+        : tab==="ohs-medical-fitness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-medical-fitness"))
+        : tab==="ohs-construction" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-construction"))
+        : tab==="samrass-reporting" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="samrass-reporting"))
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
