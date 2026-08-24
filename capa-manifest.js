@@ -5,9 +5,9 @@
 // before this module script runs, since ES modules can't see those
 // globals directly otherwise.
 
-import { CapaUI } from './capa-ui.js';
-import { CapaEngine } from './capa.js';
-import { CapaSupabase } from './capa-supabase.js';
+import { CapaUI } from './js/ohs-core/capa-ui.js';
+import { CapaEngine } from './js/ohs-core/capa.js';
+import { CapaSupabase } from './js/ohs-core/capa-supabase.js';
 
 (function registerCapaModule() {
   if (!window.ohsRegistry) {
