@@ -1,0 +1,188 @@
+/* capa-core.css
+   Styling for the CAPA module. Mirrors ohs-core.css conventions:
+   modal overlay pattern, role-gated action bar, status badge colors
+   tied directly to the state machine in capa.js so a glance at the
+   badge tells you exactly where the record sits in the lifecycle. */
+
+.capa-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.capa-table th,
+.capa-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e2e2;
+}
+
+.capa-open-btn {
+  padding: 0.35rem 0.85rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.capa-open-btn:hover {
+  background: #f2f2f2;
+}
+
+/* --- status badges: color maps 1:1 to capa.js STATUS_LABELS --- */
+.capa-status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.capa-status-draft {
+  background: #eee;
+  color: #555;
+}
+
+.capa-status-under_review {
+  background: #fff4cc;
+  color: #8a6d00;
+}
+
+.capa-status-approved {
+  background: #d9f2e3;
+  color: #1c7a44;
+}
+
+.capa-status-rejected {
+  background: #fbdede;
+  color: #a3263c;
+}
+
+.capa-status-independent_review {
+  background: #ffe6d1;
+  color: #b5560f;
+}
+
+.capa-status-effectiveness_review {
+  background: #dceeff;
+  color: #1959a3;
+}
+
+.capa-status-complete {
+  background: #e4e4e4;
+  color: #333;
+  border: 1px solid #bbb;
+}
+
+/* locked statuses (approved/complete) get a lock cursor cue on hover */
+.capa-status-badge[title] {
+  cursor: help;
+}
+
+/* --- modal --- */
+.capa-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.capa-modal {
+  background: #fff;
+  border-radius: 8px;
+  max-width: 640px;
+  width: 92%;
+  max-height: 85vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+}
+
+.capa-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #eee;
+  position: sticky;
+  top: 0;
+  background: #fff;
+}
+
+.capa-modal-header h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+
+.capa-modal-close {
+  background: none;
+  border: none;
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #888;
+}
+
+.capa-modal-close:hover {
+  color: #222;
+}
+
+.capa-modal-body {
+  padding: 1.25rem;
+}
+
+.capa-modal-body h3 {
+  font-size: 0.95rem;
+  margin-top: 1.25rem;
+  margin-bottom: 0.4rem;
+  color: #444;
+}
+
+.capa-event-log,
+.capa-evidence-list,
+.capa-review-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.capa-event-log li,
+.capa-evidence-list li,
+.capa-review-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px dashed #eee;
+}
+
+/* --- action bar: role-gated buttons only, rendered by capa-ui.js --- */
+.capa-action-bar {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.capa-action-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 5px;
+  background: #1959a3;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.capa-action-btn:hover {
+  background: #12447e;
+}
+
+.capa-sod-notice {
+  font-size: 0.85rem;
+  color: #a3263c;
+  font-style: italic;
+}
