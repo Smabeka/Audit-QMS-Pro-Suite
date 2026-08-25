@@ -265,6 +265,8 @@ async function initCloudSession(){
         subscribeCapaRealtime();
         fetchFindingEventsFromCloud();
         subscribeFindingEventsRealtime();
+        fetchFindingsV2FromCloud();
+        subscribeFindingsV2Realtime();
         fetchRiskFromCloud();
         subscribeRiskRealtime();
         syncAllGenericCloudModules();
@@ -330,6 +332,8 @@ async function cloudSignIn(email, password){
   subscribeCapaRealtime();
   fetchFindingEventsFromCloud();
   subscribeFindingEventsRealtime();
+  fetchFindingsV2FromCloud();
+  subscribeFindingsV2Realtime();
   fetchRiskFromCloud();
   subscribeRiskRealtime();
   syncAllGenericCloudModules();
@@ -349,6 +353,7 @@ async function cloudSignOut(){
   unsubscribeDocumentsRealtime();
   unsubscribeCapaRealtime();
   unsubscribeFindingEventsRealtime();
+  unsubscribeFindingsV2Realtime();
   unsubscribeRiskRealtime();
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
@@ -1169,6 +1174,330 @@ function renderFindingRequiresDocUpdateToggle(a, f){
     </label>
   </div>`;
 }
+/* ---------------- Finding Dispute Engine v2 ----------------
+   Wires the CAPA finding-dispute redesign (typed state machine,
+   optimistic concurrency, atomic transition+signature, RCA gate) into
+   the app. Server-authoritative: state.findingsV2 is just a read cache
+   fetched from Supabase (public.findings / finding_dispute_history /
+   finding_signatures / rca_records) — never persisted to localStorage,
+   never the source of truth. All writes go through RPCs
+   (create_finding, transition_finding_state_signed, submit_rca,
+   approve_rca) so the server-side gates always apply, even if this
+   cache is stale.
+   Coexists with the older capa_finding_events dispute trail above
+   (renderFindingDispute/renderFindingCorrection) rather than replacing
+   it — that workflow keeps working for findings that haven't been
+   migrated/started on v2 yet. */
+let findingsV2 = {};        // finding_id -> { ...findings row, history:[], signatures:[], rca:null }
+let findingsV2Loaded = false;
+let findingTransitionModalTarget = null; // { auditId, findingId, toStatus, actionType }
+let findingTransitionSeverity = "";
+let findingTransitionJustification = "";
+let findingTransitionEvidence = "";
+let rcaModalFindingId = null;
+let rcaDraft = null; // { problemStatement, fiveWhys:[{q,a}], fishbone:[{category,cause}], summary }
+let findingsV2RealtimeChannel = null;
+
+const FINDING_TRANSITIONS_V2 = [
+  { from:"DRAFT",      to:"PROPOSED",   roles:["Auditor"],                        requiresEvidence:true,  minChars:20, label:"Propose Classification" },
+  { from:"PROPOSED",   to:"ACCEPTED",   roles:["Department Manager","Employee"],  requiresEvidence:false, minChars:10, label:"Accept Classification" },
+  { from:"PROPOSED",   to:"CHALLENGED", roles:["Department Manager","Employee"],  requiresEvidence:true,  minChars:20, label:"Challenge Classification" },
+  { from:"CHALLENGED", to:"IN_REVIEW",  roles:["Quality Manager"],                requiresEvidence:false, minChars:10, label:"Move to Review" },
+  { from:"IN_REVIEW",  to:"ESCALATED",  roles:["Quality Manager"],                requiresEvidence:true,  minChars:30, label:"Escalate" },
+  { from:"IN_REVIEW",  to:"APPROVED",   roles:["Quality Manager"],                requiresEvidence:true,  minChars:30, label:"Approve Decision" },
+  { from:"ESCALATED",  to:"APPROVED",   roles:["Admin","Auditor"],                requiresEvidence:true,  minChars:30, label:"Approve (Escalated)" },
+  { from:"ACCEPTED",   to:"CLOSED",     roles:["Quality Manager","Auditor"],      requiresEvidence:false, minChars:10, label:"Close Finding" },
+  { from:"APPROVED",   to:"CLOSED",     roles:["Quality Manager","Auditor"],      requiresEvidence:false, minChars:10, label:"Close Finding" },
+];
+const FINDING_SEVERITIES_V2 = ["CRITICAL","MAJOR","MINOR","OFI","STATUTORY_NON_COMPLIANCE"];
+
+function findingV2StatusTone(status){
+  return { DRAFT:"neutral", PROPOSED:"amber", ACCEPTED:"green", CHALLENGED:"rust",
+    IN_REVIEW:"amber", ESCALATED:"rust", APPROVED:"navy", CLOSED:"green" }[status] || "neutral";
+}
+function findingV2SeverityTone(sev){
+  return { CRITICAL:"rust", MAJOR:"amber", STATUTORY_NON_COMPLIANCE:"rust", MINOR:"neutral", OFI:"neutral" }[sev] || "neutral";
+}
+async function fetchFindingsV2FromCloud(){
+  if(!cloudReady()) return;
+  const [findingsRes, historyRes, sigsRes, rcaRes] = await Promise.all([
+    supabaseClient.from("findings").select("*"),
+    supabaseClient.from("finding_dispute_history").select("*").order("created_at", { ascending:true }),
+    supabaseClient.from("finding_signatures").select("*"),
+    supabaseClient.from("rca_records").select("*"),
+  ]);
+  if(findingsRes.error){ console.error(findingsRes.error.message); return; }
+  const map = {};
+  (findingsRes.data||[]).forEach(row => { map[row.id] = { ...row, history:[], signatures:[], rca:null }; });
+  (historyRes.data||[]).forEach(row => { if(map[row.finding_id]) map[row.finding_id].history.push(row); });
+  (sigsRes.data||[]).forEach(row => { if(map[row.finding_id]) map[row.finding_id].signatures.push(row); });
+  (rcaRes.data||[]).forEach(row => { if(map[row.finding_id]) map[row.finding_id].rca = row; });
+  findingsV2 = map;
+  findingsV2Loaded = true;
+  render();
+}
+function subscribeFindingsV2Realtime(){
+  if(!cloudReady() || findingsV2RealtimeChannel) return;
+  findingsV2RealtimeChannel = supabaseClient.channel("findings-v2-changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:"findings" }, () => fetchFindingsV2FromCloud())
+    .on("postgres_changes", { event:"*", schema:"public", table:"finding_dispute_history" }, () => fetchFindingsV2FromCloud())
+    .on("postgres_changes", { event:"*", schema:"public", table:"finding_signatures" }, () => fetchFindingsV2FromCloud())
+    .on("postgres_changes", { event:"*", schema:"public", table:"rca_records" }, () => fetchFindingsV2FromCloud())
+    .subscribe();
+}
+function unsubscribeFindingsV2Realtime(){
+  if(findingsV2RealtimeChannel){ supabaseClient.removeChannel(findingsV2RealtimeChannel); findingsV2RealtimeChannel = null; }
+}
+async function startFindingV2(a, f){
+  if(!cloudReady()){ alert("This requires cloud sign-in — please sign in first."); return; }
+  const severityMap = { Critical:"CRITICAL", Major:"MAJOR", Minor:"MINOR" };
+  const { data, error } = await supabaseClient.rpc("create_finding", {
+    p_audit_id: a.id,
+    p_title: f.desc || "(untitled finding)",
+    p_clause_reference: f.clauseRef || f.clause || "",
+    p_severity: severityMap[f.severity] || "MINOR",
+    p_is_ccp_breach: false,
+    p_finding_id: f.id,
+  });
+  if(error){ alert(`Could not start dispute tracking: ${error.message}`); return; }
+  await fetchFindingsV2FromCloud();
+}
+function eligibleTransitionsV2(status){
+  const role = currentUser()?.role;
+  return FINDING_TRANSITIONS_V2.filter(t => t.from===status && t.roles.includes(role));
+}
+function openFindingTransitionModal(auditId, findingId, edge){
+  findingTransitionModalTarget = { auditId, findingId, toStatus: edge.to, actionType:
+    edge.to==="PROPOSED" ? "PROPOSED" : edge.to==="ACCEPTED" ? "ACCEPTED" : edge.to==="CHALLENGED" ? "CHALLENGED" :
+    edge.to==="IN_REVIEW" ? "REVIEWED" : edge.to==="ESCALATED" ? "ESCALATED" : edge.to==="APPROVED" ? "CONFIRMED" : "CLOSED",
+    edge };
+  const fv2 = findingsV2[findingId];
+  findingTransitionSeverity = fv2 ? fv2.current_severity : "MINOR";
+  findingTransitionJustification = "";
+  findingTransitionEvidence = "";
+  render();
+}
+function renderFindingTransitionModal(){
+  if(!findingTransitionModalTarget) return '';
+  const { edge } = findingTransitionModalTarget;
+  const chars = findingTransitionJustification.trim().length;
+  const ok = chars >= edge.minChars && (!edge.requiresEvidence || findingTransitionEvidence.trim().length>0);
+  return `
+    <div class="modal-overlay" data-action="close-finding-transition-modal">
+      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">${esc(edge.label)}</h3>
+        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">${edge.from} → ${edge.to}. This requires a drawn signature to commit.</p>
+        <label class="field" style="margin-bottom:8px;">Target Severity
+          <select id="finding-transition-severity">
+            ${FINDING_SEVERITIES_V2.map(s=>`<option value="${s}" ${s===findingTransitionSeverity?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('')}
+          </select>
+        </label>
+        <label class="field" style="margin-bottom:4px;">Justification (min ${edge.minChars} characters)
+          <textarea id="finding-transition-justification" rows="3" placeholder="Explain this transition...">${esc(findingTransitionJustification)}</textarea>
+        </label>
+        <div class="muted-italic" style="font-size:11px;margin-bottom:8px;">${chars} / ${edge.minChars} characters</div>
+        ${edge.requiresEvidence ? `
+          <label class="field" style="margin-bottom:8px;">Evidence (one item per line — required for this transition)
+            <textarea id="finding-transition-evidence" rows="2" placeholder="e.g. Photo of corrective action, verification log entry...">${esc(findingTransitionEvidence)}</textarea>
+          </label>
+        ` : ''}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-finding-transition-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="proceed-finding-transition" ${ok?'':'disabled'}>Continue to Sign</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+async function submitFindingTransitionSigned(imageDataUrl){
+  const target = findingTransitionModalTarget;
+  if(!target) return;
+  const fv2 = findingsV2[target.findingId];
+  const evidenceArr = findingTransitionEvidence.trim()
+    ? findingTransitionEvidence.split("\n").map(line=>line.trim()).filter(Boolean).map(note=>({ type:"NOTE", note }))
+    : [];
+  const { data, error } = await supabaseClient.rpc("transition_finding_state_signed", {
+    p_finding_id: target.findingId,
+    p_action_type: target.actionType,
+    p_target_severity: findingTransitionSeverity,
+    p_target_status: target.toStatus,
+    p_justification: findingTransitionJustification.trim(),
+    p_signature_image: imageDataUrl,
+    p_evidence_attachments: evidenceArr,
+    p_expected_version: fv2 ? fv2.version : null,
+  });
+  if(error){ alert(`Transition failed: ${error.message}`); return; }
+  logActivity(`Finding transition (v2): ${target.toStatus} — ${currentUser()?.fullName||'Unknown'}`);
+  findingTransitionModalTarget = null;
+  await fetchFindingsV2FromCloud();
+}
+function openRcaModal(findingId){
+  const fv2 = findingsV2[findingId];
+  const existing = fv2 && fv2.rca;
+  rcaModalFindingId = findingId;
+  rcaDraft = existing
+    ? { problemStatement: existing.problem_statement||"", fiveWhys: existing.five_whys && existing.five_whys.length ? existing.five_whys : [{why_number:1,question:"",answer:""}], fishbone: existing.fishbone_causes||[], summary: existing.root_cause_summary||"" }
+    : { problemStatement:"", fiveWhys:[{why_number:1,question:"",answer:""}], fishbone:[], summary:"" };
+  render();
+}
+function renderRcaModal(){
+  if(!rcaModalFindingId) return '';
+  const fv2 = findingsV2[rcaModalFindingId];
+  const existing = fv2 && fv2.rca;
+  const locked = existing && existing.status==="APPROVED";
+  return `
+    <div class="modal-overlay" data-action="close-rca-modal">
+      <div class="modal-card" style="max-width:560px;max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">🔍 Root Cause Analysis (5-Why)</h3>
+        ${locked ? `<p class="muted-italic" style="font-size:12px;color:var(--green);">Approved — read only. Supersede via a new dispute cycle to change it.</p>` : ''}
+        <label class="field" style="margin-bottom:8px;">Problem Statement
+          <textarea id="rca-problem" rows="2" ${locked?'disabled':''}>${esc(rcaDraft.problemStatement)}</textarea>
+        </label>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;">Five Whys</div>
+        ${rcaDraft.fiveWhys.map((w,idx)=>`
+          <div style="margin-bottom:6px;">
+            <input data-rca-why="${idx}" value="${esc(w.answer)}" placeholder="Why ${idx+1}?" ${locked?'disabled':''} style="width:100%;" />
+          </div>
+        `).join('')}
+        ${!locked ? `<button class="btn btn-ghost" style="font-size:11px;" data-action="add-rca-why">+ Add Why</button>` : ''}
+        <label class="field" style="margin:10px 0 8px;">Root Cause Summary (min 20 characters to submit)
+          <textarea id="rca-summary" rows="2" ${locked?'disabled':''}>${esc(rcaDraft.summary)}</textarea>
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-rca-modal">Close</button>
+          ${!locked ? `
+            <button class="btn btn-ghost" data-action="save-rca-draft">Save Draft</button>
+            <button class="btn btn-primary" data-action="submit-rca-final">Submit for Review</button>
+          ` : ''}
+        </div>
+        ${existing && existing.status==="SUBMITTED" && (can("manageCapa")||can("closeOthersCapa")) && existing.created_by !== currentCloudUser?.id ? `
+          <div class="top-border" style="margin-top:12px;padding-top:12px;">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Independent Review</div>
+            <button class="btn btn-primary" style="font-size:12px;" data-action="approve-rca-final">Approve RCA</button>
+            <button class="btn btn-ghost" style="font-size:12px;" data-action="reject-rca-final">Reject</button>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+let findingHistoryOpenState = {}; // history_id -> bool, defaults to open (matches ported timeline UX)
+function toggleFindingHistoryNode(historyId){
+  findingHistoryOpenState[historyId] = findingHistoryOpenState[historyId]===false ? true : false;
+  render();
+}
+function findingStandardLabel(code){
+  return { ISO_9001:"ISO 9001", BRCGS_FOOD:"BRCGS", FSSC_22000:"FSSC 22000", ISO_22000:"ISO 22000",
+    ISO_14001:"ISO 14001", ISO_45001:"ISO 45001", OHS_ACT:"OHS Act" }[code] || code;
+}
+function findingActionLabel(actionType){
+  return { PROPOSED:"AUDITOR PROPOSAL", ACCEPTED:"AUDITEE ACCEPTANCE", CHALLENGED:"AUDITEE CHALLENGE",
+    REVIEWED:"REVIEW LOGGED", ESCALATED:"ESCALATED TO QUALITY MANAGEMENT", CONFIRMED:"CONFIRMED",
+    RECLASSIFIED:"INDEPENDENT REVIEW & DECISION", RAISED:"FINDING RAISED", CLOSED:"CLOSED" }[actionType] || actionType.replace(/_/g,' ');
+}
+function renderFindingDisputeV2(a, f){
+  const fv2 = findingsV2[f.id];
+  if(!fv2){
+    return `
+      <div class="top-border" style="margin-top:10px;padding-top:10px;">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Dispute Tracking (v2)</div>
+        <button class="btn btn-ghost" style="font-size:12px;" data-action="start-finding-v2" data-audit="${a.id}" data-finding="${f.id}">Start Dispute Tracking</button>
+      </div>
+    `;
+  }
+  const edges = eligibleTransitionsV2(fv2.current_status);
+  const history = fv2.history || [];
+  const isClosed = fv2.current_status === "CLOSED";
+  const closingHistory = isClosed ? history[history.length-1] : null;
+  const closingSignature = closingHistory ? (fv2.signatures||[]).find(s=>s.history_id===closingHistory.history_id) : null;
+
+  const timelineMarkup = history.map((h, i) => {
+    const isOpen = findingHistoryOpenState[h.history_id] !== false;
+    const severityChanged = h.from_severity && h.from_severity !== h.to_severity;
+    const sig = (fv2.signatures||[]).find(s=>s.history_id===h.history_id);
+    const evidence = (h.evidence_attachments||[]);
+    const standards = (h.impacted_standards||[]);
+    const isLastUnsignedRow = i===history.length-1 && !(isClosed && closingSignature);
+    return `
+      <div style="position:relative;padding-left:34px;">
+        ${!isLastUnsignedRow ? `<span style="position:absolute;left:12px;top:26px;bottom:-14px;width:1px;background:var(--line2);"></span>` : ''}
+        <span style="position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:999px;border:1px solid var(--line);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:12px;">⚠️</span>
+        <button class="finding-node-toggle" data-history="${h.history_id}" style="all:unset;cursor:pointer;display:flex;width:100%;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div style="min-width:0;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+              <span class="muted-italic" style="font-size:10.5px;">${new Date(h.created_at).toLocaleString()}</span>
+              <span style="font-size:10.5px;letter-spacing:.06em;color:var(--amber);font-weight:600;">${esc(findingActionLabel(h.action_type))}</span>
+            </div>
+            <div style="margin-top:2px;">
+              <span class="serif" style="font-weight:600;">${esc(h.actor_name)}</span>
+              <span class="muted-italic" style="font-size:12.5px;"> — ${esc(h.actor_role)}</span>
+            </div>
+          </div>
+          <span class="muted-italic" style="font-size:11px;">${isOpen?'▼':'▶'}</span>
+        </button>
+        ${isOpen ? `
+          <div style="margin:6px 0 14px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              ${severityChanged ? `
+                <span class="tag tag-${findingV2SeverityTone(h.from_severity)}" style="font-size:10px;">${esc(h.from_severity)}</span>
+                <span class="muted-italic">→</span>
+                <span class="tag tag-${findingV2SeverityTone(h.to_severity)}" style="font-size:10px;">${esc(h.to_severity)}</span>
+              ` : `<span class="tag tag-${findingV2SeverityTone(h.to_severity)}" style="font-size:10px;">${esc(h.to_severity)}</span>`}
+            </div>
+            <p style="font-size:13px;line-height:1.5;margin:8px 0 0;">${esc(h.justification)}</p>
+            ${standards.length ? `
+              <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">
+                ${standards.map(s=>`<span class="muted-italic" style="font-size:10px;border:1px solid var(--line2);border-radius:4px;padding:2px 6px;">${esc(findingStandardLabel(s))}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${evidence.length ? `
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;">
+                <span class="muted-italic" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;">Evidence</span>
+                ${evidence.map(ev=>`<span style="font-size:11.5px;background:var(--line2);border-radius:4px;padding:3px 8px;">${esc(ev.note||ev.file_name||'attachment')}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${sig ? `
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line2);">
+                <img src="${sig.signature_image}" style="max-height:36px;display:block;margin-bottom:4px;" />
+                <span style="font-size:11px;color:var(--green);">✓ Signed by ${esc(sig.signer_name)}</span>
+                <div class="muted-italic" style="font-size:10px;margin-top:2px;">hash ${esc((sig.payload_hash||'').slice(0,16))}…</div>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const lockMarkup = (isClosed && closingSignature) ? `
+    <div style="position:relative;padding-left:34px;">
+      <span style="position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:999px;border:1px solid var(--green);background:var(--greenBg);display:flex;align-items:center;justify-content:center;font-size:12px;">🔒</span>
+      <div style="padding:10px;border:1px solid var(--green);border-radius:8px;background:var(--greenBg);">
+        <div style="font-size:10.5px;letter-spacing:.06em;color:var(--green);font-weight:600;">IMMUTABLE RECORD LOCK</div>
+        <div class="muted-italic" style="font-size:11px;margin-top:4px;">${new Date(closingSignature.signed_at).toLocaleString()}</div>
+        <div style="font-size:11.5px;margin-top:4px;">🛡 SHA-256 verified · sign-off ${esc(closingSignature.signature_id.slice(0,8))}…</div>
+      </div>
+    </div>
+  ` : '';
+
+  return `
+    <div class="top-border" style="margin-top:10px;padding-top:10px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">🔒 Dispute Tracking (v2) — Immutable Trail</div>
+      <div style="margin-bottom:10px;">
+        <span class="tag tag-${findingV2StatusTone(fv2.current_status)}" style="font-size:10px;">${esc(fv2.current_status)}</span>
+        <span class="tag tag-${findingV2SeverityTone(fv2.current_severity)}" style="font-size:10px;">${esc(fv2.current_severity)}</span>
+        <span class="muted-italic" style="font-size:10px;margin-left:4px;">v${fv2.version}</span>
+      </div>
+      ${timelineMarkup}
+      ${lockMarkup}
+      <div class="flex-wrap" style="margin-top:10px;">
+        ${edges.map(edge=>`<button class="btn btn-ghost" style="font-size:12px;" data-action="open-finding-transition" data-audit="${a.id}" data-finding="${f.id}" data-to="${edge.to}">${esc(edge.label)}</button>`).join('')}
+        ${fv2.is_ccp_breach || fv2.rca ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-rca-modal" data-finding="${f.id}">🔍 RCA${fv2.rca_approved?' ✓':''}</button>` : ''}
+      </div>
+      <p class="muted-italic" style="font-size:10px;text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.04em;">Entries above are append-only and cannot be edited or deleted</p>
+    </div>
+  `;
+}
 function renderFindingDispute(a, f){
   const events = f.disputeEvents || [];
   const canChallenge = can("respondFindings") || can("addFindings");
@@ -1455,12 +1784,6 @@ const MODULE_TAB_MAP = {
   "Emergency Preparedness":"emergency-preparedness",
   "Calibration Dashboard":"calibration-dashboard",
   "FSMS Checklist":"fsms-checklist",
-  "HIRA Assessments":"ohs-hira",
-  "Permit to Work":"ohs-ptw",
-  "OHS Appointments":"ohs-appointments",
-  "Medical Fitness Matrix":"ohs-medical-fitness",
-  "Construction Notification & Permits":"ohs-construction",
-  "SAMRASS Incident Reporting":"samrass-reporting",
   "Users":"users",
   "Audit Trail":"audit-trail",
   "Settings":"settings"
@@ -1596,33 +1919,6 @@ const COMPLIANCE_MAPPING = [
     { clause:"7.8", title:"Reporting of Results", primary:["Laboratory"], supporting:["Document Control"], coverage:"High" },
     { clause:"7.10", title:"Nonconforming Work", primary:["CAPA"], supporting:["Laboratory"], coverage:"High" },
     { clause:"8.8", title:"Internal Audits", primary:["Audit Management"], supporting:["CAPA"], coverage:"High" }
-  ]},
-  { standard:"OHS Act 85 of 1993 (incl. GNR.84 General Administrative Regulations & Construction Regulations)", clauses:[
-    { clause:"Sec. 8", title:"General duty of employer to employees", primary:["HIRA Assessments"], supporting:["Document Control","CAPA"], coverage:"High" },
-    { clause:"Sec. 9", title:"General duty of employer to non-employees", primary:["HIRA Assessments"], supporting:["Permit to Work"], coverage:"Medium" },
-    { clause:"Sec. 13", title:"Duty to inform of hazards", primary:["HIRA Assessments"], supporting:["Medical Fitness Matrix","People Compliance"], coverage:"Medium" },
-    { clause:"Sec. 16(1)/16(2)", title:"CEO duty & assignment of duties", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
-    { clause:"Sec. 17", title:"Health & Safety Representatives", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
-    { clause:"Sec. 19", title:"Health & Safety Committees", primary:["OHS Appointments"], supporting:["Management Review"], coverage:"Medium" },
-    { clause:"Sec. 24", title:"Reporting of incidents to the Chief Inspector", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
-    { clause:"GNR.84 (GAR) Reg 2(1)", title:"Appointment of Health & Safety Manager", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
-    { clause:"GNR.84 (GAR) Reg 2(7)", title:"Duties & functions of appointees", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
-    { clause:"GNR.84 (GAR) Reg 8/9", title:"Incident recording & investigation", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
-    { clause:"General Safety Reg. 3", title:"Risk assessment", primary:["HIRA Assessments"], supporting:["Risk Management"], coverage:"High" },
-    { clause:"Driven Machinery / General Safety Regs — Medical Surveillance", title:"Fitness certification for hazardous exposures", primary:["Medical Fitness Matrix"], supporting:["People Compliance"], coverage:"High" },
-    { clause:"Construction Reg. 4", title:"Notification of construction work", primary:["Construction Notification & Permits"], supporting:["Document Control"], coverage:"High" },
-    { clause:"Construction Reg. 5", title:"Health & Safety Specification and Plan", primary:["Construction Notification & Permits"], supporting:["Risk Management"], coverage:"High" },
-    { clause:"Construction Reg. 8", title:"Appointment of Construction Supervisor (CR8)", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"High" },
-    { clause:"Construction Reg. 21", title:"Fire precautions on construction sites", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"Medium" },
-    { clause:"General Machinery Reg. — Permit systems", title:"Permit-to-work for high-risk tasks", primary:["Permit to Work"], supporting:["HIRA Assessments"], coverage:"High" }
-  ]},
-  { standard:"Mine Health and Safety Act 29 of 1996 (SAMRASS statistics system)", clauses:[
-    { clause:"SAMRASS 1 & 2", title:"Accident / injury reporting", primary:["SAMRASS Incident Reporting"], supporting:["CAPA","Medical Fitness Matrix"], coverage:"Medium" },
-    { clause:"SAMRASS 3A–3D", title:"Fall of ground / rockburst reporting", primary:["SAMRASS Incident Reporting"], supporting:["HIRA Assessments"], coverage:"Medium" },
-    { clause:"SAMRASS 4", title:"Short-shift injuries", primary:["SAMRASS Incident Reporting"], supporting:["OHS Appointments"], coverage:"Medium" },
-    { clause:"SAMRASS 5–8", title:"Explosives, fire, subsidence & heat incidents", primary:["SAMRASS Incident Reporting"], supporting:["CAPA"], coverage:"Medium" },
-    { clause:"SAMRASS 9", title:"Return to work", primary:["SAMRASS Incident Reporting"], supporting:["Medical Fitness Matrix"], coverage:"Medium" },
-    { clause:"Hygiene exposure forms", title:"Occupational hygiene exposure monitoring", primary:["SAMRASS Incident Reporting"], supporting:["Medical Fitness Matrix"], coverage:"Medium" }
   ]}
 ];
 const COMPLIANCE_GAPS = [];
@@ -2610,130 +2906,6 @@ const GENERIC_MODULES = [
     rowTitle:r=>r.employee||"Unnamed",
     rowSub:r=>`${r.ppeItem||'—'} · issued ${r.issueDate||'—'}`,
     rowTag:r=>({label:r.condition||"—", tone:{New:"green",Good:"navy","Needs Replacement":"rust"}[r.condition]||"neutral"})
-  },
-  { key:"ohs-appointments", stateArr:"ohsAppointments", icon:"📝", title:"OHS Appointments",
-    blurb:"Statutory appointments under the OHS Act (GMR 2(1) employer/employer's rep, Health & Safety Reps, First Aiders, Fire Marshals, Incident Investigators, etc.) with review/expiry tracking.",
-    cloudSynced:true, supabaseTable:"ohs_appointments",
-    sortField:"appointmentDate",
-    fields:[
-      {id:"employee", label:"Appointee Name", required:true},
-      {id:"role", label:"Appointment Type", type:"select", required:true, options:["Employer / CEO (Section 16(1))","16(2) Assignee","GMR 2(1) Health & Safety Manager","Health & Safety Committee Chair","Health & Safety Representative","First Aider","Fire Marshal / Fire Fighting Team","Incident Investigator","Risk Assessor","Chemical/Hazardous Substances Officer","Machinery/Equipment Supervisor","Construction Supervisor (CR8)","Other"]},
-      {id:"department", label:"Department / Area"},
-      {id:"appointmentDate", label:"Appointment Date", type:"date", default:"today"},
-      {id:"reviewDate", label:"Review / Expiry Date", type:"date"},
-      {id:"appointedBy", label:"Appointed By"},
-      {id:"trainingRef", label:"Supporting Training / Certificate Ref"},
-      {id:"letterSigned", label:"Appointment Letter Signed?", type:"select", options:["Yes","No"]},
-      {id:"notes", label:"Notes", full:true}
-    ],
-    rowTitle:r=>r.employee||"Unnamed",
-    rowSub:r=>`${r.role||'—'}${r.department?` · ${r.department}`:''} · appointed ${r.appointmentDate||'—'}`,
-    rowTag:r=>{
-      if(!r.reviewDate) return {label: r.letterSigned==="Yes" ? "Signed" : "Unsigned", tone: r.letterSigned==="Yes" ? "green" : "amber"};
-      const d = daysUntil(r.reviewDate);
-      if(d<0) return {label:`Review overdue ${Math.abs(d)}d`, tone:"rust"};
-      if(d<=30) return {label:`Review due in ${d}d`, tone:"amber"};
-      return {label:"Current", tone:"green"};
-    }
-  },
-  { key:"ohs-medical-fitness", stateArr:"ohsMedicalFitness", icon:"🩺", title:"Medical Fitness Matrix",
-    blurb:"Occupational fitness certification per employee — occupation, exposures, required PPE and certificate expiry (Annexure 3 style).",
-    cloudSynced:true, supabaseTable:"ohs_medical_fitness",
-    sortField:"expiryDate",
-    fields:[
-      {id:"employee", label:"Employee Name", required:true},
-      {id:"occupation", label:"Occupation / Job Title", required:true},
-      {id:"exposures", label:"Occupational Exposures", placeholder:"e.g. Noise, Dust, Chemicals, Heights, Confined Space", full:true},
-      {id:"ppeRequired", label:"PPE Required", placeholder:"e.g. Hearing protection, Respirator, Harness", full:true},
-      {id:"fitnessStatus", label:"Fitness Status", type:"select", options:["Fit","Fit with Restriction","Temporarily Unfit","Unfit","Pending"]},
-      {id:"restrictions", label:"Restrictions (if any)", full:true},
-      {id:"examDate", label:"Exam Date", type:"date", default:"today"},
-      {id:"expiryDate", label:"Certificate Expiry Date", type:"date", required:true},
-      {id:"medicalPractitioner", label:"Examining / Occupational Health Practitioner"}
-    ],
-    rowTitle:r=>r.employee||"Unnamed",
-    rowSub:r=>`${r.occupation||'—'} · exam ${r.examDate||'—'}`,
-    rowTag:r=>{
-      if(r.fitnessStatus==="Unfit") return {label:"Unfit", tone:"rust"};
-      if(r.fitnessStatus==="Temporarily Unfit") return {label:"Temp. Unfit", tone:"rust"};
-      if(r.fitnessStatus==="Fit with Restriction") return {label:"Fit w/ Restriction", tone:"amber"};
-      if(!r.expiryDate) return {label:r.fitnessStatus||"Pending", tone:"neutral"};
-      const d = daysUntil(r.expiryDate);
-      if(d<0) return {label:`Expired ${Math.abs(d)}d ago`, tone:"rust"};
-      if(d<=30) return {label:`Expiring in ${d}d`, tone:"amber"};
-      return {label:"Fit", tone:"green"};
-    }
-  },
-  { key:"ohs-construction", stateArr:"ohsConstructionNotifications", icon:"🏗️", title:"Construction Notification & Permits",
-    blurb:"Notification of construction work and related permits under the Construction Regulations (Annexure 1 & 2 style records).",
-    cloudSynced:true, supabaseTable:"ohs_construction_notifications",
-    sortField:"expectedStartDate",
-    fields:[
-      {id:"projectName", label:"Project / Site Name", required:true},
-      {id:"principalContractor", label:"Principal Contractor", required:true},
-      {id:"clientRep", label:"Client / Agent Representative"},
-      {id:"constructionType", label:"Type of Construction Work", placeholder:"e.g. New build, Demolition, Excavation"},
-      {id:"notificationRef", label:"Dept. of Labour Notification Ref (Annexure 1)"},
-      {id:"notificationDate", label:"Notification Date", type:"date"},
-      {id:"expectedStartDate", label:"Expected Start Date", type:"date"},
-      {id:"expectedDuration", label:"Expected Duration", placeholder:"e.g. 6 weeks"},
-      {id:"constructionSupervisor", label:"Appointed Construction Supervisor (CR8)"},
-      {id:"healthSafetyPlanApproved", label:"Health & Safety Plan Approved?", type:"select", options:["Yes","No","Pending"]},
-      {id:"status", label:"Status", type:"select", options:["Planned","Notified","In Progress","Completed","Closed"]},
-      {id:"notes", label:"Notes", full:true}
-    ],
-    rowTitle:r=>r.projectName||"Unnamed Project",
-    rowSub:r=>`${r.principalContractor||'—'} · starts ${r.expectedStartDate||'—'}`,
-    rowTag:r=>({label:r.status||"Planned", tone:{Planned:"neutral",Notified:"navy","In Progress":"amber",Completed:"green",Closed:"green"}[r.status]||"neutral"})
-  },
-  { key:"samrass-reporting", stateArr:"samrassReports", icon:"⛏️", title:"SAMRASS Incident Reporting",
-    blurb:"Internal capture of Mine Health & Safety Inspectorate statistics-system data (SAMRASS-equivalent fields) for accidents, dangerous occurrences and hygiene exposure — for your own records and to prep statutory submissions. This does not submit anything to the Inspectorate/DMRE.",
-    cloudSynced:true, supabaseTable:"samrass_reports",
-    sortField:"incidentDate",
-    fields:[
-      {id:"formType", label:"SAMRASS Form Type", type:"select", required:true, options:[
-        "SAMRASS 1 & 2 — Accident / Injury",
-        "SAMRASS 3A–3D — Fall of Ground / Rockburst",
-        "SAMRASS 4 — Short-Shift Injury",
-        "SAMRASS 5 — Explosives Incident",
-        "SAMRASS 6 — Fire / Explosion",
-        "SAMRASS 7 — Subsidence / Sinkhole",
-        "SAMRASS 8 — Heat Illness",
-        "SAMRASS 9 — Return to Work",
-        "Hygiene Exposure Monitoring"
-      ]},
-      {id:"internalRef", label:"Internal Report Reference", placeholder:"e.g. auto-numbered or site incident log #"},
-      {id:"mineSection", label:"Mine / Shaft / Section"},
-      {id:"location", label:"Specific Location", placeholder:"e.g. Level 26, Stope 4W, Surface plant"},
-      {id:"incidentDate", label:"Incident Date", type:"date", default:"today"},
-      {id:"incidentTime", label:"Incident Time"},
-      {id:"employee", label:"Employee / Affected Person"},
-      {id:"occupation", label:"Occupation"},
-      {id:"shift", label:"Shift", type:"select", options:["Day","Afternoon","Night"]},
-      {id:"causeCategory", label:"Cause Category", type:"select", options:["Fall of Ground / Rockburst","Machinery / Equipment","Transport / Tramming","Explosives","Fire / Explosion","Subsidence","Heat / Illness","Electrical","Hygiene Exposure","Other"]},
-      {id:"natureOfInjury", label:"Nature of Injury / Illness / Occurrence", full:true},
-      {id:"severity", label:"Severity Classification", type:"select", options:["Fatal","Serious / Reportable","Lost Time Injury","Medical Treatment Case","First Aid Case","Dangerous Occurrence (no injury)"]},
-      {id:"daysLost", label:"Shifts / Days Lost"},
-      {id:"hygieneAgent", label:"Hygiene Agent (if exposure monitoring)", placeholder:"e.g. Noise, Respirable dust, Heat stress"},
-      {id:"exposureReading", label:"Exposure Reading vs OEL", placeholder:"e.g. 92 dB(A) vs 85 dB(A) OEL"},
-      {id:"immediateAction", label:"Immediate Action Taken", full:true},
-      {id:"witnesses", label:"Witnesses"},
-      {id:"reportedToInspectorate", label:"Reported to Mine Health & Safety Inspectorate?", type:"select", options:["Yes","No","Pending"]},
-      {id:"inspectorateNotifiedDate", label:"Inspectorate Notification Date", type:"date"},
-      {id:"inspectorateRef", label:"Inspectorate / DMRE Reference (once submitted externally)"},
-      {id:"returnToWorkDate", label:"Return to Work Date (SAMRASS 9)", type:"date"},
-      {id:"linkedCapaRef", label:"Linked CAPA / Investigation Reference"},
-      {id:"status", label:"Status", type:"select", options:["Draft","Internally Reviewed","Reported to Inspectorate","Closed"]},
-      {id:"notes", label:"Notes", full:true}
-    ],
-    rowTitle:r=>`${r.formType||'SAMRASS Report'} — ${r.employee||r.mineSection||'Unnamed'}`,
-    rowSub:r=>`${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}`,
-    rowTag:r=>{
-      if(r.severity==="Fatal") return {label:"Fatal", tone:"rust"};
-      if(r.reportedToInspectorate==="Yes") return {label:"Reported", tone:"navy"};
-      if(r.status==="Closed") return {label:"Closed", tone:"green"};
-      return {label:r.status||"Draft", tone: r.status==="Internally Reviewed" ? "amber" : "neutral"};
-    }
   },
   { key:"pest-control", stateArr:"pestControlLogs", icon:"🐀", title:"Pest Control",
     blurb:"Log pest control inspections, findings and corrective actions from your contracted service provider.",
@@ -3842,10 +4014,6 @@ const NAV_MODULES = [
   },
    { id:"nav-ohs-hira", icon:"⚠️", label:"HIRA Assessments", isActive(){ return tab==="ohs-hira"; }, action(){ tab="ohs-hira"; } },
    { id:"nav-ohs-ptw", icon:"📋", label:"Permit to Work", isActive(){ return tab==="ohs-ptw"; }, action(){ tab="ohs-ptw"; } },
-   { id:"nav-ohs-appointments", icon:"📝", label:"OHS Appointments", isActive(){ return tab==="ohs-appointments"; }, action(){ tab="ohs-appointments"; } },
-   { id:"nav-ohs-medical-fitness", icon:"🩺", label:"Medical Fitness Matrix", isActive(){ return tab==="ohs-medical-fitness"; }, action(){ tab="ohs-medical-fitness"; } },
-   { id:"nav-ohs-construction", icon:"🏗️", label:"Construction Notification & Permits", isActive(){ return tab==="ohs-construction"; }, action(){ tab="ohs-construction"; } },
-   { id:"nav-samrass", icon:"⛏️", label:"SAMRASS Incident Reporting", isActive(){ return tab==="samrass-reporting"; }, action(){ tab="samrass-reporting"; } },
 ];
 const navModule = id => NAV_MODULES.find(n=>n.id===id);
 
@@ -3892,11 +4060,7 @@ const NAV_TREE = [
 },
 { id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
     navModule("nav-ohs-hira"),
-    navModule("nav-ohs-ptw"),
-    navModule("nav-ohs-appointments"),
-    navModule("nav-ohs-medical-fitness"),
-    navModule("nav-ohs-construction"),
-    navModule("nav-samrass")
+    navModule("nav-ohs-ptw")
   ]
 },
 { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
@@ -4194,6 +4358,10 @@ function applySignature(target, name, imageDataUrl){
     if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
     return;
   }
+  if(target.kind === "finding-transition-v2"){
+    submitFindingTransitionSigned(imageDataUrl);
+    return;
+  }
 }
 function renderEsignatureField(moduleKey, recordId, field, r){
   const name = r[field.id];
@@ -4324,10 +4492,6 @@ function render(){
         : tab==="fsms-checklist" ? renderFsmsChecklist()
         : tab==="ohs-hira" ? `<div id="ohs-mount-hira"></div>`
         : tab==="ohs-ptw" ? `<div id="ohs-mount-ptw"></div>`
-        : tab==="ohs-appointments" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-appointments"))
-        : tab==="ohs-medical-fitness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-medical-fitness"))
-        : tab==="ohs-construction" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-construction"))
-        : tab==="samrass-reporting" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="samrass-reporting"))
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
@@ -4338,6 +4502,8 @@ function render(){
       ${showAccountModal ? renderAccountModal() : ''}
       ${sigPadTarget ? renderSignaturePadModal() : ''}
       ${correctionModalTarget ? renderCorrectionModal() : ''}
+      ${findingTransitionModalTarget ? renderFindingTransitionModal() : ''}
+      ${rcaModalFindingId ? renderRcaModal() : ''}
     `;
   } catch(err){
     console.error("Render error:", err);
@@ -5754,6 +5920,7 @@ function renderAuditDetail(a){
             <div style="font-size:13px;font-weight:600;">${esc(f.refNo)||'—'} — ${esc(f.desc).slice(0,70)}${(f.desc||'').length>70?'…':''}</div>
             ${renderFindingDispute(a, f)}
             ${renderFindingCorrection(a, f)}
+            ${renderFindingDisputeV2(a, f)}
           </div>
         `).join('')}
       </div>
@@ -9082,18 +9249,6 @@ function attachHandlers(){
     if(cfg.cloudSynced) cloudSyncInsert(cfg, record);
     persist(); render();
     if(k==="supplier-scar" && record.severity==="Critical") evaluateSupplierCriticalScars(record.supplierName);
-    if(k==="ohs-appointments"){
-      logActivity(`OHS Appointment created: ${record.employee||'Unnamed'} — ${record.role||'—'}${record.department?` (${record.department})`:''} by ${currentUser()?.fullName||'Unknown'}`);
-    }
-    if(k==="ohs-medical-fitness"){
-      logActivity(`Medical Fitness record created: ${record.employee||'Unnamed'} — ${record.occupation||'—'} (${record.fitnessStatus||'Pending'}) by ${currentUser()?.fullName||'Unknown'}`);
-    }
-    if(k==="ohs-construction"){
-      logActivity(`Construction Notification created: ${record.projectName||'Unnamed Project'} — ${record.principalContractor||'—'} by ${currentUser()?.fullName||'Unknown'}`);
-    }
-    if(k==="samrass-reporting"){
-      logActivity(`SAMRASS report created: ${record.formType||'Unnamed form'} — ${record.employee||record.mineSection||'Unnamed'} (${record.severity||'—'}) by ${currentUser()?.fullName||'Unknown'}`);
-    }
   });
   document.querySelectorAll('[data-generic-toggle]').forEach(el=>el.onclick=()=>{
     const [k,id] = el.dataset.genericToggle.split(':');
@@ -9254,19 +9409,6 @@ function attachHandlers(){
       rec[field] = el.value;
       if(k==="supplier-scar" && field==="severity" && el.value==="Critical"){
         evaluateSupplierCriticalScars(rec.supplierName);
-      }
-      if(k==="ohs-appointments" && field==="letterSigned" && el.value==="Yes"){
-        logActivity(`OHS Appointment letter signed: ${rec.employee||'Unnamed'} — ${rec.role||'—'} by ${currentUser()?.fullName||'Unknown'}`);
-      }
-      if(k==="ohs-medical-fitness" && field==="fitnessStatus"){
-        logActivity(`Medical Fitness status changed: ${rec.employee||'Unnamed'} — ${rec.occupation||'—'} by ${currentUser()?.fullName||'Unknown'}`, { newStatus: el.value });
-      }
-      if(k==="ohs-construction" && field==="status"){
-        logActivity(`Construction Notification status changed: ${rec.projectName||'Unnamed Project'} by ${currentUser()?.fullName||'Unknown'}`, { newStatus: el.value });
-      }
-      if(k==="samrass-reporting" && (field==="status" || field==="reportedToInspectorate" || field==="severity")){
-        const label = field==="status" ? "status" : field==="reportedToInspectorate" ? "Inspectorate reporting status" : "severity classification";
-        logActivity(`SAMRASS report ${label} changed: ${rec.formType||'Unnamed form'} — ${rec.employee||rec.mineSection||'Unnamed'} by ${currentUser()?.fullName||'Unknown'}`, { newStatus: el.value });
       }
       if(k==="lab-sample-register" && field==="result" && el.value==="Out of Specification" && !rec.linkedFindingId){
         const oosAudit = getOrCreateOosFindingsAudit();
@@ -9588,6 +9730,101 @@ function attachHandlers(){
       sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
       render();
     }
+  });
+  document.querySelectorAll('[data-action="start-finding-v2"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a && a.findings.find(x=>x.id===el.dataset.finding);
+    if(a && f) startFindingV2(a, f);
+  });
+  document.querySelectorAll('.finding-node-toggle').forEach(el=>el.onclick=()=>{
+    toggleFindingHistoryNode(el.dataset.history);
+  });
+  document.querySelectorAll('[data-action="open-finding-transition"]').forEach(el=>el.onclick=()=>{
+    const auditId = el.dataset.audit, findingId = el.dataset.finding, toStatus = el.dataset.to;
+    const fv2 = findingsV2[findingId];
+    if(!fv2) return;
+    const edge = eligibleTransitionsV2(fv2.current_status).find(e=>e.to===toStatus);
+    if(!edge) return;
+    openFindingTransitionModal(auditId, findingId, edge);
+  });
+  document.querySelectorAll('[data-action="close-finding-transition-modal"]').forEach(el=>el.onclick=()=>{
+    findingTransitionModalTarget = null; render();
+  });
+  const ftSeveritySel = document.getElementById('finding-transition-severity');
+  if(ftSeveritySel) ftSeveritySel.onchange = () => { findingTransitionSeverity = ftSeveritySel.value; };
+  const ftJustification = document.getElementById('finding-transition-justification');
+  if(ftJustification) ftJustification.oninput = () => { findingTransitionJustification = ftJustification.value; render(); };
+  const ftEvidence = document.getElementById('finding-transition-evidence');
+  if(ftEvidence) ftEvidence.oninput = () => { findingTransitionEvidence = ftEvidence.value; render(); };
+  document.querySelectorAll('[data-action="proceed-finding-transition"]').forEach(el=>el.onclick=()=>{
+    if(!findingTransitionModalTarget) return;
+    sigPadTarget = { kind:"finding-transition-v2" };
+    sigPadTypedName = currentUser()?.fullName || "";
+    sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
+    render();
+  });
+  document.querySelectorAll('[data-action="open-rca-modal"]').forEach(el=>el.onclick=()=>{
+    openRcaModal(el.dataset.finding);
+  });
+  document.querySelectorAll('[data-action="close-rca-modal"]').forEach(el=>el.onclick=()=>{
+    rcaModalFindingId = null; rcaDraft = null; render();
+  });
+  const rcaProblem = document.getElementById('rca-problem');
+  if(rcaProblem) rcaProblem.oninput = () => { rcaDraft.problemStatement = rcaProblem.value; };
+  const rcaSummary = document.getElementById('rca-summary');
+  if(rcaSummary) rcaSummary.oninput = () => { rcaDraft.summary = rcaSummary.value; };
+  document.querySelectorAll('[data-rca-why]').forEach(el=>el.oninput=()=>{
+    const idx = parseInt(el.dataset.rcaWhy, 10);
+    if(rcaDraft.fiveWhys[idx]){ rcaDraft.fiveWhys[idx].answer = el.value; rcaDraft.fiveWhys[idx].question = `Why ${idx+1}?`; rcaDraft.fiveWhys[idx].why_number = idx+1; }
+  });
+  document.querySelectorAll('[data-action="add-rca-why"]').forEach(el=>el.onclick=()=>{
+    rcaDraft.fiveWhys.push({ why_number: rcaDraft.fiveWhys.length+1, question:`Why ${rcaDraft.fiveWhys.length+1}?`, answer:"" });
+    render();
+  });
+  document.querySelectorAll('[data-action="save-rca-draft"]').forEach(el=>el.onclick=async()=>{
+    if(!rcaModalFindingId) return;
+    const { error } = await supabaseClient.rpc("submit_rca", {
+      p_finding_id: rcaModalFindingId,
+      p_problem_statement: rcaDraft.problemStatement,
+      p_five_whys: rcaDraft.fiveWhys,
+      p_fishbone_causes: rcaDraft.fishbone,
+      p_root_cause_summary: rcaDraft.summary,
+      p_submit: false,
+    });
+    if(error){ alert(`Could not save draft: ${error.message}`); return; }
+    await fetchFindingsV2FromCloud();
+  });
+  document.querySelectorAll('[data-action="submit-rca-final"]').forEach(el=>el.onclick=async()=>{
+    if(!rcaModalFindingId) return;
+    const { error } = await supabaseClient.rpc("submit_rca", {
+      p_finding_id: rcaModalFindingId,
+      p_problem_statement: rcaDraft.problemStatement,
+      p_five_whys: rcaDraft.fiveWhys,
+      p_fishbone_causes: rcaDraft.fishbone,
+      p_root_cause_summary: rcaDraft.summary,
+      p_submit: true,
+    });
+    if(error){ alert(`Could not submit RCA: ${error.message}`); return; }
+    rcaModalFindingId = null; rcaDraft = null;
+    await fetchFindingsV2FromCloud();
+  });
+  document.querySelectorAll('[data-action="approve-rca-final"]').forEach(el=>el.onclick=async()=>{
+    const fv2 = rcaModalFindingId && findingsV2[rcaModalFindingId];
+    if(!fv2 || !fv2.rca) return;
+    const { error } = await supabaseClient.rpc("approve_rca", { p_rca_id: fv2.rca.id, p_approve: true });
+    if(error){ alert(`Could not approve: ${error.message}`); return; }
+    rcaModalFindingId = null; rcaDraft = null;
+    await fetchFindingsV2FromCloud();
+  });
+  document.querySelectorAll('[data-action="reject-rca-final"]').forEach(el=>el.onclick=async()=>{
+    const fv2 = rcaModalFindingId && findingsV2[rcaModalFindingId];
+    if(!fv2 || !fv2.rca) return;
+    const notes = prompt("Reason for rejecting this RCA:");
+    if(notes===null) return;
+    const { error } = await supabaseClient.rpc("approve_rca", { p_rca_id: fv2.rca.id, p_approve: false, p_review_notes: notes });
+    if(error){ alert(`Could not reject: ${error.message}`); return; }
+    rcaModalFindingId = null; rcaDraft = null;
+    await fetchFindingsV2FromCloud();
   });
   document.querySelectorAll('[data-action="clear-esignature"]').forEach(el=>el.onclick=()=>{
     const cfg = GENERIC_MODULES.find(m=>m.key===el.dataset.module);
