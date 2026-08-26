@@ -11,8 +11,6 @@ window.onerror = function(msg, url, line, col, error) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>AuditQMS Pro Suite</title>
 <link rel="manifest" href="manifest.json">
-<link rel="stylesheet" href="/css_ohs-core.css">
-<link rel="stylesheet" href="/css_capa-core.css">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-title" content="AuditQMS Pro Suite">
@@ -26,6 +24,331 @@ window.onerror = function(msg, url, line, col, error) {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
+/* ==========================================================================
+   ohs-core.css
+   Styling for OHS Act module (HIRA + Permit to Work) modals.
+   Palette pulled from the AuditQMS Pro Suite dashboard screenshot:
+     cream background, navy header/headings, rust/brown accents,
+     serif display font, thin tan borders, pill-style secondary buttons.
+   Link this in <head>, after your main styles.css.
+   ========================================================================== */
+
+:root {
+  --ohs-cream: #f7f3ea;
+  --ohs-cream-panel: #ffffff;
+  --ohs-navy: #1b2a4a;
+  --ohs-navy-dark: #14213d;
+  --ohs-rust: #8b5e34;
+  --ohs-rust-dark: #6f4a2a;
+  --ohs-border: #ddd4c0;
+  --ohs-text: #2a2a2a;
+  --ohs-text-muted: #7a7266;
+  --ohs-success-bg: #eaf3ea;
+  --ohs-success-text: #2f5d34;
+  --ohs-warning-bg: #fdf3e3;
+  --ohs-warning-text: #8a5a12;
+  --ohs-error-bg: #fbeaea;
+  --ohs-error-text: #8b3a3a;
+  --ohs-font-serif: Georgia, 'Times New Roman', serif;
+  --ohs-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* ---- Modal shell -------------------------------------------------------- */
+
+.ohs-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 33, 61, 0.55); /* navy-dark, translucent */
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.ohs-modal {
+  background: var(--ohs-cream-panel);
+  border: 1px solid var(--ohs-border);
+  border-radius: 12px;
+  padding: 24px;
+  width: 100%;
+  max-width: 560px;
+  box-shadow: 0 12px 32px rgba(20, 33, 61, 0.25);
+  font-family: var(--ohs-font-sans);
+  color: var(--ohs-text);
+}
+
+.ohs-modal h2 {
+  font-family: var(--ohs-font-serif);
+  color: var(--ohs-navy);
+  font-size: 1.4rem;
+  margin: 0 0 20px 0;
+  border-bottom: 1px solid var(--ohs-border);
+  padding-bottom: 12px;
+}
+
+.ohs-modal-error {
+  background: var(--ohs-error-bg);
+  color: var(--ohs-error-text);
+  border: 1px solid var(--ohs-error-text);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: var(--ohs-font-sans);
+}
+
+.ohs-success {
+  background: var(--ohs-success-bg);
+  color: var(--ohs-success-text);
+  border: 1px solid var(--ohs-success-text);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: var(--ohs-font-sans);
+}
+
+/* ---- Form fields ---------------------------------------------------------- */
+
+.ohs-field {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.ohs-field > span {
+  display: block;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ohs-text-muted);
+  margin-bottom: 6px;
+}
+
+.ohs-field input[type='text'],
+.ohs-field input[type='number'],
+.ohs-field input[type='datetime-local'],
+.ohs-field textarea,
+.ohs-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--ohs-border);
+  border-radius: 8px;
+  background: var(--ohs-cream);
+  color: var(--ohs-text);
+  font-size: 0.95rem;
+  font-family: var(--ohs-font-sans);
+}
+
+.ohs-field input:focus,
+.ohs-field textarea:focus,
+.ohs-field select:focus {
+  outline: none;
+  border-color: var(--ohs-rust);
+  box-shadow: 0 0 0 3px rgba(139, 94, 52, 0.15);
+}
+
+.ohs-field-row {
+  display: flex;
+  gap: 16px;
+}
+
+.ohs-field-row .ohs-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.ohs-hint {
+  font-size: 0.8rem;
+  color: var(--ohs-text-muted);
+  margin: 4px 0 0 0;
+}
+
+/* ---- Checkboxes / controls fieldset ---------------------------------------- */
+
+.ohs-controls-fieldset {
+  border: 1px solid var(--ohs-border);
+  border-radius: 8px;
+  padding: 12px 16px 16px;
+  margin: 0 0 16px 0;
+}
+
+.ohs-controls-fieldset legend {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ohs-text-muted);
+  padding: 0 6px;
+}
+
+.ohs-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.9rem;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.ohs-checkbox input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: var(--ohs-rust);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* ---- Risk badges ---------------------------------------------------------- */
+
+.ohs-risk-badge {
+  margin-bottom: 16px;
+}
+
+.ohs-badge {
+  display: inline-block;
+  color: #ffffff;
+  padding: 6px 14px;
+  border-radius: 999px; /* pill shape, matches your "My Company"/"Synced" chips */
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* ---- Blockers / validation messages ---------------------------------------- */
+
+.ohs-blockers {
+  margin-bottom: 16px;
+}
+
+.ohs-blocker {
+  background: var(--ohs-warning-bg);
+  color: var(--ohs-warning-text);
+  border-left: 3px solid var(--ohs-rust);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin-bottom: 6px;
+}
+
+/* ---- Sign-off section ------------------------------------------------------ */
+
+.ohs-signoff-section {
+  border: 1px solid var(--ohs-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--ohs-cream);
+}
+
+.ohs-signoff-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+}
+
+.ohs-signoff-row:not(:last-child) {
+  border-bottom: 1px solid var(--ohs-border);
+}
+
+.ohs-signoff-row > span:first-child {
+  font-size: 0.9rem;
+  color: var(--ohs-text);
+  flex: 1;
+}
+
+.ohs-signoff-status {
+  font-size: 0.78rem;
+  color: var(--ohs-text-muted);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* ---- Expiry banners (dashboard widgets, not just modals) ------------------- */
+
+.ohs-banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+
+.ohs-banner-warning {
+  background: var(--ohs-warning-bg);
+  color: var(--ohs-warning-text);
+  border: 1px solid var(--ohs-warning-text);
+}
+
+.ohs-banner-expired {
+  background: var(--ohs-error-bg);
+  color: var(--ohs-error-text);
+  border: 1px solid var(--ohs-error-text);
+}
+
+/* ---- Buttons --------------------------------------------------------------
+   Primary = solid rust (your accent color). Secondary = cream pill outline,
+   matching the "My Company" / "Synced" chip style in your dashboard header. */
+
+.ohs-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--ohs-border);
+}
+
+.ohs-btn-primary,
+.ohs-btn-secondary {
+  font-family: var(--ohs-font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.ohs-btn-primary {
+  background: var(--ohs-rust);
+  color: #ffffff;
+  border: 1px solid var(--ohs-rust);
+}
+
+.ohs-btn-primary:hover:not(:disabled) {
+  background: var(--ohs-rust-dark);
+}
+
+.ohs-btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ohs-btn-secondary {
+  background: var(--ohs-cream);
+  color: var(--ohs-navy);
+  border: 1px solid var(--ohs-border);
+}
+
+.ohs-btn-secondary:hover:not(:disabled) {
+  border-color: var(--ohs-rust);
+  color: var(--ohs-rust);
+}
+
+.ohs-btn-secondary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---- Registry error (used by registry.js, not just ohs-ui.js) -------------- */
+
+.registry-error {
+  background: var(--ohs-error-bg);
+  color: var(--ohs-error-text);
+  border: 1px solid var(--ohs-error-text);
+  border-radius: 8px;
+  padding: 16px;
+  font-family: var(--ohs-font-sans);
+}
+
   :root{
     --bg:#f7f5ee; --paper:#ffffff; --line:#e2dbc9; --line2:#eee7d5; --ink:#2a2620;
     --muted:#8a8168; --navy:#1c2b4a; --navyBg:#e4e9f2; --rust:#9b3f28; --rustBg:#f6e4dd;
@@ -128,6 +451,7 @@ window.onerror = function(msg, url, line, col, error) {
 </head>
 <body>
 <div id="app"></div>
+<div id="ohs-modal-root"></div>
 <div id="print-report"></div>
 
 <script>
@@ -268,6 +592,8 @@ async function initCloudSession(){
         subscribeCapaRealtime();
         fetchFindingEventsFromCloud();
         subscribeFindingEventsRealtime();
+        fetchFindingsV2FromCloud();
+        subscribeFindingsV2Realtime();
         fetchRiskFromCloud();
         subscribeRiskRealtime();
         syncAllGenericCloudModules();
@@ -333,6 +659,8 @@ async function cloudSignIn(email, password){
   subscribeCapaRealtime();
   fetchFindingEventsFromCloud();
   subscribeFindingEventsRealtime();
+  fetchFindingsV2FromCloud();
+  subscribeFindingsV2Realtime();
   fetchRiskFromCloud();
   subscribeRiskRealtime();
   syncAllGenericCloudModules();
@@ -352,7 +680,9 @@ async function cloudSignOut(){
   unsubscribeDocumentsRealtime();
   unsubscribeCapaRealtime();
   unsubscribeFindingEventsRealtime();
+  unsubscribeFindingsV2Realtime();
   unsubscribeRiskRealtime();
+  hiraPtwLoaded = false; hiraRecords = []; permitRecords = [];
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   await supabaseClient.auth.signOut();
@@ -423,6 +753,1331 @@ function unlockPro(code){ if(code.trim() === PRO_CODE){ localStorage.setItem("aq
 
 const APP_VERSION = "Enterprise Edition 2.0";
 const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2,9);
+
+
+/* ==================== Inlined OHS Core: hira.js ==================== */
+/**
+ * hira.js
+ * ---------------------------------------------------------------
+ * Hazard Identification & Risk Assessment (HIRA) core logic.
+ * OHS Act 85 of 1993 aligned risk matrix + hierarchy of controls.
+ *
+ * Pure logic module — no DOM, no Supabase. Import into ohs-ui.js
+ * and ohs-supabase.js as needed.
+ * ---------------------------------------------------------------
+ */
+
+// ---- Risk Matrix Constants ------------------------------------
+
+const SEVERITY_LEVELS = [
+  { value: 1, label: 'Negligible', description: 'No injury / no lost time' },
+  { value: 2, label: 'Minor', description: 'First aid only' },
+  { value: 3, label: 'Moderate', description: 'Medical treatment / lost time injury' },
+  { value: 4, label: 'Major', description: 'Permanent disability / hospitalisation' },
+  { value: 5, label: 'Catastrophic', description: 'Fatality or multiple fatalities' },
+];
+
+const LIKELIHOOD_LEVELS = [
+  { value: 1, label: 'Rare', description: 'May occur in exceptional circumstances' },
+  { value: 2, label: 'Unlikely', description: 'Could occur at some time' },
+  { value: 3, label: 'Possible', description: 'Might occur at some time' },
+  { value: 4, label: 'Likely', description: 'Will probably occur' },
+  { value: 5, label: 'Almost Certain', description: 'Expected to occur in most circumstances' },
+];
+
+// 5x5 matrix bands: 1-5 Low, 6-12 Medium, 15-25 Critical (per your Gemini spec)
+const RISK_BANDS = [
+  { min: 1, max: 5, label: 'Low', color: '#4caf50', requiresEscalation: false },
+  { min: 6, max: 12, label: 'Medium', color: '#ffb300', requiresEscalation: false },
+  { min: 13, max: 14, label: 'High', color: '#f57c00', requiresEscalation: true },
+  { min: 15, max: 25, label: 'Critical', color: '#c62828', requiresEscalation: true },
+];
+
+// Hierarchy of Controls, most to least effective
+const HIERARCHY_OF_CONTROLS = [
+  { rank: 1, key: 'ELIMINATION', label: 'Elimination', description: 'Physically remove the hazard' },
+  { rank: 2, key: 'SUBSTITUTION', label: 'Substitution', description: 'Replace with a lesser hazard' },
+  { rank: 3, key: 'ENGINEERING', label: 'Engineering Controls', description: 'Isolate people from the hazard' },
+  { rank: 4, key: 'ADMINISTRATIVE', label: 'Administrative Controls', description: 'Change the way people work' },
+  { rank: 5, key: 'PPE', label: 'Personal Protective Equipment', description: 'Protect the worker with PPE' },
+];
+
+// Residual risk above this score is never acceptable without executive sign-off
+const RESIDUAL_ACCEPTABLE_THRESHOLD = 12;
+
+// ---- Core Calculations ------------------------------------------
+
+/**
+ * Calculate a raw risk score from severity x likelihood.
+ * @param {number} severity 1-5
+ * @param {number} likelihood 1-5
+ * @returns {number} score 1-25
+ */
+function calculateRiskScore(severity, likelihood) {
+  validateRating(severity, 'severity');
+  validateRating(likelihood, 'likelihood');
+  return severity * likelihood;
+}
+
+/**
+ * Resolve a numeric score to its risk band (Low/Medium/High/Critical).
+ * @param {number} score
+ * @returns {{label: string, color: string, requiresEscalation: boolean}}
+ */
+function getRiskBand(score) {
+  const band = RISK_BANDS.find((b) => score >= b.min && score <= b.max);
+  if (!band) {
+    throw new Error(`No risk band found for score ${score}`);
+  }
+  return band;
+}
+
+/**
+ * Full inherent risk assessment: score + band in one call.
+ * @param {number} severity
+ * @param {number} likelihood
+ */
+function assessInherentRisk(severity, likelihood) {
+  const score = calculateRiskScore(severity, likelihood);
+  const band = getRiskBand(score);
+  return { severity, likelihood, score, band: band.label, color: band.color, requiresEscalation: band.requiresEscalation };
+}
+
+/**
+ * Calculate residual risk after controls are applied.
+ * Controls don't have a single formula in OHS practice — the assessor
+ * re-rates severity/likelihood after considering the controls applied.
+ * This function validates the re-rating and flags whether it's acceptable,
+ * and whether the claimed reduction is plausible given how many control
+ * tiers were actually applied (sanity check, not a hard block).
+ *
+ * @param {number} residualSeverity
+ * @param {number} residualLikelihood
+ * @param {string[]} appliedControlKeys - keys from HIERARCHY_OF_CONTROLS
+ */
+function assessResidualRisk(residualSeverity, residualLikelihood, appliedControlKeys = []) {
+  const result = assessInherentRisk(residualSeverity, residualLikelihood);
+  const acceptable = result.score <= RESIDUAL_ACCEPTABLE_THRESHOLD;
+
+  const highestControlApplied = HIERARCHY_OF_CONTROLS
+    .filter((c) => appliedControlKeys.includes(c.key))
+    .sort((a, b) => a.rank - b.rank)[0] || null;
+
+  return {
+    ...result,
+    acceptable,
+    appliedControls: appliedControlKeys,
+    highestControlTier: highestControlApplied ? highestControlApplied.label : 'None',
+    // If nothing beyond PPE was applied but score is still Critical, flag for review
+    flagForReview: !acceptable && (!highestControlApplied || highestControlApplied.rank === 5),
+  };
+}
+
+/**
+ * Determine whether a work activity requires a mandatory Permit to Work
+ * based on inherent risk score, independent of PTW type selection.
+ * @param {number} inherentScore
+ */
+function requiresPermitToWork(inherentScore) {
+  const band = getRiskBand(inherentScore);
+  return band.requiresEscalation;
+}
+
+/**
+ * Full HIRA workflow evaluation — combines inherent + residual in one
+ * call for convenience when saving a HIRA record.
+ *
+ * @param {object} input
+ * @param {number} input.severity
+ * @param {number} input.likelihood
+ * @param {number} input.residualSeverity
+ * @param {number} input.residualLikelihood
+ * @param {string[]} input.appliedControlKeys
+ */
+function evaluateHira(input) {
+  const inherent = assessInherentRisk(input.severity, input.likelihood);
+  const residual = assessResidualRisk(
+    input.residualSeverity,
+    input.residualLikelihood,
+    input.appliedControlKeys || []
+  );
+
+  return {
+    inherent,
+    residual,
+    permitRequired: requiresPermitToWork(inherent.score),
+    readyForApproval: residual.acceptable && !residual.flagForReview,
+  };
+}
+
+// ---- Validation Helpers ------------------------------------------
+
+function validateRating(value, fieldName) {
+  if (!Number.isInteger(value) || value < 1 || value > 5) {
+    throw new Error(`${fieldName} must be an integer between 1 and 5, got: ${value}`);
+  }
+}
+
+
+/* ==================== Inlined OHS Core: ptw.js ==================== */
+/**
+ * ptw.js
+ * ---------------------------------------------------------------
+ * Permit to Work (PTW) state machine.
+ * OHS Act 85 of 1993 / Construction Regs aligned.
+ *
+ * Pure logic module — no DOM, no Supabase. Consumes evaluateHira()
+ * output from hira.js to decide whether a permit is mandatory.
+ * ---------------------------------------------------------------
+ */
+
+// ---- Constants ----------------------------------------------------
+
+const PERMIT_TYPES = [
+  { key: 'HOT_WORK', label: 'Hot Work', requiresGasTest: true, requiresFireWatch: true },
+  { key: 'CONFINED_SPACE', label: 'Confined Space Entry', requiresGasTest: true, requiresFireWatch: false },
+  { key: 'ELECTRICAL', label: 'Electrical Isolation / LOTO', requiresGasTest: false, requiresFireWatch: false },
+  { key: 'HEIGHTS', label: 'Work at Heights', requiresGasTest: false, requiresFireWatch: false },
+  { key: 'EXCAVATION', label: 'Excavation', requiresGasTest: false, requiresFireWatch: false },
+  { key: 'GENERAL', label: 'General High-Risk Work', requiresGasTest: false, requiresFireWatch: false },
+];
+
+const PERMIT_STATUSES = ['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'EXTENDED', 'CLOSED', 'REVOKED'];
+
+// Statutory gas test thresholds
+const GAS_TEST_LIMITS = {
+  O2_MIN: 19.5,
+  O2_MAX: 23.5,
+  LEL_MAX: 10,   // % of Lower Explosive Limit
+  CO_MAX: 30,    // ppm
+};
+
+// Legal valid state transitions. Anything not listed here is rejected.
+const TRANSITIONS = {
+  DRAFT: ['PENDING_APPROVAL', 'REVOKED'],
+  PENDING_APPROVAL: ['ACTIVE', 'DRAFT', 'REVOKED'], // DRAFT = sent back for corrections
+  ACTIVE: ['EXTENDED', 'CLOSED', 'REVOKED'],
+  EXTENDED: ['ACTIVE', 'CLOSED', 'REVOKED'],
+  CLOSED: [], // terminal
+  REVOKED: [], // terminal
+};
+
+// ---- Permit Type Helpers -------------------------------------------
+
+function getPermitTypeConfig(permitTypeKey) {
+  const config = PERMIT_TYPES.find((p) => p.key === permitTypeKey);
+  if (!config) {
+    throw new Error(`Unknown permit type: ${permitTypeKey}`);
+  }
+  return config;
+}
+
+// ---- Gas Test Validation -------------------------------------------
+
+/**
+ * Validate a gas test reading against statutory thresholds.
+ * @param {{o2: number, lel: number, co: number}} reading
+ * @returns {{pass: boolean, failures: string[]}}
+ */
+function validateGasTest(reading) {
+  const failures = [];
+
+  if (reading.o2 < GAS_TEST_LIMITS.O2_MIN || reading.o2 > GAS_TEST_LIMITS.O2_MAX) {
+    failures.push(`O2 reading ${reading.o2}% outside safe range (${GAS_TEST_LIMITS.O2_MIN}-${GAS_TEST_LIMITS.O2_MAX}%)`);
+  }
+  if (reading.lel > GAS_TEST_LIMITS.LEL_MAX) {
+    failures.push(`LEL reading ${reading.lel}% exceeds limit (${GAS_TEST_LIMITS.LEL_MAX}%)`);
+  }
+  if (reading.co > GAS_TEST_LIMITS.CO_MAX) {
+    failures.push(`CO reading ${reading.co}ppm exceeds limit (${GAS_TEST_LIMITS.CO_MAX}ppm)`);
+  }
+
+  return { pass: failures.length === 0, failures };
+}
+
+// ---- State Machine --------------------------------------------------
+
+/**
+ * Check whether a transition from one status to another is legal.
+ * @param {string} fromStatus
+ * @param {string} toStatus
+ */
+function canTransition(fromStatus, toStatus) {
+  const allowed = TRANSITIONS[fromStatus];
+  if (!allowed) {
+    throw new Error(`Unknown status: ${fromStatus}`);
+  }
+  return allowed.includes(toStatus);
+}
+
+/**
+ * Attempt a transition. Throws if illegal — callers should catch and
+ * surface to the UI rather than silently failing.
+ */
+function transition(fromStatus, toStatus) {
+  if (!canTransition(fromStatus, toStatus)) {
+    throw new Error(`Illegal permit transition: ${fromStatus} -> ${toStatus}`);
+  }
+  return toStatus;
+}
+
+// ---- Issuance Validation ---------------------------------------------
+
+/**
+ * Validate that a permit is ready to move from PENDING_APPROVAL to ACTIVE.
+ * Mirrors the "Hard Stop Logic" from your architecture doc — this is the
+ * function the UI calls before enabling the final sign-off button.
+ *
+ * @param {object} permit
+ * @param {string} permit.permit_type
+ * @param {boolean} permit.fire_watch_assigned
+ * @param {{o2:number, lel:number, co:number}} [permit.gas_test]
+ * @param {boolean} permit.supervisor_signed
+ * @param {boolean} permit.safety_officer_signed
+ * @param {boolean} [permit.hiraApproved] - result of hira.js readyForApproval
+ */
+function validatePermitForActivation(permit) {
+  const config = getPermitTypeConfig(permit.permit_type);
+  const blockers = [];
+
+  if (config.requiresGasTest) {
+    if (!permit.gas_test) {
+      blockers.push('Gas test reading is required before activation.');
+    } else {
+      const gasResult = validateGasTest(permit.gas_test);
+      if (!gasResult.pass) {
+        blockers.push(...gasResult.failures);
+      }
+    }
+  }
+
+  if (config.requiresFireWatch && !permit.fire_watch_assigned) {
+    blockers.push('Fire watch must be assigned before activation.');
+  }
+
+  if (!permit.supervisor_signed) {
+    blockers.push('Supervisor sign-off missing.');
+  }
+
+  if (!permit.safety_officer_signed) {
+    blockers.push('Safety Officer sign-off missing.');
+  }
+
+  if (permit.hiraApproved === false) {
+    blockers.push('Linked HIRA assessment is not yet approved.');
+  }
+
+  return { canActivate: blockers.length === 0, blockers };
+}
+
+/**
+ * Determine if an active permit has expired based on valid_to timestamp.
+ * @param {string|Date} validTo
+ * @param {Date} [now]
+ */
+function isPermitExpired(validTo, now = new Date()) {
+  return new Date(validTo).getTime() < now.getTime();
+}
+
+/**
+ * Determine if a permit is nearing expiry (for warning banners).
+ * @param {string|Date} validTo
+ * @param {number} warningMinutes - default 30
+ * @param {Date} [now]
+ */
+function isPermitNearingExpiry(validTo, warningMinutes = 30, now = new Date()) {
+  const msRemaining = new Date(validTo).getTime() - now.getTime();
+  const warningMs = warningMinutes * 60 * 1000;
+  return msRemaining > 0 && msRemaining <= warningMs;
+}
+
+
+/* ==================== Inlined OHS Core: ohs-supabase.js ==================== */
+/**
+ * ohs-supabaseClient.js
+ * ---------------------------------------------------------------
+ * Persistence layer for the OHS Core module (HIRA + Permit to Work).
+ * Wraps Supabase queries/RPCs so ohs-ui.js never touches the client
+ * directly. Import your existing `supabaseClient` client instance and pass
+ * it in — this module does not create its own client.
+ *
+ * Expects the schema created by hira_ptw_migration.sql:
+ *   hira_assessments, hira_assessment_events,
+ *   permits_to_work, permit_events
+ *   RPCs: log_hira_event(p_hira_id, p_event_type, p_notes),
+ *         sign_permit(p_permit_id, p_role)
+ * ---------------------------------------------------------------
+ */
+
+// ---- HIRA Assessments ------------------------------------------------
+
+/**
+ * Create a new HIRA assessment and log the CREATED event.
+ * @param {SupabaseClient} supabaseClient
+ * @param {object} hiraData - output shape from renderHiraModal's onSubmit
+ * @returns {Promise<{data: object|null, error: Error|null}>}
+ */
+async function createHiraAssessment(hiraData) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+
+  const payload = {
+    activity_description: hiraData.activity_description,
+    location: hiraData.location,
+    inherent_severity: hiraData.inherent_severity,
+    inherent_likelihood: hiraData.inherent_likelihood,
+    residual_severity: hiraData.residual_severity,
+    residual_likelihood: hiraData.residual_likelihood,
+    applied_controls: hiraData.applied_controls,
+    permit_required: hiraData.permit_required,
+    status: hiraData.status,
+    created_by: user ? user.id : null,
+  };
+
+  const { data, error } = await supabaseClient
+    .from('hira_assessments')
+    .insert([payload])
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  const { error: eventError } = await supabaseClient.rpc('log_hira_event', {
+    p_hira_id: data.id,
+    p_event_type: 'CREATED',
+    p_notes: null,
+  });
+
+  if (eventError) {
+    // Record was created but the audit event failed to log — surface
+    // this distinctly so the UI can warn without pretending nothing saved.
+    return { data, error: eventError, eventLoggingFailed: true };
+  }
+
+  return { data, error: null };
+}
+
+/**
+ * Fetch HIRA assessments, most recent first.
+ * @param {SupabaseClient} supabaseClient
+ * @param {object} [filters]
+ * @param {string} [filters.status]
+ * @param {number} [filters.limit] - default 50
+ */
+async function listHiraAssessments(filters = {}) {
+  let query = supabaseClient
+    .from('hira_assessments')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(filters.limit || 50);
+
+  if (filters.status) {
+    query = query.eq('status', filters.status);
+  }
+
+  return query;
+}
+
+/**
+ * Fetch a single HIRA assessment with its full event history.
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} hiraId
+ */
+async function getHiraWithHistory(hiraId) {
+  const [assessmentResult, eventsResult] = await Promise.all([
+    supabaseClient.from('hira_assessments').select('*').eq('id', hiraId).single(),
+    supabaseClient
+      .from('hira_assessment_events')
+      .select('*')
+      .eq('hira_id', hiraId)
+      .order('created_at', { ascending: true }),
+  ]);
+
+  if (assessmentResult.error) {
+    return { data: null, error: assessmentResult.error };
+  }
+
+  return {
+    data: {
+      ...assessmentResult.data,
+      events: eventsResult.data || [],
+    },
+    error: eventsResult.error || null,
+  };
+}
+
+/**
+ * Approve a HIRA assessment. Caller (ohs-ui.js) is responsible for
+ * checking canApproveHira(userRole) before calling this.
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} hiraId
+ * @param {string} [notes]
+ */
+async function approveHiraAssessment(hiraId, notes) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+
+  const { data, error } = await supabaseClient
+    .from('hira_assessments')
+    .update({
+      status: 'APPROVED',
+      approved_by: user ? user.id : null,
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', hiraId)
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  await supabaseClient.rpc('log_hira_event', {
+    p_hira_id: hiraId,
+    p_event_type: 'APPROVED',
+    p_notes: notes || null,
+  });
+
+  return { data, error: null };
+}
+
+/**
+ * Reject a HIRA assessment, sending it back for revision.
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} hiraId
+ * @param {string} reasonNotes - required, this is why it was rejected
+ */
+async function rejectHiraAssessment(hiraId, reasonNotes) {
+  if (!reasonNotes || !reasonNotes.trim()) {
+    return { data: null, error: new Error('A reason is required to reject a HIRA assessment.') };
+  }
+
+  const { data, error } = await supabaseClient
+    .from('hira_assessments')
+    .update({ status: 'REJECTED' })
+    .eq('id', hiraId)
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  await supabaseClient.rpc('log_hira_event', {
+    p_hira_id: hiraId,
+    p_event_type: 'REJECTED',
+    p_notes: reasonNotes,
+  });
+
+  return { data, error: null };
+}
+
+// ---- Permits to Work ---------------------------------------------------
+
+/**
+ * Create a new permit. Note: renderPermitModal only calls onSubmit once
+ * validatePermitForActivation() has already passed client-side, so this
+ * inserts directly with status ACTIVE. Both sign-off timestamps are
+ * expected to already be reflected in permitData from the modal state,
+ * but we re-derive them server-side via sign_permit for the audit trail.
+ *
+ * @param {SupabaseClient} supabaseClient
+ * @param {object} permitData - output shape from renderPermitModal's onSubmit
+ * @param {string|null} [hiraId] - linked HIRA assessment id, if any
+ */
+async function createPermit(permitData, hiraId = null) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+
+  const payload = {
+    hira_id: hiraId,
+    permit_type: permitData.permit_type,
+    location: permitData.location,
+    equipment_id: permitData.equipment_id,
+    valid_from: permitData.valid_from,
+    valid_to: permitData.valid_to,
+    fire_watch_assigned: permitData.fire_watch_assigned,
+    gas_test_o2: permitData.gas_test_o2,
+    gas_test_lel: permitData.gas_test_lel,
+    gas_test_co: permitData.gas_test_co,
+    gas_test_time: permitData.gas_test_time,
+    status: 'DRAFT', // always start as DRAFT; sign_permit() RPC transitions it
+    created_by: user ? user.id : null,
+  };
+
+  const { data, error } = await supabaseClient
+    .from('permits_to_work')
+    .insert([payload])
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  await supabaseClient.from('permit_events').insert([
+    { permit_id: data.id, event_type: 'CREATED', actor_id: user ? user.id : null },
+  ]);
+
+  return { data, error: null };
+}
+
+/**
+ * Apply the Supervisor or Safety Officer sign-off via the sign_permit RPC.
+ * Caller must check canGiveSupervisorSignoff/canGiveSafetyOfficerSignoff
+ * before calling — RLS does not enforce role, only auth + table ownership.
+ *
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} permitId
+ * @param {'SUPERVISOR'|'SAFETY_OFFICER'} role
+ */
+async function signPermit(permitId, role) {
+  if (role !== 'SUPERVISOR' && role !== 'SAFETY_OFFICER') {
+    return { error: new Error(`Invalid role: ${role}`) };
+  }
+
+  const { error } = await supabaseClient.rpc('sign_permit', {
+    p_permit_id: permitId,
+    p_role: role,
+  });
+
+  return { error };
+}
+
+/**
+ * Revoke an active permit. Caller should check canRevokePermit(userRole)
+ * before calling.
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} permitId
+ * @param {string} reasonNotes
+ */
+async function revokePermit(permitId, reasonNotes) {
+  if (!reasonNotes || !reasonNotes.trim()) {
+    return { data: null, error: new Error('A reason is required to revoke a permit.') };
+  }
+
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+
+  const { data, error } = await supabaseClient
+    .from('permits_to_work')
+    .update({ status: 'REVOKED', updated_at: new Date().toISOString() })
+    .eq('id', permitId)
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  await supabaseClient.from('permit_events').insert([
+    { permit_id: permitId, event_type: 'REVOKED', actor_id: user ? user.id : null, notes: reasonNotes },
+  ]);
+
+  return { data, error: null };
+}
+
+/**
+ * Close out a permit at end of job.
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} permitId
+ */
+async function closePermit(permitId) {
+  const {
+    data: { user },
+  } = await supabaseClient.auth.getUser();
+
+  const { data, error } = await supabaseClient
+    .from('permits_to_work')
+    .update({ status: 'CLOSED', updated_at: new Date().toISOString() })
+    .eq('id', permitId)
+    .select()
+    .single();
+
+  if (error) {
+    return { data: null, error };
+  }
+
+  await supabaseClient.from('permit_events').insert([
+    { permit_id: permitId, event_type: 'CLOSED', actor_id: user ? user.id : null },
+  ]);
+
+  return { data, error: null };
+}
+
+/**
+ * Fetch active/pending permits, most recently created first.
+ * @param {SupabaseClient} supabaseClient
+ * @param {object} [filters]
+ * @param {string[]} [filters.statuses] - default ['DRAFT','PENDING_APPROVAL','ACTIVE','EXTENDED']
+ * @param {number} [filters.limit] - default 50
+ */
+async function listPermits(filters = {}) {
+  const statuses = filters.statuses || ['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'EXTENDED'];
+
+  return supabaseClient
+    .from('permits_to_work')
+    .select('*')
+    .in('status', statuses)
+    .order('created_at', { ascending: false })
+    .limit(filters.limit || 50);
+}
+
+/**
+ * Fetch a single permit with its full event history.
+ * @param {SupabaseClient} supabaseClient
+ * @param {string} permitId
+ */
+async function getPermitWithHistory(permitId) {
+  const [permitResult, eventsResult] = await Promise.all([
+    supabaseClient.from('permits_to_work').select('*').eq('id', permitId).single(),
+    supabaseClient
+      .from('permit_events')
+      .select('*')
+      .eq('permit_id', permitId)
+      .order('created_at', { ascending: true }),
+  ]);
+
+  if (permitResult.error) {
+    return { data: null, error: permitResult.error };
+  }
+
+  return {
+    data: {
+      ...permitResult.data,
+      events: eventsResult.data || [],
+    },
+    error: eventsResult.error || null,
+  };
+}
+
+// ---- Realtime Subscriptions (matching your existing pattern) -----------
+
+/**
+ * Subscribe to live changes on permits_to_work, for dashboard widgets
+ * like RealTimeGateMonitor or ActivePermitBoard.
+ * @param {SupabaseClient} supabaseClient
+ * @param {(payload: object) => void} onChange
+ * @returns {{unsubscribe: () => void}}
+ */
+function subscribeToPermitChanges(onChange) {
+  const channel = supabaseClient
+    .channel('permits_to_work_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'permits_to_work' }, onChange)
+    .subscribe();
+
+  return { unsubscribe: () => supabaseClient.removeChannel(channel) };
+}
+
+/**
+ * Subscribe to live changes on hira_assessments.
+ * @param {SupabaseClient} supabaseClient
+ * @param {(payload: object) => void} onChange
+ */
+function subscribeToHiraChanges(onChange) {
+  const channel = supabaseClient
+    .channel('hira_assessments_changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'hira_assessments' }, onChange)
+    .subscribe();
+
+  return { unsubscribe: () => supabaseClient.removeChannel(channel) };
+}
+
+
+/* ==================== Inlined OHS Core: ohs-ui.js ==================== */
+/**
+ * ohs-ui.js
+ * ---------------------------------------------------------------
+ * Rendering layer for the OHS Core module (HIRA + Permit to Work).
+ * Consumes hira.js and ptw.js for logic, ohs-supabase.js (next file)
+ * for persistence. No prompt()/confirm() — modal-based, matching
+ * the dispute-resolution pattern already used for CAPA findings.
+ *
+ * Role mapping (per project decision):
+ *   Supervisor sign-off      -> Department Manager
+ *   Safety Officer sign-off  -> Quality Manager
+ * ---------------------------------------------------------------
+ */
+
+// ---- Role Gating ----------------------------------------------------
+// Mirrors the canChallenge / canReview / isAdmin pattern used in CAPA.
+
+/**
+ * @param {string} userRole - one of the six RBAC roles
+ */
+function canGiveSupervisorSignoff(userRole) {
+  return userRole === 'Department Manager' || userRole === 'Admin';
+}
+
+function canGiveSafetyOfficerSignoff(userRole) {
+  return userRole === 'Quality Manager' || userRole === 'Admin';
+}
+
+function canCreateHira(userRole) {
+  return ['Admin', 'Quality Manager', 'Department Manager', 'Auditor'].includes(userRole);
+}
+
+function canApproveHira(userRole) {
+  return userRole === 'Quality Manager' || userRole === 'Admin';
+}
+
+function canCreatePermit(userRole) {
+  return ['Admin', 'Quality Manager', 'Department Manager', 'Employee'].includes(userRole);
+}
+
+function canRevokePermit(userRole) {
+  return userRole === 'Quality Manager' || userRole === 'Admin';
+}
+
+// ---- Modal: HIRA Assessment Form -------------------------------------
+
+/**
+ * Renders the HIRA assessment modal into a container element.
+ * @param {HTMLElement} container
+ * @param {object} opts
+ * @param {string} opts.userRole
+ * @param {(formResult: object) => void} opts.onSubmit - called with evaluateHira() result + raw fields
+ * @param {() => void} opts.onCancel
+ */
+function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
+  if (!canCreateHira(userRole)) {
+    container.innerHTML = `<div class="ohs-modal-error">Your role (${escapeHtml(userRole)}) is not permitted to create HIRA assessments.</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="ohs-modal-backdrop" data-role="backdrop">
+      <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="hira-modal-title">
+        <h2 id="hira-modal-title">New HIRA Assessment</h2>
+
+        <label class="ohs-field">
+          <span>Activity Description</span>
+          <textarea id="hira-activity" rows="2" required></textarea>
+        </label>
+
+        <label class="ohs-field">
+          <span>Location</span>
+          <input id="hira-location" type="text" required />
+        </label>
+
+        <div class="ohs-field-row">
+          <label class="ohs-field">
+            <span>Inherent Severity</span>
+            ${buildRatingSelect('hira-inherent-severity', SEVERITY_LEVELS)}
+          </label>
+          <label class="ohs-field">
+            <span>Inherent Likelihood</span>
+            ${buildRatingSelect('hira-inherent-likelihood', LIKELIHOOD_LEVELS)}
+          </label>
+        </div>
+
+        <div id="hira-inherent-result" class="ohs-risk-badge" aria-live="polite"></div>
+
+        <fieldset class="ohs-controls-fieldset">
+          <legend>Applied Controls (select all that apply)</legend>
+          ${HIERARCHY_OF_CONTROLS.map(
+            (c) => `
+            <label class="ohs-checkbox">
+              <input type="checkbox" name="hira-control" value="${c.key}" />
+              ${escapeHtml(c.rank)}. ${escapeHtml(c.label)} — ${escapeHtml(c.description)}
+            </label>`
+          ).join('')}
+        </fieldset>
+
+        <div class="ohs-field-row">
+          <label class="ohs-field">
+            <span>Residual Severity</span>
+            ${buildRatingSelect('hira-residual-severity', SEVERITY_LEVELS)}
+          </label>
+          <label class="ohs-field">
+            <span>Residual Likelihood</span>
+            ${buildRatingSelect('hira-residual-likelihood', LIKELIHOOD_LEVELS)}
+          </label>
+        </div>
+
+        <div id="hira-residual-result" class="ohs-risk-badge" aria-live="polite"></div>
+        <div id="hira-blockers" class="ohs-blockers" aria-live="polite"></div>
+
+        <div class="ohs-modal-actions">
+          <button type="button" data-action="cancel" class="ohs-btn-secondary">Cancel</button>
+          <button type="button" data-action="submit" class="ohs-btn-primary">Save HIRA Assessment</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const $ = (sel) => container.querySelector(sel);
+
+  const recalc = () => {
+    const inherentSeverity = Number($('#hira-inherent-severity').value);
+    const inherentLikelihood = Number($('#hira-inherent-likelihood').value);
+    const residualSeverity = Number($('#hira-residual-severity').value);
+    const residualLikelihood = Number($('#hira-residual-likelihood').value);
+    const appliedControlKeys = Array.from(container.querySelectorAll('input[name="hira-control"]:checked')).map((el) => el.value);
+
+    let result = null;
+    try {
+      result = evaluateHira({
+        severity: inherentSeverity,
+        likelihood: inherentLikelihood,
+        residualSeverity,
+        residualLikelihood,
+        appliedControlKeys,
+      });
+    } catch (e) {
+      $('#hira-blockers').textContent = e.message;
+      return null;
+    }
+
+    $('#hira-inherent-result').innerHTML = riskBadgeHtml('Inherent', result.inherent);
+    $('#hira-residual-result').innerHTML = riskBadgeHtml('Residual', result.residual);
+
+    const blockers = [];
+    if (!result.residual.acceptable) blockers.push('Residual risk score exceeds the acceptable threshold.');
+    if (result.residual.flagForReview) blockers.push('Only PPE (or no control) applied against a high residual score — flagged for independent review.');
+    $('#hira-blockers').innerHTML = blockers.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
+
+    return { result, appliedControlKeys, blockers };
+  };
+
+  container.querySelectorAll('select, input[name="hira-control"]').forEach((el) => {
+    el.addEventListener('change', recalc);
+  });
+  recalc();
+
+  $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
+  $('[data-role="backdrop"]').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget && onCancel) onCancel();
+  });
+
+  $('[data-action="submit"]').addEventListener('click', () => {
+    const activity = $('#hira-activity').value.trim();
+    const location = $('#hira-location').value.trim();
+    if (!activity || !location) {
+      $('#hira-blockers').innerHTML = `<div class="ohs-blocker">Activity description and location are required.</div>`;
+      return;
+    }
+
+    const calc = recalc();
+    if (!calc) return;
+
+    onSubmit({
+      activity_description: activity,
+      location,
+      inherent_severity: Number($('#hira-inherent-severity').value),
+      inherent_likelihood: Number($('#hira-inherent-likelihood').value),
+      residual_severity: Number($('#hira-residual-severity').value),
+      residual_likelihood: Number($('#hira-residual-likelihood').value),
+      applied_controls: calc.appliedControlKeys,
+      permit_required: calc.result.permitRequired,
+      status: calc.result.readyForApproval ? 'PENDING_APPROVAL' : 'UNDER_REVIEW',
+      evaluation: calc.result,
+    });
+  });
+}
+
+// ---- Modal: Permit to Work Wizard --------------------------------------
+
+/**
+ * Renders the PTW modal. Two-step: scope/type, then sign-offs.
+ * @param {HTMLElement} container
+ * @param {object} opts
+ * @param {string} opts.userRole
+ * @param {boolean} [opts.hiraApproved] - whether the linked HIRA is approved
+ * @param {(permitDraft: object) => void} opts.onSubmit
+ * @param {() => void} opts.onCancel
+ */
+function renderPermitModal(container, { userRole, hiraApproved = null, onSubmit, onCancel }) {
+  if (!canCreatePermit(userRole)) {
+    container.innerHTML = `<div class="ohs-modal-error">Your role (${escapeHtml(userRole)}) is not permitted to create permits.</div>`;
+    return;
+  }
+
+  const supervisorAllowed = canGiveSupervisorSignoff(userRole);
+  const safetyOfficerAllowed = canGiveSafetyOfficerSignoff(userRole);
+
+  container.innerHTML = `
+    <div class="ohs-modal-backdrop" data-role="backdrop">
+      <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="ptw-modal-title">
+        <h2 id="ptw-modal-title">Issue Permit to Work</h2>
+
+        <label class="ohs-field">
+          <span>Permit Type</span>
+          <select id="ptw-type">
+            ${PERMIT_TYPES.map((p) => `<option value="${p.key}">${escapeHtml(p.label)}</option>`).join('')}
+          </select>
+        </label>
+
+        <label class="ohs-field">
+          <span>Location / Zone</span>
+          <input id="ptw-location" type="text" required />
+        </label>
+
+        <label class="ohs-field">
+          <span>Equipment ID (optional)</span>
+          <input id="ptw-equipment" type="text" />
+        </label>
+
+        <div class="ohs-field-row">
+          <label class="ohs-field">
+            <span>Valid From</span>
+            <input id="ptw-valid-from" type="datetime-local" required />
+          </label>
+          <label class="ohs-field">
+            <span>Valid To</span>
+            <input id="ptw-valid-to" type="datetime-local" required />
+          </label>
+        </div>
+
+        <div id="ptw-gas-section" style="display:none;">
+          <fieldset>
+            <legend>Atmospheric Gas Test</legend>
+            <div class="ohs-field-row">
+              <label class="ohs-field"><span>O2 (%)</span><input id="ptw-gas-o2" type="number" step="0.1" value="20.9" /></label>
+              <label class="ohs-field"><span>LEL (%)</span><input id="ptw-gas-lel" type="number" step="0.1" value="0" /></label>
+              <label class="ohs-field"><span>CO (ppm)</span><input id="ptw-gas-co" type="number" step="1" value="0" /></label>
+            </div>
+            <p class="ohs-hint">Safe range: O2 ${GAS_TEST_LIMITS.O2_MIN}-${GAS_TEST_LIMITS.O2_MAX}% · LEL &lt;${GAS_TEST_LIMITS.LEL_MAX}% · CO &lt;${GAS_TEST_LIMITS.CO_MAX}ppm</p>
+          </fieldset>
+        </div>
+
+        <div id="ptw-firewatch-section" style="display:none;">
+          <label class="ohs-checkbox">
+            <input type="checkbox" id="ptw-firewatch" />
+            Fire watch personnel assigned on site
+          </label>
+        </div>
+
+        <div class="ohs-signoff-section">
+          <div class="ohs-signoff-row">
+            <span>Supervisor Sign-off (Department Manager)</span>
+            <button type="button" id="ptw-supervisor-sign" class="ohs-btn-secondary" ${supervisorAllowed ? '' : 'disabled title="Your role cannot give this sign-off"'}>
+              Sign
+            </button>
+            <span id="ptw-supervisor-status" class="ohs-signoff-status">Not signed</span>
+          </div>
+          <div class="ohs-signoff-row">
+            <span>Safety Officer Sign-off (Quality Manager)</span>
+            <button type="button" id="ptw-safety-sign" class="ohs-btn-secondary" ${safetyOfficerAllowed ? '' : 'disabled title="Your role cannot give this sign-off"'}>
+              Sign
+            </button>
+            <span id="ptw-safety-status" class="ohs-signoff-status">Not signed</span>
+          </div>
+        </div>
+
+        <div id="ptw-blockers" class="ohs-blockers" aria-live="polite"></div>
+
+        <div class="ohs-modal-actions">
+          <button type="button" data-action="cancel" class="ohs-btn-secondary">Cancel</button>
+          <button type="button" data-action="submit" class="ohs-btn-primary" disabled>Activate Permit</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const $ = (sel) => container.querySelector(sel);
+  const state = { supervisorSigned: false, safetyOfficerSigned: false };
+
+  const toggleTypeSections = () => {
+    const config = PERMIT_TYPES.find((p) => p.key === $('#ptw-type').value);
+    $('#ptw-gas-section').style.display = config.requiresGasTest ? 'block' : 'none';
+    $('#ptw-firewatch-section').style.display = config.requiresFireWatch ? 'block' : 'none';
+    revalidate();
+  };
+
+  const revalidate = () => {
+    const permitType = $('#ptw-type').value;
+    const gasSection = $('#ptw-gas-section').style.display !== 'none';
+
+    const permitDraft = {
+      permit_type: permitType,
+      fire_watch_assigned: $('#ptw-firewatch').checked,
+      gas_test: gasSection
+        ? { o2: Number($('#ptw-gas-o2').value), lel: Number($('#ptw-gas-lel').value), co: Number($('#ptw-gas-co').value) }
+        : undefined,
+      supervisor_signed: state.supervisorSigned,
+      safety_officer_signed: state.safetyOfficerSigned,
+      hiraApproved,
+    };
+
+    const result = validatePermitForActivation(permitDraft);
+    $('#ptw-blockers').innerHTML = result.blockers.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
+    $('[data-action="submit"]').disabled = !result.canActivate;
+
+    return { permitDraft, result };
+  };
+
+  $('#ptw-type').addEventListener('change', toggleTypeSections);
+  container.querySelectorAll('#ptw-gas-o2, #ptw-gas-lel, #ptw-gas-co, #ptw-firewatch').forEach((el) => {
+    el && el.addEventListener('input', revalidate);
+    el && el.addEventListener('change', revalidate);
+  });
+
+  $('#ptw-supervisor-sign').addEventListener('click', () => {
+    if (!supervisorAllowed) return;
+    state.supervisorSigned = true;
+    $('#ptw-supervisor-status').textContent = `Signed by ${userRole} at ${new Date().toLocaleTimeString()}`;
+    $('#ptw-supervisor-sign').disabled = true;
+    revalidate();
+  });
+
+  $('#ptw-safety-sign').addEventListener('click', () => {
+    if (!safetyOfficerAllowed) return;
+    state.safetyOfficerSigned = true;
+    $('#ptw-safety-status').textContent = `Signed by ${userRole} at ${new Date().toLocaleTimeString()}`;
+    $('#ptw-safety-sign').disabled = true;
+    revalidate();
+  });
+
+  toggleTypeSections();
+
+  $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
+  $('[data-role="backdrop"]').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget && onCancel) onCancel();
+  });
+
+  $('[data-action="submit"]').addEventListener('click', () => {
+    const location = $('#ptw-location').value.trim();
+    const validFrom = $('#ptw-valid-from').value;
+    const validTo = $('#ptw-valid-to').value;
+    if (!location || !validFrom || !validTo) {
+      $('#ptw-blockers').innerHTML = `<div class="ohs-blocker">Location, valid-from and valid-to are required.</div>`;
+      return;
+    }
+
+    const { permitDraft, result } = revalidate();
+    if (!result.canActivate) return;
+
+    onSubmit({
+      permit_type: permitDraft.permit_type,
+      location,
+      equipment_id: $('#ptw-equipment').value.trim() || null,
+      valid_from: new Date(validFrom).toISOString(),
+      valid_to: new Date(validTo).toISOString(),
+      fire_watch_assigned: permitDraft.fire_watch_assigned,
+      gas_test_o2: permitDraft.gas_test ? permitDraft.gas_test.o2 : null,
+      gas_test_lel: permitDraft.gas_test ? permitDraft.gas_test.lel : null,
+      gas_test_co: permitDraft.gas_test ? permitDraft.gas_test.co : null,
+      gas_test_time: permitDraft.gas_test ? new Date().toISOString() : null,
+      status: 'ACTIVE',
+    });
+  });
+}
+
+// ---- Read-only widget: Permit expiry banner ------------------------------
+
+/**
+ * Returns HTML for an expiry warning banner, or empty string if not needed.
+ * Call this per-permit in your dashboard render loop.
+ * @param {string|Date} validTo
+ */
+function permitExpiryBannerHtml(validTo) {
+  if (isPermitExpired(validTo)) {
+    return `<div class="ohs-banner ohs-banner-expired">Permit expired ${new Date(validTo).toLocaleString()}</div>`;
+  }
+  if (isPermitNearingExpiry(validTo)) {
+    return `<div class="ohs-banner ohs-banner-warning">Permit expires soon: ${new Date(validTo).toLocaleString()}</div>`;
+  }
+  return '';
+}
+
+// ---- Internal helpers -----------------------------------------------------
+
+function buildRatingSelect(id, levels) {
+  return `
+    <select id="${id}">
+      ${levels.map((l) => `<option value="${l.value}">${l.value} — ${escapeHtml(l.label)}</option>`).join('')}
+    </select>
+  `;
+}
+
+function riskBadgeHtml(label, assessment) {
+  return `
+    <span class="ohs-badge" style="background:${assessment.color}">
+      ${escapeHtml(label)}: ${assessment.score} (${escapeHtml(assessment.band)})
+    </span>
+  `;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ==================== HIRA / PTW tab wiring (page + modal mount) ====================
+   hira.js/ptw.js/ohs-supabase.js/ohs-ui.js above are pure logic + a
+   modal-renderer — neither owns a persistent list screen. This wires
+   them into the OHS Act > HIRA Assessments / Permit to Work tabs: a
+   record list fetched from Supabase, an "+ Add" button that mounts the
+   ported modal into #ohs-modal-root (a sibling of #app, so it survives
+   the app's render() cycle untouched), and action buttons per record. */
+let hiraRecords = [];
+let permitRecords = [];
+let hiraPtwLoaded = false;
+
+async function fetchHiraAndPermitRecords(){
+  if(!cloudReady()) return;
+  const [hiraRes, permitRes] = await Promise.all([ listHiraAssessments(), listPermits() ]);
+  if(!hiraRes.error) hiraRecords = hiraRes.data || [];
+  if(!permitRes.error) permitRecords = permitRes.data || [];
+  hiraPtwLoaded = true;
+  render();
+}
+
+function hiraStatusTone(status){
+  return { DRAFT:"neutral", UNDER_REVIEW:"amber", PENDING_APPROVAL:"amber", APPROVED:"green", REJECTED:"rust" }[status] || "neutral";
+}
+function permitStatusTone(status){
+  return { DRAFT:"neutral", PENDING_APPROVAL:"amber", ACTIVE:"green", EXTENDED:"navy", CLOSED:"green", REVOKED:"rust" }[status] || "neutral";
+}
+
+function renderHiraTab(){
+  if(!cloudReady()){
+    return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use HIRA Assessments.</p></div>`;
+  }
+  if(!hiraPtwLoaded){ fetchHiraAndPermitRecords(); return `<div class="card"><p class="muted-italic">Loading…</p></div>`; }
+  const role = currentUser()?.role;
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 class="serif" style="margin:0;font-size:18px;">⚠️ HIRA Assessments</h2>
+        ${canCreateHira(role) ? `<button class="btn btn-primary" data-action="open-hira-modal">+ New HIRA Assessment</button>` : ''}
+      </div>
+      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hazard Identification & Risk Assessment — OHS Act 85 of 1993 aligned risk matrix and hierarchy of controls.</p>
+      ${hiraRecords.length===0 ? `<p class="muted-italic">No HIRA assessments yet.</p>` : hiraRecords.map(h => `
+        <div class="top-border" style="padding:10px 0;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:600;">${esc(h.activity_description)}</div>
+              <div class="muted-italic" style="font-size:12px;">${esc(h.location)}</div>
+            </div>
+            <span class="tag tag-${hiraStatusTone(h.status)}" style="font-size:10px;">${esc(h.status)}</span>
+          </div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+            <span class="ohs-badge" style="background:${riskBandColorFor(h.inherent_severity, h.inherent_likelihood)};font-size:11px;">Inherent: ${h.inherent_severity*h.inherent_likelihood}</span>
+            <span class="ohs-badge" style="background:${riskBandColorFor(h.residual_severity, h.residual_likelihood)};font-size:11px;">Residual: ${h.residual_severity*h.residual_likelihood}</span>
+            ${h.permit_required ? `<span class="tag tag-amber" style="font-size:10px;">Permit Required</span>` : ''}
+          </div>
+          ${(h.status==="PENDING_APPROVAL" && canApproveHira(role)) ? `
+            <div style="margin-top:8px;">
+              <button class="btn btn-ghost" style="font-size:12px;" data-action="approve-hira" data-id="${h.id}">Approve</button>
+              <button class="btn btn-ghost" style="font-size:12px;" data-action="reject-hira" data-id="${h.id}">Reject</button>
+            </div>
+          ` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function riskBandColorFor(sev, lik){
+  try { return getRiskBand(sev*lik).color; } catch(e){ return "#999"; }
+}
+
+function renderPtwTab(){
+  if(!cloudReady()){
+    return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use Permit to Work.</p></div>`;
+  }
+  if(!hiraPtwLoaded){ fetchHiraAndPermitRecords(); return `<div class="card"><p class="muted-italic">Loading…</p></div>`; }
+  const role = currentUser()?.role;
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 class="serif" style="margin:0;font-size:18px;">📋 Permit to Work</h2>
+        ${canCreatePermit(role) ? `<button class="btn btn-primary" data-action="open-permit-modal">+ Issue Permit to Work</button>` : ''}
+      </div>
+      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hot work, confined space, electrical isolation, heights, excavation and general high-risk work permits.</p>
+      ${permitRecords.length===0 ? `<p class="muted-italic">No active permits.</p>` : permitRecords.map(p => `
+        <div class="top-border" style="padding:10px 0;">
+          ${permitExpiryBannerHtml(p.valid_to)}
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:600;">${esc(getPermitTypeConfig(p.permit_type).label)}</div>
+              <div class="muted-italic" style="font-size:12px;">${esc(p.location)} · valid ${new Date(p.valid_from).toLocaleString()} – ${new Date(p.valid_to).toLocaleString()}</div>
+            </div>
+            <span class="tag tag-${permitStatusTone(p.status)}" style="font-size:10px;">${esc(p.status)}</span>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+            ${(p.status!=="CLOSED" && p.status!=="REVOKED" && canRevokePermit(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="revoke-permit" data-id="${p.id}">Revoke</button>` : ''}
+            ${(p.status==="ACTIVE" || p.status==="EXTENDED") ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="close-permit" data-id="${p.id}">Close Out</button>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+function openHiraModal(){
+  const root = document.getElementById('ohs-modal-root');
+  root.innerHTML = '';
+  renderHiraModal(root, {
+    userRole: currentUser()?.role,
+    onSubmit: async (hiraData) => {
+      const { data, error, eventLoggingFailed } = await createHiraAssessment(hiraData);
+      if(error && !data){ alert(`Failed to save HIRA assessment: ${error.message}`); return; }
+      if(eventLoggingFailed){ alert(`HIRA assessment saved, but the audit log entry failed. Assessment ID: ${data.id}`); }
+      root.innerHTML = '';
+      await fetchHiraAndPermitRecords();
+    },
+    onCancel: () => { root.innerHTML = ''; },
+  });
+}
+function openPermitModal(){
+  const root = document.getElementById('ohs-modal-root');
+  root.innerHTML = '';
+  renderPermitModal(root, {
+    userRole: currentUser()?.role,
+    hiraApproved: null,
+    onSubmit: async (permitData) => {
+      const { data, error } = await createPermit(permitData, null);
+      if(error){ alert(`Failed to create permit: ${error.message}`); return; }
+      root.innerHTML = '';
+      await fetchHiraAndPermitRecords();
+    },
+    onCancel: () => { root.innerHTML = ''; },
+  });
+}
+function bindHiraPtwTabHandlers(){
+  document.querySelectorAll('[data-action="open-hira-modal"]').forEach(el=>el.onclick=openHiraModal);
+  document.querySelectorAll('[data-action="open-permit-modal"]').forEach(el=>el.onclick=openPermitModal);
+  document.querySelectorAll('[data-action="approve-hira"]').forEach(el=>el.onclick=async()=>{
+    const notes = prompt("Approval notes (optional):") || "";
+    const { error } = await approveHiraAssessment(el.dataset.id, notes);
+    if(error){ alert(`Could not approve: ${error.message}`); return; }
+    await fetchHiraAndPermitRecords();
+  });
+  document.querySelectorAll('[data-action="reject-hira"]').forEach(el=>el.onclick=async()=>{
+    const reason = prompt("Reason for rejecting this HIRA assessment:");
+    if(reason===null) return;
+    const { error } = await rejectHiraAssessment(el.dataset.id, reason);
+    if(error){ alert(`Could not reject: ${error.message}`); return; }
+    await fetchHiraAndPermitRecords();
+  });
+  document.querySelectorAll('[data-action="revoke-permit"]').forEach(el=>el.onclick=async()=>{
+    const reason = prompt("Reason for revoking this permit:");
+    if(reason===null) return;
+    const { error } = await revokePermit(el.dataset.id, reason);
+    if(error){ alert(`Could not revoke: ${error.message}`); return; }
+    await fetchHiraAndPermitRecords();
+  });
+  document.querySelectorAll('[data-action="close-permit"]').forEach(el=>el.onclick=async()=>{
+    const { error } = await closePermit(el.dataset.id);
+    if(error){ alert(`Could not close out: ${error.message}`); return; }
+    await fetchHiraAndPermitRecords();
+  });
+}
+
+
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
 function formatAuditNumber(n, year){ return `AUD-${year}-${String(n).padStart(4,'0')}`; }
@@ -1239,6 +2894,339 @@ function parseCorrectionJustification(text){
   const fieldDef = CORRECTION_FIELDS.find(fd=>fd.label===fieldLabel);
   return { fieldLabel, oldValue: m[2], newValue: m[3], fieldId: fieldDef ? fieldDef.id : null };
 }
+/* ---------------- Finding Dispute Engine v2 ----------------
+   Wires the CAPA finding-dispute redesign (typed state machine,
+   optimistic concurrency, atomic transition+signature, RCA gate) into
+   the app. Server-authoritative: state.findingsV2 is just a read cache
+   fetched from Supabase (public.findings / finding_dispute_history /
+   finding_signatures / rca_records) — never persisted to localStorage,
+   never the source of truth. All writes go through RPCs
+   (create_finding, transition_finding_state_signed, submit_rca,
+   approve_rca) so the server-side gates always apply, even if this
+   cache is stale.
+   Coexists with the older capa_finding_events dispute trail above
+   (renderFindingDispute/renderFindingCorrection) rather than replacing
+   it — that workflow keeps working for findings that haven't been
+   migrated/started on v2 yet. */
+let findingsV2 = {};        // finding_id -> { ...findings row, history:[], signatures:[], rca:null }
+let findingsV2Loaded = false;
+let findingTransitionModalTarget = null; // { auditId, findingId, toStatus, actionType }
+let findingTransitionSeverity = "";
+let findingTransitionJustification = "";
+let findingTransitionEvidence = "";
+let rcaModalFindingId = null;
+let rcaDraft = null; // { problemStatement, fiveWhys:[{q,a}], fishbone:[{category,cause}], summary }
+let findingsV2RealtimeChannel = null;
+let findingHistoryOpenState = {}; // history_id -> bool, defaults to open
+
+const FINDING_TRANSITIONS_V2 = [
+  { from:"DRAFT",      to:"PROPOSED",   roles:["Auditor"],                        requiresEvidence:true,  minChars:20, label:"Propose Classification" },
+  { from:"PROPOSED",   to:"ACCEPTED",   roles:["Department Manager","Employee"],  requiresEvidence:false, minChars:10, label:"Accept Classification" },
+  { from:"PROPOSED",   to:"CHALLENGED", roles:["Department Manager","Employee"],  requiresEvidence:true,  minChars:20, label:"Challenge Classification" },
+  { from:"CHALLENGED", to:"IN_REVIEW",  roles:["Quality Manager"],                requiresEvidence:false, minChars:10, label:"Move to Review" },
+  { from:"IN_REVIEW",  to:"ESCALATED",  roles:["Quality Manager"],                requiresEvidence:true,  minChars:30, label:"Escalate" },
+  { from:"IN_REVIEW",  to:"APPROVED",   roles:["Quality Manager"],                requiresEvidence:true,  minChars:30, label:"Approve Decision" },
+  { from:"ESCALATED",  to:"APPROVED",   roles:["Admin","Auditor"],                requiresEvidence:true,  minChars:30, label:"Approve (Escalated)" },
+  { from:"ACCEPTED",   to:"CLOSED",     roles:["Quality Manager","Auditor"],      requiresEvidence:false, minChars:10, label:"Close Finding" },
+  { from:"APPROVED",   to:"CLOSED",     roles:["Quality Manager","Auditor"],      requiresEvidence:false, minChars:10, label:"Close Finding" },
+];
+const FINDING_SEVERITIES_V2 = ["CRITICAL","MAJOR","MINOR","OFI","STATUTORY_NON_COMPLIANCE"];
+
+function findingV2StatusTone(status){
+  return { DRAFT:"neutral", PROPOSED:"amber", ACCEPTED:"green", CHALLENGED:"rust",
+    IN_REVIEW:"amber", ESCALATED:"rust", APPROVED:"navy", CLOSED:"green" }[status] || "neutral";
+}
+function findingV2SeverityTone(sev){
+  return { CRITICAL:"rust", MAJOR:"amber", STATUTORY_NON_COMPLIANCE:"rust", MINOR:"neutral", OFI:"neutral" }[sev] || "neutral";
+}
+function toggleFindingHistoryNode(historyId){
+  findingHistoryOpenState[historyId] = findingHistoryOpenState[historyId]===false ? true : false;
+  render();
+}
+function findingStandardLabel(code){
+  return { ISO_9001:"ISO 9001", BRCGS_FOOD:"BRCGS", FSSC_22000:"FSSC 22000", ISO_22000:"ISO 22000",
+    ISO_14001:"ISO 14001", ISO_45001:"ISO 45001", OHS_ACT:"OHS Act" }[code] || code;
+}
+function findingActionLabel(actionType){
+  return { PROPOSED:"AUDITOR PROPOSAL", ACCEPTED:"AUDITEE ACCEPTANCE", CHALLENGED:"AUDITEE CHALLENGE",
+    REVIEWED:"REVIEW LOGGED", ESCALATED:"ESCALATED TO QUALITY MANAGEMENT", CONFIRMED:"CONFIRMED",
+    RECLASSIFIED:"INDEPENDENT REVIEW & DECISION", RAISED:"FINDING RAISED", CLOSED:"CLOSED" }[actionType] || actionType.replace(/_/g,' ');
+}
+async function fetchFindingsV2FromCloud(){
+  if(!cloudReady()) return;
+  const [findingsRes, historyRes, sigsRes, rcaRes] = await Promise.all([
+    supabaseClient.from("findings").select("*"),
+    supabaseClient.from("finding_dispute_history").select("*").order("created_at", { ascending:true }),
+    supabaseClient.from("finding_signatures").select("*"),
+    supabaseClient.from("rca_records").select("*"),
+  ]);
+  if(findingsRes.error){ console.error(findingsRes.error.message); return; }
+  const map = {};
+  (findingsRes.data||[]).forEach(row => { map[row.id] = { ...row, history:[], signatures:[], rca:null }; });
+  (historyRes.data||[]).forEach(row => { if(map[row.finding_id]) map[row.finding_id].history.push(row); });
+  (sigsRes.data||[]).forEach(row => { if(map[row.finding_id]) map[row.finding_id].signatures.push(row); });
+  (rcaRes.data||[]).forEach(row => { if(map[row.finding_id]) map[row.finding_id].rca = row; });
+  findingsV2 = map;
+  findingsV2Loaded = true;
+  render();
+}
+function subscribeFindingsV2Realtime(){
+  if(!cloudReady() || findingsV2RealtimeChannel) return;
+  findingsV2RealtimeChannel = supabaseClient.channel("findings-v2-changes")
+    .on("postgres_changes", { event:"*", schema:"public", table:"findings" }, () => fetchFindingsV2FromCloud())
+    .on("postgres_changes", { event:"*", schema:"public", table:"finding_dispute_history" }, () => fetchFindingsV2FromCloud())
+    .on("postgres_changes", { event:"*", schema:"public", table:"finding_signatures" }, () => fetchFindingsV2FromCloud())
+    .on("postgres_changes", { event:"*", schema:"public", table:"rca_records" }, () => fetchFindingsV2FromCloud())
+    .subscribe();
+}
+function unsubscribeFindingsV2Realtime(){
+  if(findingsV2RealtimeChannel){ supabaseClient.removeChannel(findingsV2RealtimeChannel); findingsV2RealtimeChannel = null; }
+}
+async function startFindingV2(a, f){
+  if(!cloudReady()){ alert("This requires cloud sign-in — please sign in first."); return; }
+  const severityMap = { Critical:"CRITICAL", Major:"MAJOR", Minor:"MINOR" };
+  const { data, error } = await supabaseClient.rpc("create_finding", {
+    p_audit_id: a.id,
+    p_title: f.desc || "(untitled finding)",
+    p_clause_reference: f.clauseRef || f.clause || "",
+    p_severity: severityMap[f.severity] || "MINOR",
+    p_is_ccp_breach: false,
+    p_finding_id: f.id,
+  });
+  if(error){ alert(`Could not start dispute tracking: ${error.message}`); return; }
+  await fetchFindingsV2FromCloud();
+}
+function eligibleTransitionsV2(status){
+  const role = currentUser()?.role;
+  return FINDING_TRANSITIONS_V2.filter(t => t.from===status && t.roles.includes(role));
+}
+function openFindingTransitionModal(auditId, findingId, edge){
+  findingTransitionModalTarget = { auditId, findingId, toStatus: edge.to, actionType:
+    edge.to==="PROPOSED" ? "PROPOSED" : edge.to==="ACCEPTED" ? "ACCEPTED" : edge.to==="CHALLENGED" ? "CHALLENGED" :
+    edge.to==="IN_REVIEW" ? "REVIEWED" : edge.to==="ESCALATED" ? "ESCALATED" : edge.to==="APPROVED" ? "CONFIRMED" : "CLOSED",
+    edge };
+  const fv2 = findingsV2[findingId];
+  findingTransitionSeverity = fv2 ? fv2.current_severity : "MINOR";
+  findingTransitionJustification = "";
+  findingTransitionEvidence = "";
+  render();
+}
+function renderFindingTransitionModal(){
+  if(!findingTransitionModalTarget) return '';
+  const { edge } = findingTransitionModalTarget;
+  const chars = findingTransitionJustification.trim().length;
+  const ok = chars >= edge.minChars && (!edge.requiresEvidence || findingTransitionEvidence.trim().length>0);
+  return `
+    <div class="modal-overlay" data-action="close-finding-transition-modal">
+      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">${esc(edge.label)}</h3>
+        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">${edge.from} → ${edge.to}. This requires a drawn signature to commit.</p>
+        <label class="field" style="margin-bottom:8px;">Target Severity
+          <select id="finding-transition-severity">
+            ${FINDING_SEVERITIES_V2.map(s=>`<option value="${s}" ${s===findingTransitionSeverity?'selected':''}>${s.replace(/_/g,' ')}</option>`).join('')}
+          </select>
+        </label>
+        <label class="field" style="margin-bottom:4px;">Justification (min ${edge.minChars} characters)
+          <textarea id="finding-transition-justification" rows="3" placeholder="Explain this transition...">${esc(findingTransitionJustification)}</textarea>
+        </label>
+        <div class="muted-italic" style="font-size:11px;margin-bottom:8px;">${chars} / ${edge.minChars} characters</div>
+        ${edge.requiresEvidence ? `
+          <label class="field" style="margin-bottom:8px;">Evidence (one item per line — required for this transition)
+            <textarea id="finding-transition-evidence" rows="2" placeholder="e.g. Photo of corrective action, verification log entry...">${esc(findingTransitionEvidence)}</textarea>
+          </label>
+        ` : ''}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-finding-transition-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="proceed-finding-transition" ${ok?'':'disabled'}>Continue to Sign</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+async function submitFindingTransitionSigned(imageDataUrl){
+  const target = findingTransitionModalTarget;
+  if(!target) return;
+  const fv2 = findingsV2[target.findingId];
+  const evidenceArr = findingTransitionEvidence.trim()
+    ? findingTransitionEvidence.split("\n").map(line=>line.trim()).filter(Boolean).map(note=>({ type:"NOTE", note }))
+    : [];
+  const { data, error } = await supabaseClient.rpc("transition_finding_state_signed", {
+    p_finding_id: target.findingId,
+    p_action_type: target.actionType,
+    p_target_severity: findingTransitionSeverity,
+    p_target_status: target.toStatus,
+    p_justification: findingTransitionJustification.trim(),
+    p_signature_image: imageDataUrl,
+    p_evidence_attachments: evidenceArr,
+    p_expected_version: fv2 ? fv2.version : null,
+  });
+  if(error){ alert(`Transition failed: ${error.message}`); return; }
+  logActivity(`Finding transition (v2): ${target.toStatus} — ${currentUser()?.fullName||'Unknown'}`);
+  findingTransitionModalTarget = null;
+  await fetchFindingsV2FromCloud();
+}
+function openRcaModal(findingId){
+  const fv2 = findingsV2[findingId];
+  const existing = fv2 && fv2.rca;
+  rcaModalFindingId = findingId;
+  rcaDraft = existing
+    ? { problemStatement: existing.problem_statement||"", fiveWhys: existing.five_whys && existing.five_whys.length ? existing.five_whys : [{why_number:1,question:"",answer:""}], fishbone: existing.fishbone_causes||[], summary: existing.root_cause_summary||"" }
+    : { problemStatement:"", fiveWhys:[{why_number:1,question:"",answer:""}], fishbone:[], summary:"" };
+  render();
+}
+function renderRcaModal(){
+  if(!rcaModalFindingId) return '';
+  const fv2 = findingsV2[rcaModalFindingId];
+  const existing = fv2 && fv2.rca;
+  const locked = existing && existing.status==="APPROVED";
+  return `
+    <div class="modal-overlay" data-action="close-rca-modal">
+      <div class="modal-card" style="max-width:560px;max-height:85vh;overflow-y:auto;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">🔍 Root Cause Analysis (5-Why)</h3>
+        ${locked ? `<p class="muted-italic" style="font-size:12px;color:var(--green);">Approved — read only. Supersede via a new dispute cycle to change it.</p>` : ''}
+        <label class="field" style="margin-bottom:8px;">Problem Statement
+          <textarea id="rca-problem" rows="2" ${locked?'disabled':''}>${esc(rcaDraft.problemStatement)}</textarea>
+        </label>
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;">Five Whys</div>
+        ${rcaDraft.fiveWhys.map((w,idx)=>`
+          <div style="margin-bottom:6px;">
+            <input data-rca-why="${idx}" value="${esc(w.answer)}" placeholder="Why ${idx+1}?" ${locked?'disabled':''} style="width:100%;" />
+          </div>
+        `).join('')}
+        ${!locked ? `<button class="btn btn-ghost" style="font-size:11px;" data-action="add-rca-why">+ Add Why</button>` : ''}
+        <label class="field" style="margin:10px 0 8px;">Root Cause Summary (min 20 characters to submit)
+          <textarea id="rca-summary" rows="2" ${locked?'disabled':''}>${esc(rcaDraft.summary)}</textarea>
+        </label>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-rca-modal">Close</button>
+          ${!locked ? `
+            <button class="btn btn-ghost" data-action="save-rca-draft">Save Draft</button>
+            <button class="btn btn-primary" data-action="submit-rca-final">Submit for Review</button>
+          ` : ''}
+        </div>
+        ${existing && existing.status==="SUBMITTED" && (can("manageCapa")||can("closeOthersCapa")) && existing.created_by !== currentCloudUser?.id ? `
+          <div class="top-border" style="margin-top:12px;padding-top:12px;">
+            <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Independent Review</div>
+            <button class="btn btn-primary" style="font-size:12px;" data-action="approve-rca-final">Approve RCA</button>
+            <button class="btn btn-ghost" style="font-size:12px;" data-action="reject-rca-final">Reject</button>
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+function renderFindingDisputeV2(a, f){
+  const fv2 = findingsV2[f.id];
+  if(!fv2){
+    return `
+      <div class="top-border" style="margin-top:10px;padding-top:10px;">
+        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Dispute Tracking (v2)</div>
+        <button class="btn btn-ghost" style="font-size:12px;" data-action="start-finding-v2" data-audit="${a.id}" data-finding="${f.id}">Start Dispute Tracking</button>
+      </div>
+    `;
+  }
+  const edges = eligibleTransitionsV2(fv2.current_status);
+  const rcaBlocksClose = fv2.is_ccp_breach && !fv2.rca_approved;
+  const closeBlockedEdges = edges.filter(e => e.to === "CLOSED" && rcaBlocksClose);
+  const usableEdges = edges.filter(e => !(e.to === "CLOSED" && rcaBlocksClose));
+  const history = fv2.history || [];
+  const isClosed = fv2.current_status === "CLOSED";
+  const closingHistory = isClosed ? history[history.length-1] : null;
+  const closingSignature = closingHistory ? (fv2.signatures||[]).find(s=>s.history_id===closingHistory.history_id) : null;
+
+  const timelineMarkup = history.map((h, i) => {
+    const isOpen = findingHistoryOpenState[h.history_id] !== false;
+    const severityChanged = h.from_severity && h.from_severity !== h.to_severity;
+    const sig = (fv2.signatures||[]).find(s=>s.history_id===h.history_id);
+    const evidence = (h.evidence_attachments||[]);
+    const standards = (h.impacted_standards||[]);
+    const isLastUnsignedRow = i===history.length-1 && !(isClosed && closingSignature);
+    return `
+      <div style="position:relative;padding-left:34px;">
+        ${!isLastUnsignedRow ? `<span style="position:absolute;left:12px;top:26px;bottom:-14px;width:1px;background:var(--line2);"></span>` : ''}
+        <span style="position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:999px;border:1px solid var(--line);background:var(--paper);display:flex;align-items:center;justify-content:center;font-size:12px;">⚠️</span>
+        <button class="finding-node-toggle" data-history="${h.history_id}" style="all:unset;cursor:pointer;display:flex;width:100%;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div style="min-width:0;">
+            <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:baseline;">
+              <span class="muted-italic" style="font-size:10.5px;">${new Date(h.created_at).toLocaleString()}</span>
+              <span style="font-size:10.5px;letter-spacing:.06em;color:var(--amber);font-weight:600;">${esc(findingActionLabel(h.action_type))}</span>
+            </div>
+            <div style="margin-top:2px;">
+              <span class="serif" style="font-weight:600;">${esc(h.actor_name)}</span>
+              <span class="muted-italic" style="font-size:12.5px;"> — ${esc(h.actor_role)}</span>
+            </div>
+          </div>
+          <span class="muted-italic" style="font-size:11px;">${isOpen?'▼':'▶'}</span>
+        </button>
+        ${isOpen ? `
+          <div style="margin:6px 0 14px;padding:10px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              ${severityChanged ? `
+                <span class="tag tag-${findingV2SeverityTone(h.from_severity)}" style="font-size:10px;">${esc(h.from_severity)}</span>
+                <span class="muted-italic">→</span>
+                <span class="tag tag-${findingV2SeverityTone(h.to_severity)}" style="font-size:10px;">${esc(h.to_severity)}</span>
+              ` : `<span class="tag tag-${findingV2SeverityTone(h.to_severity)}" style="font-size:10px;">${esc(h.to_severity)}</span>`}
+            </div>
+            <p style="font-size:13px;line-height:1.5;margin:8px 0 0;">${esc(h.justification)}</p>
+            ${standards.length ? `
+              <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;">
+                ${standards.map(s=>`<span class="muted-italic" style="font-size:10px;border:1px solid var(--line2);border-radius:4px;padding:2px 6px;">${esc(findingStandardLabel(s))}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${evidence.length ? `
+              <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:8px;">
+                <span class="muted-italic" style="font-size:10px;text-transform:uppercase;letter-spacing:.04em;">Evidence</span>
+                ${evidence.map(ev=>`<span style="font-size:11.5px;background:var(--line2);border-radius:4px;padding:3px 8px;">${esc(ev.note||ev.file_name||'attachment')}</span>`).join('')}
+              </div>
+            ` : ''}
+            ${sig ? `
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--line2);">
+                <img src="${sig.signature_image}" style="max-height:36px;display:block;margin-bottom:4px;" />
+                <span style="font-size:11px;color:var(--green);">✓ Signed by ${esc(sig.signer_name)}</span>
+                <div class="muted-italic" style="font-size:10px;margin-top:2px;">hash ${esc((sig.payload_hash||'').slice(0,16))}…</div>
+              </div>
+            ` : ''}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const lockMarkup = (isClosed && closingSignature) ? `
+    <div style="position:relative;padding-left:34px;">
+      <span style="position:absolute;left:0;top:1px;width:26px;height:26px;border-radius:999px;border:1px solid var(--green);background:var(--greenBg);display:flex;align-items:center;justify-content:center;font-size:12px;">🔒</span>
+      <div style="padding:10px;border:1px solid var(--green);border-radius:8px;background:var(--greenBg);">
+        <div style="font-size:10.5px;letter-spacing:.06em;color:var(--green);font-weight:600;">IMMUTABLE RECORD LOCK</div>
+        <div class="muted-italic" style="font-size:11px;margin-top:4px;">${new Date(closingSignature.signed_at).toLocaleString()}</div>
+        <div style="font-size:11.5px;margin-top:4px;">🛡 SHA-256 verified · sign-off ${esc(closingSignature.signature_id.slice(0,8))}…</div>
+      </div>
+    </div>
+  ` : '';
+
+  return `
+    <div class="top-border" style="margin-top:10px;padding-top:10px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">🔒 Dispute Tracking (v2) — Immutable Trail</div>
+      <div style="margin-bottom:10px;">
+        <span class="tag tag-${findingV2StatusTone(fv2.current_status)}" style="font-size:10px;">${esc(fv2.current_status)}</span>
+        <span class="tag tag-${findingV2SeverityTone(fv2.current_severity)}" style="font-size:10px;">${esc(fv2.current_severity)}</span>
+        <span class="muted-italic" style="font-size:10px;margin-left:4px;">v${fv2.version}</span>
+      </div>
+      ${timelineMarkup}
+      ${lockMarkup}
+      <div class="flex-wrap" style="margin-top:10px;">
+        ${usableEdges.map(edge=>`<button class="btn btn-ghost" style="font-size:12px;" data-action="open-finding-transition" data-audit="${a.id}" data-finding="${f.id}" data-to="${edge.to}">${esc(edge.label)}</button>`).join('')}
+        ${fv2.is_ccp_breach || fv2.rca ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-rca-modal" data-finding="${f.id}">🔍 RCA${fv2.rca_approved?' ✓':''}</button>` : ''}
+      </div>
+      ${closeBlockedEdges.length ? `
+        <p style="font-size:11.5px;color:var(--rust);margin-top:8px;">
+          🔒 This is a CCP breach — closing is blocked until Root Cause Analysis is approved. Use the RCA button above to submit or check status.
+        </p>
+      ` : ''}
+      <p class="muted-italic" style="font-size:10px;text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.04em;">Entries above are append-only and cannot be edited or deleted</p>
+    </div>
+  `;
+}
+
 function renderFindingCorrection(a, f){
   const pending = lastPendingCorrection(f);
   const canReview = can("manageCapa") || can("closeOthersCapa");
@@ -4197,6 +6185,10 @@ function applySignature(target, name, imageDataUrl){
     if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
     return;
   }
+  if(target.kind === "finding-transition-v2"){
+    submitFindingTransitionSigned(imageDataUrl);
+    return;
+  }
 }
 function renderEsignatureField(moduleKey, recordId, field, r){
   const name = r[field.id];
@@ -4325,8 +6317,8 @@ function render(){
         : tab==="emergency-preparedness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="emergency-preparedness"))
         : tab==="calibration-dashboard" ? renderCalibrationDashboard()
         : tab==="fsms-checklist" ? renderFsmsChecklist()
-        : tab==="ohs-hira" ? `<div id="ohs-mount-hira"></div>`
-        : tab==="ohs-ptw" ? `<div id="ohs-mount-ptw"></div>`
+        : tab==="ohs-hira" ? renderHiraTab()
+        : tab==="ohs-ptw" ? renderPtwTab()
         : tab==="ohs-appointments" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-appointments"))
         : tab==="ohs-medical-fitness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-medical-fitness"))
         : tab==="ohs-construction" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-construction"))
@@ -4341,6 +6333,8 @@ function render(){
       ${showAccountModal ? renderAccountModal() : ''}
       ${sigPadTarget ? renderSignaturePadModal() : ''}
       ${correctionModalTarget ? renderCorrectionModal() : ''}
+      ${findingTransitionModalTarget ? renderFindingTransitionModal() : ''}
+      ${rcaModalFindingId ? renderRcaModal() : ''}
     `;
   } catch(err){
     console.error("Render error:", err);
@@ -4355,14 +6349,7 @@ function render(){
     return;
   }
   attachHandlers();
-  if(tab==="ohs-hira" && window.ohsRegistry){
-  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-  window.ohsRegistry.renderModule('ohs-hira', document.getElementById('ohs-mount-hira'), { userRole: ctxRole, supabase: supabaseClient });
-}
-if(tab==="ohs-ptw" && window.ohsRegistry){
-  const ctxRole = (typeof currentUser==="function" && currentUser()) ? currentUser().role : null;
-  window.ohsRegistry.renderModule('ohs-ptw', document.getElementById('ohs-mount-ptw'), { userRole: ctxRole, supabase: supabaseClient });
-}
+  bindHiraPtwTabHandlers();
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
   if(tab==="analytics") renderCharts();
@@ -5757,6 +7744,7 @@ function renderAuditDetail(a){
             <div style="font-size:13px;font-weight:600;">${esc(f.refNo)||'—'} — ${esc(f.desc).slice(0,70)}${(f.desc||'').length>70?'…':''}</div>
             ${renderFindingDispute(a, f)}
             ${renderFindingCorrection(a, f)}
+            ${renderFindingDisputeV2(a, f)}
           </div>
         `).join('')}
       </div>
@@ -9592,6 +11580,101 @@ function attachHandlers(){
       render();
     }
   });
+  document.querySelectorAll('[data-action="start-finding-v2"]').forEach(el=>el.onclick=()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    const f = a && a.findings.find(x=>x.id===el.dataset.finding);
+    if(a && f) startFindingV2(a, f);
+  });
+  document.querySelectorAll('.finding-node-toggle').forEach(el=>el.onclick=()=>{
+    toggleFindingHistoryNode(el.dataset.history);
+  });
+  document.querySelectorAll('[data-action="open-finding-transition"]').forEach(el=>el.onclick=()=>{
+    const auditId = el.dataset.audit, findingId = el.dataset.finding, toStatus = el.dataset.to;
+    const fv2 = findingsV2[findingId];
+    if(!fv2) return;
+    const edge = eligibleTransitionsV2(fv2.current_status).find(e=>e.to===toStatus);
+    if(!edge) return;
+    openFindingTransitionModal(auditId, findingId, edge);
+  });
+  document.querySelectorAll('[data-action="close-finding-transition-modal"]').forEach(el=>el.onclick=()=>{
+    findingTransitionModalTarget = null; render();
+  });
+  const ftSeveritySel = document.getElementById('finding-transition-severity');
+  if(ftSeveritySel) ftSeveritySel.onchange = () => { findingTransitionSeverity = ftSeveritySel.value; };
+  const ftJustification = document.getElementById('finding-transition-justification');
+  if(ftJustification) ftJustification.oninput = () => { findingTransitionJustification = ftJustification.value; render(); };
+  const ftEvidence = document.getElementById('finding-transition-evidence');
+  if(ftEvidence) ftEvidence.oninput = () => { findingTransitionEvidence = ftEvidence.value; render(); };
+  document.querySelectorAll('[data-action="proceed-finding-transition"]').forEach(el=>el.onclick=()=>{
+    if(!findingTransitionModalTarget) return;
+    sigPadTarget = { kind:"finding-transition-v2" };
+    sigPadTypedName = currentUser()?.fullName || "";
+    sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
+    render();
+  });
+  document.querySelectorAll('[data-action="open-rca-modal"]').forEach(el=>el.onclick=()=>{
+    openRcaModal(el.dataset.finding);
+  });
+  document.querySelectorAll('[data-action="close-rca-modal"]').forEach(el=>el.onclick=()=>{
+    rcaModalFindingId = null; rcaDraft = null; render();
+  });
+  const rcaProblem = document.getElementById('rca-problem');
+  if(rcaProblem) rcaProblem.oninput = () => { rcaDraft.problemStatement = rcaProblem.value; };
+  const rcaSummary = document.getElementById('rca-summary');
+  if(rcaSummary) rcaSummary.oninput = () => { rcaDraft.summary = rcaSummary.value; };
+  document.querySelectorAll('[data-rca-why]').forEach(el=>el.oninput=()=>{
+    const idx = parseInt(el.dataset.rcaWhy, 10);
+    if(rcaDraft.fiveWhys[idx]){ rcaDraft.fiveWhys[idx].answer = el.value; rcaDraft.fiveWhys[idx].question = `Why ${idx+1}?`; rcaDraft.fiveWhys[idx].why_number = idx+1; }
+  });
+  document.querySelectorAll('[data-action="add-rca-why"]').forEach(el=>el.onclick=()=>{
+    rcaDraft.fiveWhys.push({ why_number: rcaDraft.fiveWhys.length+1, question:`Why ${rcaDraft.fiveWhys.length+1}?`, answer:"" });
+    render();
+  });
+  document.querySelectorAll('[data-action="save-rca-draft"]').forEach(el=>el.onclick=async()=>{
+    if(!rcaModalFindingId) return;
+    const { error } = await supabaseClient.rpc("submit_rca", {
+      p_finding_id: rcaModalFindingId,
+      p_problem_statement: rcaDraft.problemStatement,
+      p_five_whys: rcaDraft.fiveWhys,
+      p_fishbone_causes: rcaDraft.fishbone,
+      p_root_cause_summary: rcaDraft.summary,
+      p_submit: false,
+    });
+    if(error){ alert(`Could not save draft: ${error.message}`); return; }
+    await fetchFindingsV2FromCloud();
+  });
+  document.querySelectorAll('[data-action="submit-rca-final"]').forEach(el=>el.onclick=async()=>{
+    if(!rcaModalFindingId) return;
+    const { error } = await supabaseClient.rpc("submit_rca", {
+      p_finding_id: rcaModalFindingId,
+      p_problem_statement: rcaDraft.problemStatement,
+      p_five_whys: rcaDraft.fiveWhys,
+      p_fishbone_causes: rcaDraft.fishbone,
+      p_root_cause_summary: rcaDraft.summary,
+      p_submit: true,
+    });
+    if(error){ alert(`Could not submit RCA: ${error.message}`); return; }
+    rcaModalFindingId = null; rcaDraft = null;
+    await fetchFindingsV2FromCloud();
+  });
+  document.querySelectorAll('[data-action="approve-rca-final"]').forEach(el=>el.onclick=async()=>{
+    const fv2 = rcaModalFindingId && findingsV2[rcaModalFindingId];
+    if(!fv2 || !fv2.rca) return;
+    const { error } = await supabaseClient.rpc("approve_rca", { p_rca_id: fv2.rca.id, p_approve: true });
+    if(error){ alert(`Could not approve: ${error.message}`); return; }
+    rcaModalFindingId = null; rcaDraft = null;
+    await fetchFindingsV2FromCloud();
+  });
+  document.querySelectorAll('[data-action="reject-rca-final"]').forEach(el=>el.onclick=async()=>{
+    const fv2 = rcaModalFindingId && findingsV2[rcaModalFindingId];
+    if(!fv2 || !fv2.rca) return;
+    const notes = prompt("Reason for rejecting this RCA:");
+    if(notes===null) return;
+    const { error } = await supabaseClient.rpc("approve_rca", { p_rca_id: fv2.rca.id, p_approve: false, p_review_notes: notes });
+    if(error){ alert(`Could not reject: ${error.message}`); return; }
+    rcaModalFindingId = null; rcaDraft = null;
+    await fetchFindingsV2FromCloud();
+  });
   document.querySelectorAll('[data-action="clear-esignature"]').forEach(el=>el.onclick=()=>{
     const cfg = GENERIC_MODULES.find(m=>m.key===el.dataset.module);
     const rec = cfg && (state[cfg.stateArr]||[]).find(r=>r.id===el.dataset.record);
@@ -11775,9 +13858,6 @@ function showUpdateBanner(){
   document.getElementById('reload-app-btn').onclick = () => window.location.reload();
 }
 </script> 
-</script> <script type="module" src="/js/ohs-core/ohs-ui.js"></script>
-<script type="module" src="/ohs-manifest.js"></script>
-<script type="module" src="/capa-manifest.js"></script>
-<script type="module" src="/capa-automations.js"></script>
+</script>
 </body>
 </html>
