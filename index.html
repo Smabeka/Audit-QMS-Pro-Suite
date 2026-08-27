@@ -683,6 +683,7 @@ async function cloudSignOut(){
   unsubscribeFindingsV2Realtime();
   unsubscribeRiskRealtime();
   hiraPtwLoaded = false; hiraRecords = []; permitRecords = [];
+  capaApprovalLoaded = false; capaApprovalRecords = {};
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   await supabaseClient.auth.signOut();
@@ -2077,6 +2078,57 @@ function bindHiraPtwTabHandlers(){
   });
 }
 
+function bindCapaApprovalHandlers(){
+  document.querySelectorAll('[data-action="open-new-capa-approval"]').forEach(el=>el.onclick=()=>{
+    showNewCapaApproval = true;
+    newCapaApprovalDraft = { title:"", description:"", root_cause:"", corrective_action:"" };
+    render();
+  });
+  document.querySelectorAll('[data-action="close-new-capa-approval"]').forEach(el=>el.onclick=()=>{
+    showNewCapaApproval = false; render();
+  });
+  document.querySelectorAll('[data-action="submit-new-capa-approval"]').forEach(el=>el.onclick=()=>{
+    newCapaApprovalDraft = {
+      title: document.getElementById('new-capa-title')?.value.trim() || "",
+      description: document.getElementById('new-capa-description')?.value.trim() || "",
+      root_cause: document.getElementById('new-capa-root-cause')?.value.trim() || "",
+      corrective_action: document.getElementById('new-capa-corrective-action')?.value.trim() || "",
+    };
+    createCapaApprovalRecord();
+  });
+  document.querySelectorAll('[data-action="toggle-capa-approval"]').forEach(el=>el.onclick=()=>{
+    const id = el.dataset.id;
+    capaApprovalOpenId = capaApprovalOpenId === id ? null : id;
+    render();
+  });
+  document.querySelectorAll('[data-action="open-capa-transition"]').forEach(el=>el.onclick=()=>{
+    const record = capaApprovalRecords[el.dataset.id];
+    if(!record) return;
+    const edge = eligibleCapaTransitions(record).find(e=>e.to===el.dataset.to);
+    if(!edge) return;
+    openCapaTransition(el.dataset.id, edge);
+  });
+  document.querySelectorAll('[data-action="close-capa-transition-modal"]').forEach(el=>el.onclick=()=>{
+    capaTransitionTarget = null; render();
+  });
+  const capaReasonInput = document.getElementById('capa-transition-reason');
+  if(capaReasonInput) capaReasonInput.oninput = () => { capaTransitionReason = capaReasonInput.value; render(); };
+  document.querySelectorAll('[data-action="proceed-capa-transition"]').forEach(el=>el.onclick=()=>{
+    if(!capaTransitionTarget) return;
+    capaPasswordModalOpen = true; capaPasswordValue = ""; capaTransitionError = "";
+    render();
+  });
+  document.querySelectorAll('[data-action="close-capa-password-modal"]').forEach(el=>el.onclick=()=>{
+    capaPasswordModalOpen = false; capaPasswordValue = ""; capaTransitionTarget = null; capaTransitionError = "";
+    render();
+  });
+  const capaPasswordInput = document.getElementById('capa-password-input');
+  if(capaPasswordInput) capaPasswordInput.oninput = () => { capaPasswordValue = capaPasswordInput.value; };
+  document.querySelectorAll('[data-action="submit-capa-password"]').forEach(el=>el.onclick=()=>{
+    submitCapaTransitionSigned();
+  });
+}
+
 
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
@@ -3224,6 +3276,285 @@ function renderFindingDisputeV2(a, f){
       ` : ''}
       <p class="muted-italic" style="font-size:10px;text-align:center;margin-top:10px;text-transform:uppercase;letter-spacing:.04em;">Entries above are append-only and cannot be edited or deleted</p>
     </div>
+  `;
+}
+
+/* ==================== CAPA Approval & Appeal Workflow ====================
+   Separate feature from findingsV2 (which disputes a finding's severity
+   classification) and from renderCapa() (the simple Open/In Progress/
+   Closed tracker over findings). This is a formal approval workflow for
+   the corrective action record itself:
+     DRAFT -> UNDER_REVIEW -> APPROVED/REJECTED -> (appeal) -> CLOSED
+   Every status-changing transition requires the caller to re-enter their
+   password, verified by a Supabase Edge Function (capa-transition-signed)
+   before the actual RPC call is ever made — see 08_capa_approval_engine.sql
+   for why the RPC itself is unreachable any other way. */
+let capaApprovalRecords = {}; // id -> { ...capas row, events:[], evidence:[], reviews:[], appeals:[] }
+let capaApprovalLoaded = false;
+let capaApprovalOpenId = null;
+let showNewCapaApproval = false;
+let newCapaApprovalDraft = { title:"", description:"", root_cause:"", corrective_action:"" };
+let capaTransitionTarget = null; // { capaId, edge }
+let capaTransitionReason = "";
+let capaPasswordModalOpen = false;
+let capaPasswordValue = "";
+let capaTransitionSubmitting = false;
+let capaTransitionError = "";
+
+/* Mirrors the actual capa_status_transitions table exactly — statuses
+   and event_type strings are lowercase snake_case, matching what's
+   really stored in capas.status and what log_capa_event expects. rpc
+   picks which of the three real Postgres functions to call:
+     "log_capa_event"      — plain transitions, plus approve/reject
+                              (which also write a capa_reviews row)
+     "submit_capa_appeal"  — the one edge that opens an appeal
+     "resolve_capa_appeal" — the two edges that resolve an open appeal */
+const CAPA_TRANSITIONS = [
+  { from:"draft",                to:"approved_review_started", skip:true }, // placeholder never matched; real rows below
+];
+CAPA_TRANSITIONS.length = 0;
+CAPA_TRANSITIONS.push(
+  { from:"draft",                to:"under_review",          rpc:"log_capa_event",      eventType:"submitted",                   roles:["Employee","Department Manager","Admin"], creatorOnly:true,  independentReview:false, minChars:10, label:"Submit for Review" },
+  { from:"under_review",         to:"approved",               rpc:"log_capa_event",      eventType:"approved",                    roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:true,  minChars:20, label:"Approve CAPA", reviewType:"initial", decision:"approved" },
+  { from:"under_review",         to:"rejected",                rpc:"log_capa_event",      eventType:"rejected",                    roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:true,  minChars:10, label:"Reject CAPA", reviewType:"initial", decision:"rejected" },
+  { from:"rejected",             to:"independent_review",      rpc:"submit_capa_appeal",  eventType:"appeal_submitted",            roles:["Employee","Department Manager","Admin"], creatorOnly:true,  independentReview:false, minChars:20, label:"Appeal Rejection" },
+  { from:"independent_review",   to:"approved",                rpc:"resolve_capa_appeal", eventType:"appeal_upheld",               roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Uphold Appeal (Approve)", decision:"approved" },
+  { from:"independent_review",   to:"rejected",                rpc:"resolve_capa_appeal", eventType:"appeal_denied",               roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Deny Appeal", decision:"rejected" },
+  { from:"approved",             to:"effectiveness_review",    rpc:"log_capa_event",      eventType:"effectiveness_review_started",roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:false, minChars:10, label:"Start Effectiveness Review" },
+  { from:"effectiveness_review", to:"complete",                rpc:"log_capa_event",      eventType:"effectiveness_verified",      roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:false, minChars:10, label:"Verify Effectiveness (Complete)" },
+  { from:"effectiveness_review", to:"under_review",            rpc:"log_capa_event",      eventType:"effectiveness_failed",        roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:false, minChars:10, label:"Effectiveness Failed — Reopen" }
+);
+
+function capaApprovalStatusTone(status){
+  return {
+    draft:"neutral", under_review:"amber", approved:"green", rejected:"rust",
+    independent_review:"rust", effectiveness_review:"amber", complete:"green"
+  }[status] || "neutral";
+}
+function capaApprovalStatusLabel(status){
+  return {
+    draft:"Draft", under_review:"Under Review", approved:"Approved", rejected:"Rejected",
+    independent_review:"Independent Review (Appeal)", effectiveness_review:"Effectiveness Review", complete:"Complete"
+  }[status] || status;
+}
+async function fetchCapaApprovalRecords(){
+  if(!cloudReady()) return;
+  const [capasRes, eventsRes, evidenceRes, reviewsRes, appealsRes] = await Promise.all([
+    supabaseClient.from("capas").select("*"),
+    supabaseClient.from("capa_events").select("*").order("timestamp", { ascending:true }),
+    supabaseClient.from("capa_evidence").select("*").order("uploaded_at", { ascending:true }),
+    supabaseClient.from("capa_reviews").select("*"),
+    supabaseClient.from("capa_appeals").select("*"),
+  ]);
+  if(capasRes.error){ console.error(capasRes.error.message); return; }
+  const map = {};
+  (capasRes.data||[]).forEach(row => { map[row.id] = { ...row, events:[], evidence:[], reviews:[], appeals:[] }; });
+  (eventsRes.data||[]).forEach(row => { if(map[row.capa_id]) map[row.capa_id].events.push(row); });
+  (evidenceRes.data||[]).forEach(row => { if(map[row.capa_id]) map[row.capa_id].evidence.push(row); });
+  (reviewsRes.data||[]).forEach(row => { if(map[row.capa_id]) map[row.capa_id].reviews.push(row); });
+  (appealsRes.data||[]).forEach(row => { if(map[row.capa_id]) map[row.capa_id].appeals.push(row); });
+  capaApprovalRecords = map;
+  capaApprovalLoaded = true;
+  render();
+}
+function eligibleCapaTransitions(record){
+  const role = currentUser()?.role;
+  const uid = currentCloudUser?.id;
+  return CAPA_TRANSITIONS.filter(t => {
+    if(t.from !== record.status) return false;
+    if(!t.roles.includes(role)) return false;
+    if(t.creatorOnly && record.created_by !== uid) return false;
+    if(t.independentReview && record.created_by === uid) return false;
+    return true;
+  });
+}
+async function createCapaApprovalRecord(){
+  if(!newCapaApprovalDraft.title.trim() || !newCapaApprovalDraft.description.trim()){
+    alert("Title and description are required.");
+    return;
+  }
+  const { data: refData, error: refError } = await supabaseClient.rpc("generate_capa_reference");
+  if(refError){ alert(`Could not generate a reference number: ${refError.message}`); return; }
+  const { error } = await supabaseClient.from("capas").insert([{
+    reference_number: refData,
+    title: newCapaApprovalDraft.title.trim(),
+    description: newCapaApprovalDraft.description.trim(),
+    root_cause: newCapaApprovalDraft.root_cause.trim() || null,
+    corrective_action: newCapaApprovalDraft.corrective_action.trim() || null,
+    status: "draft",
+    created_by: currentCloudUser?.id,
+  }]);
+  if(error){ alert(`Could not create CAPA record: ${error.message}`); return; }
+  showNewCapaApproval = false;
+  newCapaApprovalDraft = { title:"", description:"", root_cause:"", corrective_action:"" };
+  await fetchCapaApprovalRecords();
+}
+function openCapaTransition(capaId, edge){
+  capaTransitionTarget = { capaId, edge };
+  capaTransitionReason = "";
+  capaTransitionError = "";
+  render();
+}
+function renderCapaTransitionModal(){
+  if(!capaTransitionTarget) return '';
+  const { edge } = capaTransitionTarget;
+  const chars = capaTransitionReason.trim().length;
+  const ok = chars >= edge.minChars;
+  return `
+    <div class="modal-overlay" data-action="close-capa-transition-modal">
+      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">${esc(edge.label)}</h3>
+        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">${capaApprovalStatusLabel(edge.from)} → ${capaApprovalStatusLabel(edge.to)}. This requires your password to confirm.</p>
+        <label class="field" style="margin-bottom:4px;">Reason (min ${edge.minChars} characters)
+          <textarea id="capa-transition-reason" rows="3" placeholder="Explain this decision...">${esc(capaTransitionReason)}</textarea>
+        </label>
+        <div class="muted-italic" style="font-size:11px;margin-bottom:8px;">${chars} / ${edge.minChars} characters</div>
+        ${capaTransitionError ? `<p style="color:var(--rust);font-size:12px;">${esc(capaTransitionError)}</p>` : ''}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-capa-transition-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="proceed-capa-transition" ${ok?'':'disabled'}>Continue to Confirm Password</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+function renderCapaPasswordModal(){
+  if(!capaPasswordModalOpen) return '';
+  return `
+    <div class="modal-overlay" data-action="close-capa-password-modal">
+      <div class="modal-card" style="max-width:420px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">Confirm Your Password</h3>
+        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">Re-enter your password to sign this CAPA decision.</p>
+        <label class="field" style="margin-bottom:8px;">Password
+          <input type="password" id="capa-password-input" value="${esc(capaPasswordValue)}" autocomplete="current-password" />
+        </label>
+        ${capaTransitionError ? `<p style="color:var(--rust);font-size:12px;">${esc(capaTransitionError)}</p>` : ''}
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-capa-password-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="submit-capa-password" ${capaTransitionSubmitting?'disabled':''}>${capaTransitionSubmitting?'Confirming…':'Confirm & Sign'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+async function submitCapaTransitionSigned(){
+  const target = capaTransitionTarget;
+  const record = target && capaApprovalRecords[target.capaId];
+  if(!target || !record) return;
+  const edge = target.edge;
+  capaTransitionSubmitting = true; capaTransitionError = ""; render();
+
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  const accessToken = sessionData?.session?.access_token;
+  if(!accessToken){ capaTransitionError = "Your session has expired — please sign in again."; capaTransitionSubmitting = false; render(); return; }
+
+  // For resolve_capa_appeal we need the currently-open appeal's id.
+  let appealId = null;
+  if(edge.rpc === "resolve_capa_appeal"){
+    const openAppeal = (record.appeals||[]).find(ap => !ap.resolved_at);
+    if(!openAppeal){ capaTransitionError = "No open appeal found for this CAPA."; capaTransitionSubmitting = false; render(); return; }
+    appealId = openAppeal.id;
+  }
+
+  try {
+    const res = await fetch("https://rchzyvnkfgofvdkgoawm.supabase.co/functions/v1/capa-transition-signed", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify({
+        rpc: edge.rpc,
+        capa_id: target.capaId,
+        appeal_id: appealId,
+        event_type: edge.eventType,
+        reason: capaTransitionReason.trim(),
+        review_type: edge.reviewType || null,
+        decision: edge.decision || null,
+        // Explicitly attribute the reviewer so the server's
+        // segregation-of-duties check (reviewer cannot be the CAPA
+        // creator) actually fires — not just the UI hiding the button.
+        reviewer_id: edge.reviewType ? currentCloudUser?.id : null,
+        password: capaPasswordValue,
+      }),
+    });
+    const body = await res.json();
+    if(!res.ok){ capaTransitionError = body.error || "Transition failed."; capaTransitionSubmitting = false; render(); return; }
+
+    logActivity(`CAPA transition: ${record.reference_number} → ${capaApprovalStatusLabel(edge.to)} — ${currentUser()?.fullName||'Unknown'}`);
+    capaTransitionTarget = null; capaPasswordModalOpen = false; capaPasswordValue = ""; capaTransitionSubmitting = false;
+    await fetchCapaApprovalRecords();
+  } catch(e){
+    capaTransitionError = e.message || "Network error — please try again.";
+    capaTransitionSubmitting = false; render();
+  }
+}
+function renderCapaApprovalTab(){
+  if(!cloudReady()){
+    return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use the CAPA Approval Workflow.</p></div>`;
+  }
+  if(!capaApprovalLoaded){ fetchCapaApprovalRecords(); return `<div class="card"><p class="muted-italic">Loading…</p></div>`; }
+  const records = Object.values(capaApprovalRecords).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 class="serif" style="margin:0;font-size:18px;">🗂️ CAPA Approval Workflow</h2>
+        <button class="btn btn-primary" data-action="open-new-capa-approval">+ New CAPA Record</button>
+      </div>
+      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Formal approval of the corrective action itself — Draft → Under Review → Approved/Rejected → Appeal → Closed. Separate from the Dispute Tracking (v2) on individual findings.</p>
+      ${records.length===0 ? `<p class="muted-italic">No CAPA records yet.</p>` : records.map(r => {
+        const isOpen = capaApprovalOpenId === r.id;
+        const edges = eligibleCapaTransitions(r);
+        return `
+        <div class="top-border" style="padding:10px 0;">
+          <button data-action="toggle-capa-approval" data-id="${r.id}" style="all:unset;cursor:pointer;display:flex;width:100%;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:600;">${esc(r.reference_number||'(no ref)')} — ${esc(r.title)}</div>
+              <div class="muted-italic" style="font-size:12px;">${esc(r.description).slice(0,100)}${r.description.length>100?'…':''}</div>
+            </div>
+            <span class="tag tag-${capaApprovalStatusTone(r.status)}" style="font-size:10px;white-space:nowrap;">${esc(r.status)}</span>
+          </button>
+          ${isOpen ? `
+            <div style="margin-top:10px;padding:10px;border:1px solid var(--line2);border-radius:8px;">
+              ${r.root_cause ? `<p style="font-size:13px;"><b>Root Cause:</b> ${esc(r.root_cause)}</p>` : ''}
+              ${r.corrective_action ? `<p style="font-size:13px;"><b>Corrective Action:</b> ${esc(r.corrective_action)}</p>` : ''}
+              ${r.linked_finding_id ? `<p class="muted-italic" style="font-size:11px;">Linked finding: ${esc(r.linked_finding_id)}</p>` : ''}
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;">History</div>
+              ${r.events.map(ev=>`
+                <div style="padding:5px 0;border-bottom:1px solid var(--line2);">
+                  <span class="tag tag-${capaApprovalStatusTone(ev.new_status)}" style="font-size:10px;">${esc(ev.event_type)}</span>
+                  <span style="font-size:12px;margin-left:4px;">${esc(ev.reason||'')}</span>
+                  <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">${new Date(ev.created_at).toLocaleString()}</div>
+                </div>
+              `).join('') || `<p class="muted-italic" style="font-size:12px;">No events yet.</p>`}
+              <div class="flex-wrap" style="margin-top:10px;">
+                ${edges.map(edge=>`<button class="btn btn-ghost" style="font-size:12px;" data-action="open-capa-transition" data-id="${r.id}" data-to="${edge.to}">${esc(edge.label)}</button>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;}).join('')}
+    </div>
+    ${showNewCapaApproval ? `
+      <div class="modal-overlay" data-action="close-new-capa-approval">
+        <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+          <h3 class="serif" style="margin:0 0 12px;font-size:17px;color:var(--navy);">New CAPA Record</h3>
+          <label class="field" style="margin-bottom:8px;">Title
+            <input id="new-capa-title" value="${esc(newCapaApprovalDraft.title)}" />
+          </label>
+          <label class="field" style="margin-bottom:8px;">Description
+            <textarea id="new-capa-description" rows="3">${esc(newCapaApprovalDraft.description)}</textarea>
+          </label>
+          <label class="field" style="margin-bottom:8px;">Root Cause (optional)
+            <textarea id="new-capa-root-cause" rows="2">${esc(newCapaApprovalDraft.root_cause)}</textarea>
+          </label>
+          <label class="field" style="margin-bottom:8px;">Corrective Action (optional)
+            <textarea id="new-capa-corrective-action" rows="2">${esc(newCapaApprovalDraft.corrective_action)}</textarea>
+          </label>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button class="btn btn-ghost" data-action="close-new-capa-approval">Cancel</button>
+            <button class="btn btn-primary" data-action="submit-new-capa-approval">Create Draft</button>
+          </div>
+        </div>
+      </div>
+    ` : ''}
   `;
 }
 
@@ -5746,6 +6077,7 @@ const NAV_MODULES = [
   },
   { id:"nav-risk", icon:"⚠️", label:"Risk Management", isActive(){ return tab==="risk"; }, action(){ tab="risk"; } },
   { id:"nav-capa", icon:"🔧", label:"CAPA Management", isActive(){ return tab==="capa"; }, action(){ tab="capa"; } },
+  { id:"nav-capa-approval", icon:"🗂️", label:"CAPA Approval Workflow", isActive(){ return tab==="capa-approval"; }, action(){ tab="capa-approval"; } },
   { id:"nav-ppd", icon:"🧪", label:"Product & Process Development", children:[
       { id:"nav-design-development", label:"Design History File", isActive(){ return tab==="design-development"; }, action(){ tab="design-development"; } },
       { id:"nav-validation-qualification", label:"Validation & Qualification", isActive(){ return tab==="validation-qualification"; }, action(){ tab="validation-qualification"; } },
@@ -5858,7 +6190,8 @@ const NAV_TREE = [
   { id:"pillar-audit-risk-capa", icon:"🛡️", label:"Audits, Risk & CAPA", children:[
       navModule("nav-audit"),
       navModule("nav-risk"),
-      navModule("nav-capa")
+      navModule("nav-capa"),
+      navModule("nav-capa-approval")
     ]
   },
   { id:"pillar-food-safety", icon:"🧪", label:"Food Safety & Operations", children:[
@@ -6280,7 +6613,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
@@ -6335,6 +6668,8 @@ function render(){
       ${correctionModalTarget ? renderCorrectionModal() : ''}
       ${findingTransitionModalTarget ? renderFindingTransitionModal() : ''}
       ${rcaModalFindingId ? renderRcaModal() : ''}
+      ${capaTransitionTarget ? renderCapaTransitionModal() : ''}
+      ${capaPasswordModalOpen ? renderCapaPasswordModal() : ''}
     `;
   } catch(err){
     console.error("Render error:", err);
@@ -6350,6 +6685,7 @@ function render(){
   }
   attachHandlers();
   bindHiraPtwTabHandlers();
+  bindCapaApprovalHandlers();
   if(sigPadTarget) bindSignaturePadCanvas();
   if(correctionModalTarget) bindCorrectionModalField();
   if(tab==="analytics") renderCharts();
