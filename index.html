@@ -3536,13 +3536,12 @@ function renderCapaApprovalTab(){
             <div style="margin-top:10px;padding:10px;border:1px solid var(--line2);border-radius:8px;">
               ${r.root_cause ? `<p style="font-size:13px;"><b>Root Cause:</b> ${esc(r.root_cause)}</p>` : ''}
               ${r.corrective_action ? `<p style="font-size:13px;"><b>Corrective Action:</b> ${esc(r.corrective_action)}</p>` : ''}
-              ${r.linked_finding_id ? `<p class="muted-italic" style="font-size:11px;">Linked finding: ${esc(r.linked_finding_id)}</p>` : ''}
               <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;">History</div>
               ${r.events.map(ev=>`
                 <div style="padding:5px 0;border-bottom:1px solid var(--line2);">
                   <span class="tag tag-${capaApprovalStatusTone(ev.new_status)}" style="font-size:10px;">${esc(ev.event_type)}</span>
                   <span style="font-size:12px;margin-left:4px;">${esc(ev.reason||'')}</span>
-                  <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">${new Date(ev.created_at).toLocaleString()}</div>
+                  <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">${new Date(ev.timestamp).toLocaleString()}</div>
                 </div>
               `).join('') || `<p class="muted-italic" style="font-size:12px;">No events yet.</p>`}
               <div class="flex-wrap" style="margin-top:10px;">
@@ -11917,14 +11916,22 @@ function attachHandlers(){
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     if(!a || !a.signOff) return;
     const role = el.dataset.role;
+    const u = currentUser();
+    const signedName = role==="auditor" ? a.signOff.auditorName : a.signOff.approverName;
+    const isOwnSignature = u && signedName && u.fullName === signedName;
+    const isAdmin = u && u.role === "Admin";
+    if(!isOwnSignature && !isAdmin){
+      alert("Only the person who signed this, or an Admin, can unsign it.");
+      return;
+    }
     if(!confirm("Unsigning will re-open this audit for editing. Continue?")) return;
     if(role==="auditor"){
-      logHistory(a, `Auditor sign-off revoked (was: ${a.signOff.auditorName})`);
+      logHistory(a, `Auditor sign-off revoked (was: ${a.signOff.auditorName}) by ${u?.fullName||'Unknown'}`);
       a.signOff.auditorName = ""; a.signOff.auditorSignedAt = null; a.signOff.auditorSignature = null;
       // revoking the auditor signature also revokes approval, since approval depended on the locked record
       if(a.signOff.approverSignedAt){ a.signOff.approverName = ""; a.signOff.approverSignedAt = null; a.signOff.approverSignature = null; }
     } else {
-      logHistory(a, `Approval sign-off revoked (was: ${a.signOff.approverName})`);
+      logHistory(a, `Approval sign-off revoked (was: ${a.signOff.approverName}) by ${u?.fullName||'Unknown'}`);
       a.signOff.approverName = ""; a.signOff.approverSignedAt = null; a.signOff.approverSignature = null;
     }
     persist(); render();
