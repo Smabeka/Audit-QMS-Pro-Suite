@@ -2079,6 +2079,9 @@ function bindHiraPtwTabHandlers(){
 }
 
 function bindCapaApprovalHandlers(){
+  document.querySelectorAll('[data-action="retry-capa-approval"]').forEach(el=>el.onclick=()=>{
+    capaApprovalLoaded = false; capaApprovalFetchError = ""; render();
+  });
   document.querySelectorAll('[data-action="open-new-capa-approval"]').forEach(el=>el.onclick=()=>{
     showNewCapaApproval = true;
     newCapaApprovalDraft = { title:"", description:"", root_cause:"", corrective_action:"" };
@@ -3337,6 +3340,7 @@ function capaApprovalStatusLabel(status){
     independent_review:"Independent Review (Appeal)", effectiveness_review:"Effectiveness Review", complete:"Complete"
   }[status] || status;
 }
+let capaApprovalFetchError = "";
 async function fetchCapaApprovalRecords(){
   if(!cloudReady()) return;
   const [capasRes, eventsRes, evidenceRes, reviewsRes, appealsRes] = await Promise.all([
@@ -3346,7 +3350,15 @@ async function fetchCapaApprovalRecords(){
     supabaseClient.from("capa_reviews").select("*"),
     supabaseClient.from("capa_appeals").select("*"),
   ]);
-  if(capasRes.error){ console.error(capasRes.error.message); return; }
+  const firstError = capasRes.error || eventsRes.error || evidenceRes.error || reviewsRes.error || appealsRes.error;
+  if(firstError){
+    console.error(firstError.message);
+    capaApprovalFetchError = firstError.message;
+    capaApprovalLoaded = true; // stop retry-looping forever on every render — show the error instead
+    render();
+    return;
+  }
+  capaApprovalFetchError = "";
   const map = {};
   (capasRes.data||[]).forEach(row => { map[row.id] = { ...row, events:[], evidence:[], reviews:[], appeals:[] }; });
   (eventsRes.data||[]).forEach(row => { if(map[row.capa_id]) map[row.capa_id].events.push(row); });
@@ -3491,6 +3503,15 @@ function renderCapaApprovalTab(){
     return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use the CAPA Approval Workflow.</p></div>`;
   }
   if(!capaApprovalLoaded){ fetchCapaApprovalRecords(); return `<div class="card"><p class="muted-italic">Loading…</p></div>`; }
+  if(capaApprovalFetchError){
+    return `
+      <div class="card">
+        <h2 class="serif" style="margin:0 0 8px;font-size:18px;">🗂️ CAPA Approval Workflow</h2>
+        <p style="color:var(--rust);font-size:13px;">⚠ Could not load CAPA records: ${esc(capaApprovalFetchError)}</p>
+        <button class="btn btn-ghost" style="font-size:12px;margin-top:8px;" data-action="retry-capa-approval">Retry</button>
+      </div>
+    `;
+  }
   const records = Object.values(capaApprovalRecords).sort((a,b)=>(b.created_at||'').localeCompare(a.created_at||''));
   return `
     <div class="card">
