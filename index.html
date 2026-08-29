@@ -3395,6 +3395,7 @@ async function createCapaApprovalRecord(){
     corrective_action: newCapaApprovalDraft.corrective_action.trim() || null,
     status: "draft",
     created_by: currentCloudUser?.id,
+    organization_id: currentProfile?.organization_id,
   }]);
   if(error){ alert(`Could not create CAPA record: ${error.message}`); return; }
   showNewCapaApproval = false;
