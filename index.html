@@ -2322,8 +2322,13 @@ const FINDING_CATEGORIES = ["Hygiene","Documentation","Equipment","Pest Control"
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
 function nextFindingRefNo(audit){
-  const n = (audit.findings ? audit.findings.length : 0) + 1;
-  return `F-${String(n).padStart(3,'0')}`;
+  // Was: audit.findings.length + 1 — collided across every audit, since
+  // each audit numbered its own findings starting from F-001 independently.
+  // Now a single global sequence across every finding in every audit,
+  // reusing the same prefix-year-number pattern as nextSeqCode (audits,
+  // documents, etc. already use this convention).
+  const allFindings = state.audits.flatMap(a => a.findings || []);
+  return nextSeqCode(allFindings, "refNo", "FIND");
 }
 const CONCLUSION_OPTIONS = ["Pass","Pass with Corrective Actions","Fail"];
 function suggestConclusionResult(audit){
@@ -4389,7 +4394,7 @@ function ensureStateDefaults(){
   state.audits.forEach(a=>{
     if(!a.conclusion){ a.conclusion = { result: "", summary: "" }; }
     if(!a.approvals){ a.approvals = { preparedBy: a.auditor||"", reviewedBy: "", approvedBy: "" }; }
-    (a.findings||[]).forEach((f,idx)=>{ if(!f.refNo){ f.refNo = `F-${String(idx+1).padStart(3,'0')}`; } if(f.clauseRef===undefined){ f.clauseRef = ""; } });
+    (a.findings||[]).forEach((f)=>{ if(!f.refNo){ f.refNo = nextFindingRefNo(a); } if(f.clauseRef===undefined){ f.clauseRef = ""; } });
   });
   state.sensoryEvaluations.forEach(e=>{ if(!e.category){ e.category = "Product Quality"; } });
   checklistSeq = state.checklists.length;
