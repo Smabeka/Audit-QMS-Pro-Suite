@@ -2321,6 +2321,26 @@ const DEPARTMENTS = [
 const FINDING_CATEGORIES = ["Hygiene","Documentation","Equipment","Pest Control","Storage","Personnel","Cleaning","Traceability","Monthly Management Review","Operation Review Meetings","Weekly Operation Review","Daily Operation Review","Training Matrix","Other"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
 const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
+function checkAuditRollupClosure(a){
+  // Auto-closes the parent audit once every one of its findings is
+  // individually verified & closed. One-directional only (never
+  // auto-reopens an audit) — a manual reopen of a finding on an
+  // already-closed audit doesn't silently flip the audit back to Open,
+  // since that audit may have already been signed off and locked.
+  // Note: this checks findings only, not the separate CAPA Approval
+  // Workflow module — that module isn't currently linked to specific
+  // findings/audits (no foreign key exists between them), so there's
+  // nothing there to roll up yet.
+  if(a.status === "Closed") return;
+  if(!a.findings || a.findings.length === 0) return;
+  const allClosed = a.findings.every(f => f.status === "Closed");
+  if(allClosed){
+    const prevStatus = a.status;
+    a.status = "Closed";
+    logHistory(a, `All ${a.findings.length} finding(s) verified & closed — audit automatically closed (was: ${prevStatus||'—'})`);
+    logActivity(`Audit auto-closed: ${a.title} — all findings resolved`);
+  }
+}
 function nextFindingRefNo(audit){
   // Was: audit.findings.length + 1 — collided across every audit, since
   // each audit numbered its own findings starting from F-001 independently.
@@ -12236,7 +12256,9 @@ function attachHandlers(){
       logHistory(a, `Finding "${f.desc.slice(0,50)}${f.desc.length>50?'…':''}" status: ${f.status} → ${status}`);
     }
     if(status!=="Closed"){ f.verifiedBy = null; f.verifiedAt = null; } // reopening clears prior verification
-    f.status = status; persist(); render();
+    f.status = status;
+    checkAuditRollupClosure(a);
+    persist(); render();
   });
 
   document.querySelectorAll('[data-action="open-correction-modal"]').forEach(el=>el.onclick=()=>{
