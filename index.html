@@ -12362,6 +12362,10 @@ function attachHandlers(){
     const desc = document.getElementById(`nf-desc-${auditId}`).value.trim();
     if(!desc) return;
     const a = state.audits.find(x=>x.id===auditId);
+    const isDuplicate = (a.findings||[]).some(f => (f.desc||"").trim().toLowerCase() === desc.toLowerCase());
+    if(isDuplicate){
+      if(!confirm(`A finding with this exact description already exists in this audit:\n\n"${desc}"\n\nLog it again anyway?`)) return;
+    }
     const severity = document.getElementById(`nf-severity-${auditId}`).value;
     const owner = document.getElementById(`nf-owner-${auditId}`).value;
     const dueDate = document.getElementById(`nf-due-${auditId}`).value;
