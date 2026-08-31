@@ -4434,6 +4434,23 @@ initWorkspaces();
 let state = loadStore() || seedData();
 migrateAuditNumbers();
 let showWorkspaceModal = false;
+let workspaceSearchQuery = "";
+function workspaceQuickStatus(workspaceId){
+  // Peeks directly into another workspace's stored localStorage data
+  // (without switching into it) to show a quick red-dot indicator for
+  // overdue findings/CAPAs — matches the same overdue definition used
+  // by the SLA badges elsewhere (findingSlaBadge).
+  try {
+    const raw = localStorage.getItem(workspaceStoreKey(workspaceId));
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    const audits = data.audits || [];
+    const hasOverdue = audits.some(a => (a.findings||[]).some(f =>
+      f.dueDate && f.status !== "Closed" && daysUntil(f.dueDate) < 0
+    ));
+    return hasOverdue ? { color: "var(--rust)", title: "Has overdue findings/CAPAs" } : null;
+  } catch(e){ return null; }
+}
 let newWorkspaceName = "";
 let pendingDeleteWorkspaceId = null;
 let tab = "dashboard";
@@ -6776,8 +6793,11 @@ function renderCompanyModal(){
 }
 
 function renderWorkspaceModal(){
-  const workspaces = getWorkspaces();
-  const deleteTarget = pendingDeleteWorkspaceId ? workspaces.find(w=>w.id===pendingDeleteWorkspaceId) : null;
+  const allWorkspaces = getWorkspaces();
+  const workspaces = workspaceSearchQuery.trim()
+    ? allWorkspaces.filter(w => w.name.toLowerCase().includes(workspaceSearchQuery.trim().toLowerCase()))
+    : allWorkspaces;
+  const deleteTarget = pendingDeleteWorkspaceId ? allWorkspaces.find(w=>w.id===pendingDeleteWorkspaceId) : null;
   if(deleteTarget){
     return `
       <div class="modal-overlay" data-action="cancel-delete-workspace">
@@ -6797,16 +6817,20 @@ function renderWorkspaceModal(){
       <div class="modal-card" style="max-width:460px;" onclick="event.stopPropagation()">
         <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">Client Workspaces</h3>
         <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Each workspace keeps a separate, isolated set of audits, CAPAs, risks, and documents — useful when you're managing more than one client or site.</p>
+        ${allWorkspaces.length > 8 ? `<input id="workspace-search" placeholder="Search clients by name…" value="${esc(workspaceSearchQuery)}" style="width:100%;margin-bottom:10px;" />` : ''}
         <div style="margin-bottom:14px;">
-          ${workspaces.map(w=>`
+          ${workspaces.length===0 ? `<p class="muted-italic" style="font-size:13px;">No clients match "${esc(workspaceSearchQuery)}".</p>` : workspaces.map(w=>{
+            const status = workspaceQuickStatus(w.id);
+            return `
             <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line2);">
+              ${status ? `<span style="width:8px;height:8px;border-radius:999px;background:${status.color};flex-shrink:0;" title="${status.title}"></span>` : `<span style="width:8px;flex-shrink:0;"></span>`}
               <input data-workspace-rename="${w.id}" value="${esc(w.name)}" style="flex:1;font-size:13px;padding:6px 8px;${w.id===currentWorkspaceId?'font-weight:600;':''}" />
               ${w.id===currentWorkspaceId
                 ? `<span class="tag tag-navy" style="font-size:11px;">Active</span>`
                 : `<button class="btn btn-ghost" data-action="switch-workspace" data-workspace="${w.id}" style="font-size:12px;padding:4px 8px;">Switch</button>`}
-              ${workspaces.length>1 ? `<button class="x-btn" data-action="open-delete-workspace" data-workspace="${w.id}" title="Delete workspace">✕</button>` : ''}
+              ${allWorkspaces.length>1 ? `<button class="x-btn" data-action="open-delete-workspace" data-workspace="${w.id}" title="Delete workspace">✕</button>` : ''}
             </div>
-          `).join('')}
+          `;}).join('')}
         </div>
         <div style="display:flex;gap:8px;margin-bottom:10px;">
           <input id="new-workspace-name" placeholder="New client / company name…" value="${esc(newWorkspaceName)}" style="flex:1;" />
@@ -14091,7 +14115,9 @@ function attachHandlers(){
   /* client workspace switcher */
   const openWorkspaceBtn = document.querySelector('[data-action="open-workspace-modal"]');
   if(openWorkspaceBtn) openWorkspaceBtn.onclick=()=>{ showWorkspaceModal=true; render(); };
-  document.querySelectorAll('[data-action="close-workspace-modal"]').forEach(el=>el.onclick=()=>{ showWorkspaceModal=false; render(); });
+  document.querySelectorAll('[data-action="close-workspace-modal"]').forEach(el=>el.onclick=()=>{ showWorkspaceModal=false; workspaceSearchQuery=""; render(); });
+  const workspaceSearchInput = document.getElementById('workspace-search');
+  if(workspaceSearchInput) workspaceSearchInput.oninput = () => { workspaceSearchQuery = workspaceSearchInput.value; render(); };
   document.querySelectorAll('[data-action="switch-workspace"]').forEach(el=>el.onclick=()=>{ switchWorkspace(el.getAttribute('data-workspace')); });
   const createWorkspaceBtn = document.querySelector('[data-action="create-workspace"]');
   if(createWorkspaceBtn) createWorkspaceBtn.onclick=()=>{
