@@ -8653,7 +8653,17 @@ function renderDocumentDetail(d){
     </div>
   `;
 }
+/* ---------- Document Control: Supabase Data Layer ---------- */
 
+const documentControlCloud = {
+  families: [],
+  versions: [],
+  approvals: [],
+  events: [],
+  acknowledgements: [],
+  selectedFamilyId: null,
+  loading: false
+};
 /* ---------- Training Matrix ---------- */
 function trainingStatus(t){
   if(!t.expiryDate) return "No Expiry";
