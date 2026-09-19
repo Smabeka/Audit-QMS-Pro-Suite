@@ -653,6 +653,7 @@ async function cloudSignIn(email, password){
   }
   loginError = "";
   render();
+  loadDocumentControlCloud();
   fetchDocumentsFromCloud();
   subscribeDocumentsRealtime();
   fetchCapaFindingsFromCloud();
