@@ -8665,6 +8665,99 @@ const documentControlCloud = {
   selectedFamilyId: null,
   loading: false
 };
+ async function loadDocumentControlCloud(){
+  if(!cloudReady()) return;
+
+  documentControlCloud.loading = true;
+
+  try{
+    const [
+      familiesResult,
+      versionsResult,
+      approvalsResult,
+      eventsResult
+    ] = await Promise.all([
+      supabaseClient
+        .from("document_families")
+        .select(`
+          id,
+          organization_id,
+          document_number,
+          title,
+          document_type,
+          owner_id,
+          current_version_id,
+          status,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at
+        `)
+        .order("document_number"),
+
+      supabaseClient
+        .from("document_versions")
+        .select(`
+          id,
+          document_family_id,
+          organization_id,
+          version_major,
+          version_minor,
+          version_label,
+          state,
+          file_path,
+          file_name,
+          mime_type,
+          file_size,
+          content_hash,
+          change_summary,
+          effective_date,
+          next_review_date,
+          created_by,
+          updated_by,
+          created_at,
+          updated_at
+        `)
+        .order("created_at", { ascending:false }),
+
+      supabaseClient
+        .from("document_version_approvals")
+        .select("*")
+        .order("created_at", { ascending:false }),
+
+      supabaseClient
+        .from("document_version_events")
+        .select("*")
+        .order("created_at", { ascending:false })
+    ]);
+
+    if(familiesResult.error) throw familiesResult.error;
+    if(versionsResult.error) throw versionsResult.error;
+    if(approvalsResult.error) throw approvalsResult.error;
+    if(eventsResult.error) throw eventsResult.error;
+
+    documentControlCloud.families = familiesResult.data || [];
+    documentControlCloud.versions = versionsResult.data || [];
+    documentControlCloud.approvals = approvalsResult.data || [];
+    documentControlCloud.events = eventsResult.data || [];
+
+    documentsSyncError = "";
+
+    console.log("Document Control cloud data loaded:", {
+      families: documentControlCloud.families.length,
+      versions: documentControlCloud.versions.length,
+      approvals: documentControlCloud.approvals.length,
+      events: documentControlCloud.events.length
+    });
+
+  }catch(error){
+    console.error("Document Control cloud load failed:", error);
+    documentsSyncError =
+      error.message || "Document Control records could not be loaded.";
+  }finally{
+    documentControlCloud.loading = false;
+  }
+} 
 /* ---------- Training Matrix ---------- */
 function trainingStatus(t){
   if(!t.expiryDate) return "No Expiry";
