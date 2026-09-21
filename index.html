@@ -8750,6 +8750,10 @@ const documentControlCloud = {
       approvals: documentControlCloud.approvals.length,
       events: documentControlCloud.events.length
     });
+     console.log(
+  "Normalized Document Control mapping:",
+  getNormalizedDocumentControlDocuments()
+);       
 
   }catch(error){
     console.error("Document Control cloud load failed:", error);
@@ -8796,10 +8800,7 @@ const documentControlCloud = {
   function getNormalizedDocumentControlDocuments(){
   return documentControlCloud.families.map(mapDocumentFamilyToLocalDocument);
 }
-  console.log(
-  "Normalized Document Control mapping:",
-  getNormalizedDocumentControlDocuments()
-);
+  
 /* ---------- Training Matrix ---------- */
 function trainingStatus(t){
   if(!t.expiryDate) return "No Expiry";
