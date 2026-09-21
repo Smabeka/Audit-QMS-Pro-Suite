@@ -3616,6 +3616,534 @@ function renderCapaApprovalTab(){
   `;
 }
 
+/* ==========================================================================
+   AuditQMS Pro Suite â€” CAPA CONSOLIDATION BLOCK
+   --------------------------------------------------------------------------
+   Paste this AFTER your existing "CAPA Approval & Appeal Workflow" section.
+
+   What it does:
+     1. Adds helpers your app is missing (showToast, todayPlusDays)
+     2. Re-declares status tone/label to understand 'closed'
+     3. Rebuilds CAPA_TRANSITIONS to approval + appeal ONLY
+        (removes the three effectiveness edges that bypassed the new gates)
+     4. Re-declares fetchCapaApprovalRecords to load the formal tables
+     5. Adds the formal CAPA workflow: actions, effectiveness, closure
+     6. Replaces renderCapaApprovalTab so the formal panel is included
+
+   How the overrides work:
+     Function declarations with the same name â€” the LAST one in source
+     order wins. Because this block sits below your original code, these
+     definitions override the earlier ones automatically. You do not have
+     to delete anything.
+
+   Do NOT redeclare these â€” they already exist in your file:
+     capaApprovalRecords, capaApprovalLoaded, capaApprovalFetchError,
+     capaApprovalOpenId, showNewCapaApproval, newCapaApprovalDraft,
+     capaTransitionTarget, capaTransitionReason, capaPasswordModalOpen,
+     capaPasswordValue, capaTransitionSubmitting, capaTransitionError
+   ========================================================================== */
+
+
+/* ---------- 1. HELPERS ---------- */
+
+function showToast(message, kind){
+  if(kind === 'error'){ alert('\u26a0 ' + message); return; }
+  console.log('[toast]', message);
+}
+
+function todayPlusDays(days){
+  const d = new Date();
+  d.setDate(d.getDate() + Number(days || 0));
+  return d.toISOString().slice(0, 10);
+}
+
+
+/* ---------- 2. STATUS VOCABULARY (overrides earlier definitions) ---------- */
+
+function capaApprovalStatusTone(status){
+  return {
+    draft:"neutral", under_review:"amber", approved:"green", rejected:"rust",
+    independent_review:"rust", effectiveness_review:"amber",
+    complete:"green", closed:"green"
+  }[status] || "neutral";
+}
+
+function capaApprovalStatusLabel(status){
+  return {
+    draft:"Draft", under_review:"Under Review", approved:"Approved",
+    rejected:"Rejected", independent_review:"Independent Review (Appeal)",
+    effectiveness_review:"Effectiveness Review", complete:"Complete",
+    closed:"Closed"
+  }[status] || status;
+}
+
+
+/* ---------- 3. TRANSITION TABLE â€” APPROVAL + APPEAL ONLY ----------
+   The three effectiveness edges are deliberately removed. Effectiveness
+   and closure now go through submit_effectiveness_review and close_capa,
+   which enforce evidence, an EFFECTIVE result, and an independent
+   approver. Leaving the old edges in place would let a user mark a CAPA
+   complete with a single log_capa_event call, bypassing all of it. */
+
+CAPA_TRANSITIONS.length = 0;
+CAPA_TRANSITIONS.push(
+  { from:"draft",              to:"under_review",     rpc:"log_capa_event",     eventType:"submitted",       roles:["Employee","Department Manager","Admin"], creatorOnly:true,  independentReview:false, minChars:10, label:"Submit for Review" },
+  { from:"under_review",       to:"approved",         rpc:"log_capa_event",     eventType:"approved",        roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:true,  minChars:20, label:"Approve CAPA", reviewType:"initial", decision:"approved" },
+  { from:"under_review",       to:"rejected",         rpc:"log_capa_event",     eventType:"rejected",        roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:true,  minChars:10, label:"Reject CAPA", reviewType:"initial", decision:"rejected" },
+  { from:"rejected",           to:"independent_review", rpc:"submit_capa_appeal", eventType:"appeal_submitted", roles:["Employee","Department Manager","Admin"], creatorOnly:true,  independentReview:false, minChars:20, label:"Appeal Rejection" },
+  { from:"independent_review", to:"approved",         rpc:"resolve_capa_appeal", eventType:"appeal_upheld",    roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Uphold Appeal (Approve)", decision:"approved" },
+  { from:"independent_review", to:"rejected",         rpc:"resolve_capa_appeal", eventType:"appeal_denied",    roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Deny Appeal", decision:"rejected" }
+);
+
+
+/* ---------- 4. LOADER (overrides fetchCapaApprovalRecords) ----------
+   Loads only tables that exist after the completion migration. The old
+   version also queried capa_evidence / capa_reviews / capa_appeals via a
+   single Promise.all â€” if any of those is missing, the whole CAPA tab
+   fails to load. */
+
+async function fetchCapaApprovalRecords(){
+  if(!cloudReady()) return;
+
+  const [capasRes, actionsRes, reviewsRes, eventsRes, closuresRes] = await Promise.all([
+    supabaseClient.from("capas").select("*").order("created_at", { ascending:false }),
+    supabaseClient.from("capa_actions").select("*").order("due_date", { ascending:true }),
+    supabaseClient.from("capa_effectiveness_reviews").select("*").order("created_at", { ascending:false }),
+    supabaseClient.from("capa_events").select("*").order("timestamp", { ascending:true }),
+
+    supabaseClient.from("capa_closure_approvals").select("*").order("approved_at", { ascending:true }),
+  ]);
+
+  const firstError = [capasRes, actionsRes, reviewsRes, eventsRes, closuresRes].find(r => r.error);
+  if(firstError){
+    console.error(firstError.error.message);
+    capaApprovalFetchError = firstError.error.message;
+    capaApprovalLoaded = true;
+    render();
+    return;
+  }
+
+  capaApprovalFetchError = "";
+
+  const map = {};
+  (capasRes.data || []).forEach(row => {
+    map[row.id] = { ...row, actions:[], reviews:[], events:[], closures:[] };
+  });
+  (actionsRes.data  || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].actions.push(r); });
+  (reviewsRes.data  || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].reviews.push(r); });
+  (eventsRes.data   || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].events.push(r); });
+  (closuresRes.data || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].closures.push(r); });
+
+  capaApprovalRecords = map;
+  capaApprovalLoaded = true;
+  render();
+}
+
+async function loadFormalCapa(capaId){
+  const { data, error } = await supabaseClient
+    .from("capas").select("*").eq("id", capaId).maybeSingle();
+  if(error){ showToast('Could not load CAPA: ' + error.message, 'error'); return null; }
+  return data;
+}
+
+
+/* ---------- 5. FORMAL CAPA HELPERS ---------- */
+
+function formalCapaIsClosed(record){
+  return String(record && record.status || '').toLowerCase() === 'closed';
+}
+
+function formalCapaOpenActions(record){
+  return (record.actions || []).filter(a => String(a.status || '').toUpperCase() !== 'COMPLETED');
+}
+
+function formalCapaHasEffectiveReview(record){
+  return (record.reviews || []).some(r => r.result === 'EFFECTIVE');
+}
+
+function formalCapaClosureBlockers(record){
+  const blockers = [];
+  const open = formalCapaOpenActions(record);
+  if(open.length) blockers.push(open.length + ' action(s) still open');
+  if(!(record.reviews || []).length) blockers.push('no effectiveness review');
+  else if(!formalCapaHasEffectiveReview(record)) blockers.push('no EFFECTIVE result');
+  return blockers;
+}
+
+function parseEvidenceJson(raw){
+  if(raw === null) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if(!Array.isArray(parsed) || parsed.length === 0){
+      showToast('Provide a non-empty JSON array.', 'error');
+      return null;
+    }
+    return parsed;
+  } catch(e){
+    showToast('Evidence must be valid JSON.', 'error');
+    return null;
+  }
+}
+
+
+/* ---------- 6. ADD ACTION ---------- */
+
+async function addFormalCapaAction(capaId){
+  const capa = await loadFormalCapa(capaId);
+  if(!capa) return;
+  if(formalCapaIsClosed(capa)){ showToast('This CAPA is closed.', 'error'); return; }
+
+  const description = prompt('Action description');
+  if(!description || !description.trim()) return;
+
+  const actionType = prompt('Type: CONTAINMENT, CORRECTIVE, or PREVENTIVE', 'CORRECTIVE');
+  const allowed = ['CONTAINMENT','CORRECTIVE','PREVENTIVE'];
+  if(!allowed.includes(actionType)){ showToast('Invalid action type.', 'error'); return; }
+
+  const dueDate = prompt('Due date (YYYY-MM-DD)', todayPlusDays(30));
+  if(!dueDate){ showToast('Due date is required.', 'error'); return; }
+
+  const { data: userData, error: userError } = await supabaseClient.auth.getUser();
+  const actorId = userData && userData.user && userData.user.id;
+  if(userError || !actorId){ showToast('Please sign in again.', 'error'); return; }
+
+  const responsible = prompt('Responsible person profile UUID', actorId);
+  if(!responsible){ showToast('Responsible person is required.', 'error'); return; }
+
+  const { error } = await supabaseClient.from("capa_actions").insert([{
+    capa_id: capa.id,
+    description: description.trim(),
+    action_type: actionType,
+    responsible_person: responsible,
+    due_date: dueDate,
+    created_by: actorId,
+    organization_id: capa.organization_id
+  }]);
+
+  if(error){ showToast('Could not add action: ' + error.message, 'error'); return; }
+
+  logActivity('CAPA action added: ' + (capa.reference_number || capa.id));
+  showToast('Action added.');
+  await fetchCapaApprovalRecords();
+}
+
+
+/* ---------- 7. COMPLETE ACTION ---------- */
+
+async function completeFormalCapaAction(actionId){
+  const raw = prompt(
+    'Completion evidence as JSON array',
+    '[{"note":"Evidence attached"}]'
+  );
+  const evidence = parseEvidenceJson(raw);
+  if(!evidence) return;
+
+  const { error } = await supabaseClient.rpc('complete_capa_action', {
+    p_action_id: actionId,
+    p_completion_evidence: evidence
+  });
+
+  if(error){ showToast('Could not complete action: ' + error.message, 'error'); return; }
+
+  showToast('Action completed.');
+  await fetchCapaApprovalRecords();
+}
+
+
+/* ---------- 8. EFFECTIVENESS REVIEW ---------- */
+
+async function submitFormalCapaEffectivenessReview(capaId){
+  const capa = await loadFormalCapa(capaId);
+  if(!capa) return;
+  if(formalCapaIsClosed(capa)){ showToast('This CAPA is closed.', 'error'); return; }
+
+  const open = formalCapaOpenActions(capaApprovalRecords[capaId] || {});
+  if(open.length){
+    showToast('Complete all actions before submitting an effectiveness review.', 'error');
+    return;
+  }
+
+  const result = prompt('Result: EFFECTIVE, PARTIALLY_EFFECTIVE or NOT_EFFECTIVE', 'EFFECTIVE');
+  if(!['EFFECTIVE','PARTIALLY_EFFECTIVE','NOT_EFFECTIVE'].includes(result)){
+    showToast('Invalid result.', 'error');
+    return;
+  }
+
+  const findings = prompt('Findings');
+  if(!findings || !findings.trim()){ showToast('Findings are required.', 'error'); return; }
+
+  const evidence = parseEvidenceJson(prompt(
+    'Evidence as JSON array',
+    '[{"note":"Reviewed 3 months of records"}]'
+  ));
+  if(!evidence) return;
+
+  const method = prompt('Verification method', capa.verification_method || '') || null;
+
+  const { error } = await supabaseClient.rpc('submit_effectiveness_review', {
+    p_capa_id: capaId,
+    p_action_id: null,
+    p_findings: findings.trim(),
+    p_result: result,
+    p_evidence: evidence,
+    p_method: method
+  });
+
+  if(error){ showToast('Effectiveness review failed: ' + error.message, 'error'); return; }
+
+  logActivity('CAPA effectiveness review: ' + (capa.reference_number || capaId) + ' \u2192 ' + result);
+  showToast('Effectiveness review submitted.');
+  await fetchCapaApprovalRecords();
+}
+
+
+/* ---------- 9. CLOSURE ---------- */
+
+async function closeFormalCapa(capaId){
+  const comment = prompt('Closure approval comment');
+  if(comment === null) return;
+
+  const { error } = await supabaseClient.rpc('close_capa', {
+    p_capa_id: capaId,
+    p_decision: 'CLOSED',
+    p_comment: comment
+  });
+
+  if(error){ showToast('CAPA cannot be closed: ' + error.message, 'error'); return; }
+
+  logActivity('CAPA closed: ' + capaId);
+  showToast('CAPA closed.');
+  await fetchCapaApprovalRecords();
+}
+
+async function reopenFormalCapa(capaId){
+  const comment = prompt('Reason for reopening');
+  if(!comment || !comment.trim()){ showToast('A reason is required.', 'error'); return; }
+
+  const { error } = await supabaseClient.rpc('close_capa', {
+    p_capa_id: capaId,
+    p_decision: 'REOPENED',
+    p_comment: comment.trim()
+  });
+
+  if(error){ showToast('Could not reopen: ' + error.message, 'error'); return; }
+
+  logActivity('CAPA reopened: ' + capaId);
+  showToast('CAPA reopened.');
+  await fetchCapaApprovalRecords();
+}
+
+
+/* ---------- 10. FOLLOW-UP CAPA ---------- */
+
+async function createFormalFollowupCapa(capaId){
+  const title = prompt('Follow-up CAPA title');
+  if(!title || !title.trim()) return;
+  const description = prompt('Follow-up description') || '';
+
+  const { error } = await supabaseClient.rpc('create_followup_capa', {
+    p_parent_capa_id: capaId,
+    p_title: title.trim(),
+    p_description: description
+  });
+
+  if(error){ showToast('Could not create follow-up: ' + error.message, 'error'); return; }
+
+  showToast('Follow-up CAPA created.');
+  await fetchCapaApprovalRecords();
+}
+
+
+/* ---------- 11. FORMAL PANEL ---------- */
+
+function renderFormalCapaPanel(r){
+  const isClosed = formalCapaIsClosed(r);
+  const blockers = formalCapaClosureBlockers(r);
+  const hasEffective = formalCapaHasEffectiveReview(r);
+  const closure = (r.closures || [])[0] || null;
+
+  const actionRows = (r.actions || []).length
+    ? r.actions.map(a => `
+        <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);">
+          <div style="min-width:0;">
+            <span class="tag tag-neutral" style="font-size:10px;">${esc(a.action_type || 'CORRECTIVE')}</span>
+            <span style="font-size:12.5px;margin-left:6px;">${esc(a.description)}</span>
+            <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">
+              ${esc(a.status || '')} \u00b7 due ${esc(a.due_date || '\u2014')}
+              \u00b7 evidence ${esc(String((a.completion_evidence || []).length))}
+            </div>
+          </div>
+          ${(!isClosed && String(a.status || '').toUpperCase() !== 'COMPLETED')
+            ? `<button class="btn btn-ghost" style="font-size:11px;" data-action="complete-formal-action" data-action-id="${esc(a.id)}">Complete</button>`
+            : ''}
+        </div>
+      `).join('')
+    : `<p class="muted-italic" style="font-size:12px;">No actions recorded.</p>`;
+
+  const reviewRows = (r.reviews || []).length
+    ? r.reviews.map(v => `
+        <div style="padding:6px 0;border-bottom:1px solid var(--line2);">
+          <span class="tag tag-${v.result === 'EFFECTIVE' ? 'green' : 'rust'}" style="font-size:10px;">${esc(v.result)}</span>
+          <span style="font-size:12.5px;margin-left:6px;">${esc(v.findings || '')}</span>
+          <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">
+            ${esc(v.method || '\u2014')} \u00b7 ${new Date(v.created_at).toLocaleString()}
+          </div>
+        </div>
+      `).join('')
+    : `<p class="muted-italic" style="font-size:12px;">No effectiveness reviews.</p>`;
+
+  return `
+    <div class="top-border" style="margin-top:12px;padding-top:12px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
+        Formal CAPA \u2014 Actions, Effectiveness &amp; Closure
+      </div>
+
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 4px;">Actions</div>
+      ${actionRows}
+      ${isClosed ? '' : `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="add-formal-action" data-id="${esc(r.id)}">+ Add Action</button>`}
+
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
+      ${reviewRows}
+      ${(!isClosed && !blockers.some(b => b.indexOf('action') === 0))
+        ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
+        : ''}
+      ${(!isClosed && hasEffective)
+        ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="create-formal-followup" data-id="${esc(r.id)}">Create Follow-up CAPA</button>`
+        : ''}
+
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Closure</div>
+      ${isClosed ? `
+        <div class="card p4" style="background:#eefbf1;border-color:var(--green);">
+          <p style="font-size:12.5px;margin:0;">Closed${closure && closure.approved_at ? ' \u00b7 ' + new Date(closure.approved_at).toLocaleString() : ''}</p>
+          ${closure && closure.comment ? `<p class="muted-italic" style="font-size:11.5px;margin-top:4px;">${esc(closure.comment)}</p>` : ''}
+          <p class="muted-italic" style="font-size:11px;margin-top:4px;">This CAPA is closed and immutable.</p>
+        </div>
+        <button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="reopen-formal-capa" data-id="${esc(r.id)}">Reopen CAPA</button>
+      ` : `
+        ${blockers.length
+          ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">Blocked: ${esc(blockers.join(', '))}</p>`
+          : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">All closure conditions met.</p>`}
+        <button class="btn btn-primary" style="font-size:12px;" data-action="close-formal-capa" data-id="${esc(r.id)}" ${blockers.length ? 'disabled' : ''}>Approve Closure</button>
+      `}
+    </div>
+  `;
+}
+
+
+/* ---------- 12. CAPA TAB (overrides renderCapaApprovalTab) ---------- */
+
+function renderCapaApprovalTab(){
+  if(!cloudReady()){
+    return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use the CAPA Approval Workflow.</p></div>`;
+  }
+  if(!capaApprovalLoaded){
+    fetchCapaApprovalRecords();
+    return `<div class="card"><p class="muted-italic">Loading\u2026</p></div>`;
+  }
+  if(capaApprovalFetchError){
+    return `
+      <div class="card">
+        <h2 class="serif" style="margin:0 0 8px;font-size:18px;">\ud83d\uddc2\ufe0f CAPA Approval Workflow</h2>
+        <p style="color:var(--rust);font-size:13px;">\u26a0 Could not load CAPA records: ${esc(capaApprovalFetchError)}</p>
+        <button class="btn btn-ghost" style="font-size:12px;margin-top:8px;" data-action="retry-capa-approval">Retry</button>
+      </div>
+    `;
+  }
+
+  const records = Object.values(capaApprovalRecords)
+    .sort((a,b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
+  return `
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 class="serif" style="margin:0;font-size:18px;">\ud83d\uddc2\ufe0f CAPA Approval Workflow</h2>
+        <button class="btn btn-primary" data-action="open-new-capa-approval">+ New CAPA Record</button>
+      </div>
+      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Approval, effectiveness verification and closure of the corrective action itself. Separate from Dispute Tracking (v2) on individual findings.</p>
+      ${records.length === 0 ? `<p class="muted-italic">No CAPA records yet.</p>` : records.map(r => {
+        const isOpen = capaApprovalOpenId === r.id;
+        const edges = eligibleCapaTransitions(r);
+        return `
+        <div class="top-border" style="padding:10px 0;">
+          <button data-action="toggle-capa-approval" data-id="${esc(r.id)}" style="all:unset;cursor:pointer;display:flex;width:100%;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:600;">${esc(r.reference_number || '(no ref)')} \u2014 ${esc(r.title)}</div>
+              <div class="muted-italic" style="font-size:12px;">${esc((r.description || '').slice(0,100))}${(r.description || '').length > 100 ? '\u2026' : ''}</div>
+            </div>
+            <span class="tag tag-${capaApprovalStatusTone(r.status)}" style="font-size:10px;white-space:nowrap;">${esc(capaApprovalStatusLabel(r.status))}</span>
+          </button>
+          ${isOpen ? `
+            <div style="margin-top:10px;padding:10px;border:1px solid var(--line2);border-radius:8px;">
+              ${r.root_cause ? `<p style="font-size:13px;"><b>Root Cause:</b> ${esc(r.root_cause)}</p>` : ''}
+              ${r.corrective_action ? `<p style="font-size:13px;"><b>Corrective Action:</b> ${esc(r.corrective_action)}</p>` : ''}
+
+              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;">Approval History</div>
+              ${(r.events || []).map(ev => `
+                <div style="padding:5px 0;border-bottom:1px solid var(--line2);">
+                  <span class="tag tag-${capaApprovalStatusTone(ev.new_status)}" style="font-size:10px;">${esc(ev.event_type)}</span>
+                  <span style="font-size:12px;margin-left:4px;">${esc(ev.reason || '')}</span>
+                  <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">${new Date(ev.timestamp || ev.created_at).toLocaleString()}</div>
+                </div>
+              `).join('') || `<p class="muted-italic" style="font-size:12px;">No events yet.</p>`}
+
+              ${renderFormalCapaPanel(r)}
+
+              <div class="flex-wrap" style="margin-top:10px;">
+                ${edges.map(edge => `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-capa-transition" data-id="${esc(r.id)}" data-to="${esc(edge.to)}">${esc(edge.label)}</button>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+      `;}).join('')}
+    </div>
+    ${showNewCapaApproval ? `
+      <div class="modal-overlay" data-action="close-new-capa-approval">
+        <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
+          <h3 class="serif" style="margin:0 0 12px;font-size:17px;color:var(--navy);">New CAPA Record</h3>
+          <label class="field" style="margin-bottom:8px;">Title
+            <input id="new-capa-title" value="${esc(newCapaApprovalDraft.title)}" />
+          </label>
+          <label class="field" style="margin-bottom:8px;">Description
+            <textarea id="new-capa-description" rows="3">${esc(newCapaApprovalDraft.description)}</textarea>
+          </label>
+          <label class="field" style="margin-bottom:8px;">Root Cause (optional)
+            <textarea id="new-capa-root-cause" rows="2">${esc(newCapaApprovalDraft.root_cause)}</textarea>
+          </label>
+          <label class="field" style="margin-bottom:8px;">Corrective Action (optional)
+            <textarea id="new-capa-corrective-action" rows="2">${esc(newCapaApprovalDraft.corrective_action)}</textarea>
+          </label>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+            <button class="btn btn-ghost" data-action="close-new-capa-approval">Cancel</button>
+            <button class="btn btn-primary" data-action="submit-new-capa-approval">Create Draft</button>
+          </div>
+        </div>
+      </div>
+    ` : ''}
+  `;
+}
+
+
+/* ---------- 13. ACTION HANDLERS ----------
+   Register these in your existing click dispatcher, alongside the
+   handlers you already have for open-capa-transition, toggle-capa-approval,
+   submit-new-capa-approval and retry-capa-approval. */
+
+const FORMAL_CAPA_HANDLERS = {
+  'add-formal-action':            (el) => addFormalCapaAction(el.dataset.id),
+  'complete-formal-action':       (el) => completeFormalCapaAction(el.dataset.actionId),
+  'submit-formal-effectiveness':  (el) => submitFormalCapaEffectivenessReview(el.dataset.id),
+  'close-formal-capa':            (el) => closeFormalCapa(el.dataset.id),
+  'reopen-formal-capa':           (el) => reopenFormalCapa(el.dataset.id),
+  'create-formal-followup':       (el) => createFormalFollowupCapa(el.dataset.id)
+};
+
+function handleFormalCapaAction(el){
+  const fn = FORMAL_CAPA_HANDLERS[el.dataset.action];
+  if(!fn) return false;
+  fn(el);
+  return true;
+}
+
 function renderFindingCorrection(a, f){
   const pending = lastPendingCorrection(f);
   const canReview = can("manageCapa") || can("closeOthersCapa");
