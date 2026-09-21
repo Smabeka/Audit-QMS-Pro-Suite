@@ -8774,8 +8774,10 @@ const documentControlCloud = {
       )
     );
 }
-  function mapDocumentFamilyToLocalDocument(family){
+
+function mapDocumentFamilyToLocalDocument(family){
   const versions = getDocumentControlFamilyVersions(family.id);
+
   const currentVersion =
     versions.find(v => v.id === family.current_version_id) ||
     versions.find(v => v.state === "published") ||
@@ -8797,7 +8799,8 @@ const documentControlCloud = {
     normalizedCurrentVersionId: currentVersion?.id || null
   };
 }
-  function getNormalizedDocumentControlDocuments(){
+
+function getNormalizedDocumentControlDocuments(){
   return documentControlCloud.families.map(mapDocumentFamilyToLocalDocument);
 }
   
