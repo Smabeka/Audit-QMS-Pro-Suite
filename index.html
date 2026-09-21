@@ -8793,6 +8793,9 @@ const documentControlCloud = {
     normalizedCurrentVersionId: currentVersion?.id || null
   };
 }
+  function getNormalizedDocumentControlDocuments(){
+  return documentControlCloud.families.map(mapDocumentFamilyToLocalDocument);
+}
 /* ---------- Training Matrix ---------- */
 function trainingStatus(t){
   if(!t.expiryDate) return "No Expiry";
