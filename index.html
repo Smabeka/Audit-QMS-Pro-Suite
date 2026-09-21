@@ -586,6 +586,7 @@ async function initCloudSession(){
       currentCloudUser = data.session.user; render();
       await fetchMyProfile();
       if(currentProfile && currentProfile.status === "Active"){
+        loadDocumentControlCloud();
         fetchDocumentsFromCloud();
         subscribeDocumentsRealtime();
         fetchCapaFindingsFromCloud();
