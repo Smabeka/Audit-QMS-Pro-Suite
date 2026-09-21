@@ -2132,8 +2132,19 @@ function bindCapaApprovalHandlers(){
   document.querySelectorAll('[data-action="submit-capa-password"]').forEach(el=>el.onclick=()=>{
     submitCapaTransitionSigned();
   });
-}
 
+  /* ---------- Formal CAPA workflow (consolidation block) ---------- */
+  document.querySelectorAll(
+    '[data-action="add-formal-action"],' +
+    '[data-action="complete-formal-action"],' +
+    '[data-action="submit-formal-effectiveness"],' +
+    '[data-action="close-formal-capa"],' +
+    '[data-action="reopen-formal-capa"],' +
+    '[data-action="create-formal-followup"]'
+  ).forEach(el=>{
+    el.onclick = () => handleFormalCapaAction(el);
+  });
+}
 
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
