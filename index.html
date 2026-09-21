@@ -3972,7 +3972,7 @@ function renderFormalCapaPanel(r){
   const blockers = formalCapaClosureBlockers(r);
   const hasEffective = formalCapaHasEffectiveReview(r);
   const closure = (r.closures || [])[0] || null;
-
+  const isApproved = String(r.status || '').toLowerCase() === 'approved';                                               
   const actionRows = (r.actions || []).length
     ? r.actions.map(a => `
         <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);">
@@ -4015,7 +4015,7 @@ function renderFormalCapaPanel(r){
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
       ${reviewRows}
-      ${(!isClosed && !blockers.some(b => b.indexOf('action') === 0))
+      ${(!isClosed && isApproved && !blockers.some(b => b.indexOf('action') === 0))
         ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
         : ''}
       ${(!isClosed && hasEffective)
@@ -4033,8 +4033,10 @@ function renderFormalCapaPanel(r){
       ` : `
         ${blockers.length
           ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">Blocked: ${esc(blockers.join(', '))}</p>`
-          : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">All closure conditions met.</p>`}
-        <button class="btn btn-primary" style="font-size:12px;" data-action="close-formal-capa" data-id="${esc(r.id)}" ${blockers.length ? 'disabled' : ''}>Approve Closure</button>
+          : (!isApproved
+              ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">Blocked: CAPA must be approved before closure.</p>`
+              : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">All closure conditions met.</p>`)}
+        <button class="btn btn-primary" style="font-size:12px;" data-action="close-formal-capa" data-id="${esc(r.id)}" ${(blockers.length || !isApproved) ? 'disabled' : ''}>Approve Closure</button>
       `}
     </div>
   `;
