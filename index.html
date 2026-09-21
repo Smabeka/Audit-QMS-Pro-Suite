@@ -8759,6 +8759,17 @@ const documentControlCloud = {
     documentControlCloud.loading = false;
   }
 } 
+  function getDocumentControlFamilyVersions(familyId){
+  return documentControlCloud.versions
+    .filter(v => v.document_family_id === familyId)
+    .sort((a, b) =>
+      String(b.version_label || "").localeCompare(
+        String(a.version_label || ""),
+        undefined,
+        { numeric: true }
+      )
+    );
+}
 /* ---------- Training Matrix ---------- */
 function trainingStatus(t){
   if(!t.expiryDate) return "No Expiry";
