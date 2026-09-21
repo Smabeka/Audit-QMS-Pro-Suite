@@ -8770,6 +8770,29 @@ const documentControlCloud = {
       )
     );
 }
+  function mapDocumentFamilyToLocalDocument(family){
+  const versions = getDocumentControlFamilyVersions(family.id);
+  const currentVersion =
+    versions.find(v => v.id === family.current_version_id) ||
+    versions.find(v => v.state === "published") ||
+    versions[0] ||
+    null;
+
+  return {
+    id: family.id,
+    title: family.title || "",
+    docNumber: family.document_number || "",
+    category: family.document_type || "",
+    version: currentVersion?.version_label || "",
+    status: currentVersion?.state || family.status || "",
+    owner: family.owner_id || "",
+    issueDate: currentVersion?.effective_date || "",
+    reviewDate: currentVersion?.next_review_date || "",
+    notes: currentVersion?.change_summary || "",
+    normalizedFamilyId: family.id,
+    normalizedCurrentVersionId: currentVersion?.id || null
+  };
+}
 /* ---------- Training Matrix ---------- */
 function trainingStatus(t){
   if(!t.expiryDate) return "No Expiry";
