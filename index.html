@@ -9295,7 +9295,9 @@ const documentControlCloud = {
   "Normalized Document Control mapping:",
   getNormalizedDocumentControlDocuments()
 );       
-
+function getDocumentControlDisplayDocuments(){
+  return getNormalizedDocumentControlDocuments();
+}
   }catch(error){
     console.error("Document Control cloud load failed:", error);
     documentsSyncError =
