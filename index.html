@@ -3874,6 +3874,34 @@ async function submitFormalCapaEffectivenessReview(capaId){
     return;
   }
 
+  // --- load completed actions so the review can be attached to one ---
+  const { data: actionRows, error: actionErr } = await supabaseClient
+    .from('capa_actions')
+    .select('id, action_number, description, status')
+    .eq('capa_id', capaId)
+    .eq('status', 'COMPLETED')
+    .order('action_number');
+
+  if(actionErr){ showToast('Could not load actions: ' + actionErr.message, 'error'); return; }
+  if(!actionRows || !actionRows.length){
+    showToast('No completed actions to review.', 'error');
+    return;
+  }
+
+  let actionId;
+  if(actionRows.length === 1){
+    actionId = actionRows[0].id;
+  } else {
+    const menu = actionRows.map((a, i) => `${i+1}. #${a.action_number} ${a.description}`).join('\n');
+    const pick = prompt('Which action does this review cover?\n\n' + menu, '1');
+    const idx = parseInt(pick, 10) - 1;
+    if(!(idx >= 0 && idx < actionRows.length)){
+      showToast('Invalid action selection.', 'error');
+      return;
+    }
+    actionId = actionRows[idx].id;
+  }
+
   const result = prompt('Result: EFFECTIVE, PARTIALLY_EFFECTIVE or NOT_EFFECTIVE', 'EFFECTIVE');
   if(!['EFFECTIVE','PARTIALLY_EFFECTIVE','NOT_EFFECTIVE'].includes(result)){
     showToast('Invalid result.', 'error');
@@ -3893,7 +3921,7 @@ async function submitFormalCapaEffectivenessReview(capaId){
 
   const { error } = await supabaseClient.rpc('submit_effectiveness_review', {
     p_capa_id: capaId,
-    p_action_id: null,
+    p_action_id: actionId,
     p_findings: findings.trim(),
     p_result: result,
     p_evidence: evidence,
