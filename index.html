@@ -2597,7 +2597,7 @@ function docRowToLocal(row){
 }
 function docLocalToRow(d){
   return {
-    id: d.id, title: d.title, doc_number: d.docNumber, category: d.category,
+    id: d.id,organization_id: currentProfile?.organization_id || null, title: d.title, doc_number: d.docNumber, category: d.category,
     version: d.version, status: d.status, owner: d.owner,
     issue_date: d.issueDate||null, review_date: d.reviewDate||null,
     reviewed_by: d.reviewedBy||null, reviewed_date: d.reviewedDate||null,
