@@ -3994,13 +3994,12 @@ async function createFormalFollowupCapa(capaId){
 
 
 /* ---------- 11. FORMAL PANEL ---------- */
-
 function renderFormalCapaPanel(r){
   const isClosed = formalCapaIsClosed(r);
   const blockers = formalCapaClosureBlockers(r);
   const hasEffective = formalCapaHasEffectiveReview(r);
   const closure = (r.closures || [])[0] || null;
-  const isApproved = String(r.status || '').toLowerCase() === 'approved';                                               
+
   const actionRows = (r.actions || []).length
     ? r.actions.map(a => `
         <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);">
@@ -4043,71 +4042,7 @@ function renderFormalCapaPanel(r){
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
       ${reviewRows}
-      ${(!isClosed && isApproved && !blockers.some(b => b.indexOf('action') === 0))
-        ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
-        : ''}
-      ${(!isClosed && hasEffective)
-        ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="create-formal-followup" data-id="${esc(r.id)}">Create Follow-up CAPA</button>`
-        : ''}
-function renderFormalCapaPanel(r){
-  const isClosed = formalCapaIsClosed(r);
-  const blockers = formalCapaClosureBlockers(r);
-  const hasEffective = formalCapaHasEffectiveReview(r);
-  const closure = (r.closures || [])[0] || null;
-  const capaStatus = String(r.status || '').toLowerCase();
-
-const canStartEffectiveness = [
-  'approved',
-  'effectiveness_review'
-].includes(capaStatus);
-
-const canClose = [
-  'approved',
-  'effectiveness_review'
-].includes(capaStatus);                                               
-  const actionRows = (r.actions || []).length
-    ? r.actions.map(a => `
-        <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);">
-          <div style="min-width:0;">
-            <span class="tag tag-neutral" style="font-size:10px;">${esc(a.action_type || 'CORRECTIVE')}</span>
-            <span style="font-size:12.5px;margin-left:6px;">${esc(a.description)}</span>
-            <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">
-              ${esc(a.status || '')} \u00b7 due ${esc(a.due_date || '\u2014')}
-              \u00b7 evidence ${esc(String((a.completion_evidence || []).length))}
-            </div>
-          </div>
-          ${(!isClosed && String(a.status || '').toUpperCase() !== 'COMPLETED')
-            ? `<button class="btn btn-ghost" style="font-size:11px;" data-action="complete-formal-action" data-action-id="${esc(a.id)}">Complete</button>`
-            : ''}
-        </div>
-      `).join('')
-    : `<p class="muted-italic" style="font-size:12px;">No actions recorded.</p>`;
-
-  const reviewRows = (r.reviews || []).length
-    ? r.reviews.map(v => `
-        <div style="padding:6px 0;border-bottom:1px solid var(--line2);">
-          <span class="tag tag-${v.result === 'EFFECTIVE' ? 'green' : 'rust'}" style="font-size:10px;">${esc(v.result)}</span>
-          <span style="font-size:12.5px;margin-left:6px;">${esc(v.findings || '')}</span>
-          <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">
-            ${esc(v.method || '\u2014')} \u00b7 ${new Date(v.created_at).toLocaleString()}
-          </div>
-        </div>
-      `).join('')
-    : `<p class="muted-italic" style="font-size:12px;">No effectiveness reviews.</p>`;
-
-  return `
-    <div class="top-border" style="margin-top:12px;padding-top:12px;">
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
-        Formal CAPA \u2014 Actions, Effectiveness &amp; Closure
-      </div>
-
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 4px;">Actions</div>
-      ${actionRows}
-      ${isClosed ? '' : `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="add-formal-action" data-id="${esc(r.id)}">+ Add Action</button>`}
-
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
-      ${reviewRows}
-      ${(!isClosed && canStartEffectiveness && !blockers.some(b => b.indexOf('action') === 0))
+      ${(!isClosed && !blockers.some(b => b.indexOf('action') === 0))
         ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
         : ''}
       ${(!isClosed && hasEffective)
@@ -4124,30 +4059,16 @@ const canClose = [
         <button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="reopen-formal-capa" data-id="${esc(r.id)}">Reopen CAPA</button>
       ` : `
         ${blockers.length
-  ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">
-       Blocked: ${esc(blockers.join(', '))}
-     </p>`
-  : (!canClose
-      ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">
-           Blocked: CAPA must be approved before closure.
-         </p>`
-      : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">
-           All closure conditions met.
-         </p>`)}
-
-<button
-  class="btn btn-primary"
-  style="font-size:12px;"
-  data-action="close-formal-capa"
-  data-id="${esc(r.id)}"
-  ${(blockers.length || !canClose) ? 'disabled' : ''}>
-  Approve Closure
-</button>
+          ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">Blocked: ${esc(blockers.join(', '))}</p>`
+          : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">All closure conditions met.</p>`}
+        <button class="btn btn-primary" style="font-size:12px;" data-action="close-formal-capa" data-id="${esc(r.id)}" ${blockers.length ? 'disabled' : ''}>Approve Closure</button>
       `}
     </div>
   `;
 }
 
+          
+  
 
 /* ---------- 12. CAPA TAB (overrides renderCapaApprovalTab) ---------- */
 
