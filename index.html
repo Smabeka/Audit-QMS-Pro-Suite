@@ -2079,11 +2079,20 @@ function bindHiraPtwTabHandlers(){
     await fetchHiraAndPermitRecords();
   });
 }
+  
 
 function bindCapaApprovalHandlers(){
-  document.querySelectorAll('[data-action="retry-capa-approval"]').forEach(el=>el.onclick=()=>{
-    capaApprovalLoaded = false; capaApprovalFetchError = ""; render();
-  });
+  attachFormalCapaDelegatedHandler();
+
+  document
+    .querySelectorAll('[data-action="retry-capa-approval"]')
+    .forEach(el => {
+      el.onclick = () => {
+        capaApprovalLoaded = false;
+        capaApprovalFetchError = "";
+        render();
+      };
+    });
   document.querySelectorAll('[data-action="open-new-capa-approval"]').forEach(el=>el.onclick=()=>{
     showNewCapaApproval = true;
     newCapaApprovalDraft = { title:"", description:"", root_cause:"", corrective_action:"" };
@@ -2149,15 +2158,16 @@ function bindCapaApprovalHandlers(){
       };
     });
    /* ---------- Formal CAPA workflow (consolidation block) ---------- */
-   document.querySelectorAll(
-    '[data-action="add-formal-action"],' +
+   document
+    .querySelectorAll(
     '[data-action="complete-formal-action"],' +
     '[data-action="submit-formal-effectiveness"],' +
     '[data-action="close-formal-capa"],' +
     '[data-action="reopen-formal-capa"],' +
     '[data-action="create-formal-followup"],' +
     '[data-action="resolve-capa-appeal"]'
-  ).forEach(el => {
+  )
+  .forEach(el => {
     el.onclick = async () => {
       if(el.dataset.action === 'resolve-capa-appeal'){
         await handleCapaAppealDecision(el);
@@ -2236,10 +2246,11 @@ function renderFormalActionModal(){
           </button>
 
           <button
-            class="btn btn-primary"
-            data-action="submit-formal-action">
-            Add Action
-          </button>
+          class="btn btn-ghost"
+          data-action="add-formal-action"
+          data-id="THE-CAPA-UUID">
+         + Add Action
+         </button>
         </div>
       </div>
     </div>
@@ -4510,7 +4521,34 @@ async function handleFormalCapaAction(el){
   await fn(el);
   return true;
 }
+let formalCapaDelegatedHandlerAttached = false;
 
+function attachFormalCapaDelegatedHandler(){
+  if(formalCapaDelegatedHandlerAttached) return;
+
+  formalCapaDelegatedHandlerAttached = true;
+
+  document.addEventListener('click', async event => {
+    const el = event.target.closest('[data-action="add-formal-action"]');
+
+    if(!el) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const capaId = el.dataset.id;
+
+    console.log('Add CAPA action clicked:', capaId);
+
+    if(!capaId){
+      showToast('CAPA ID is missing.', 'error');
+      return;
+    }
+
+    await addFormalCapaAction(capaId);
+  });
+}
+  
   function addFormalCapaAction(capaId){
   if(!capaId){
     showToast("CAPA ID is missing.", "error");
