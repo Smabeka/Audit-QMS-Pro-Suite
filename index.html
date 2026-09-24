@@ -3716,25 +3716,59 @@ CAPA_TRANSITIONS.push(
 );
 
 
-/* ---------- 4. LOADER (overrides fetchCapaApprovalRecords) ----------
-   Loads only tables that exist after the completion migration. The old
-   version also queried capa_evidence / capa_reviews / capa_appeals via a
-   single Promise.all â€” if any of those is missing, the whole CAPA tab
-   fails to load. */
+/* ---------- 4. LOADER ---------- */
 
 async function fetchCapaApprovalRecords(){
   if(!cloudReady()) return;
 
-  const [capasRes, actionsRes, reviewsRes, eventsRes, closuresRes] = await Promise.all([
-    supabaseClient.from("capas").select("*").order("created_at", { ascending:false }),
-    supabaseClient.from("capa_actions").select("*").order("due_date", { ascending:true }),
-    supabaseClient.from("capa_effectiveness_reviews").select("*").order("created_at", { ascending:false }),
-    supabaseClient.from("capa_events").select("*").order("timestamp", { ascending:true }),
+  const [
+    capasRes,
+    actionsRes,
+    reviewsRes,
+    eventsRes,
+    closuresRes,
+    appealsRes
+  ] = await Promise.all([
+    supabaseClient
+      .from("capas")
+      .select("*")
+      .order("created_at", { ascending: false }),
 
-    supabaseClient.from("capa_closure_approvals").select("*").order("approved_at", { ascending:true }),
+    supabaseClient
+      .from("capa_actions")
+      .select("*")
+      .order("due_date", { ascending: true }),
+
+    supabaseClient
+      .from("capa_effectiveness_reviews")
+      .select("*")
+      .order("created_at", { ascending: false }),
+
+    supabaseClient
+      .from("capa_events")
+      .select("*")
+      .order("timestamp", { ascending: true }),
+
+    supabaseClient
+      .from("capa_closure_approvals")
+      .select("*")
+      .order("approved_at", { ascending: true }),
+
+    supabaseClient
+      .from("capa_appeals")
+      .select("*")
+      .order("created_at", { ascending: true })
   ]);
 
-  const firstError = [capasRes, actionsRes, reviewsRes, eventsRes, closuresRes].find(r => r.error);
+  const firstError = [
+    capasRes,
+    actionsRes,
+    reviewsRes,
+    eventsRes,
+    closuresRes,
+    appealsRes
+  ].find(result => result.error);
+
   if(firstError){
     console.error(firstError.error.message);
     capaApprovalFetchError = firstError.error.message;
@@ -3746,24 +3780,51 @@ async function fetchCapaApprovalRecords(){
   capaApprovalFetchError = "";
 
   const map = {};
+
   (capasRes.data || []).forEach(row => {
-    map[row.id] = { ...row, actions:[], reviews:[], events:[], closures:[] };
+    map[row.id] = {
+      ...row,
+      actions: [],
+      reviews: [],
+      events: [],
+      closures: [],
+      appeals: []
+    };
   });
-  (actionsRes.data  || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].actions.push(r); });
-  (reviewsRes.data  || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].reviews.push(r); });
-  (eventsRes.data   || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].events.push(r); });
-  (closuresRes.data || []).forEach(r => { if(map[r.capa_id]) map[r.capa_id].closures.push(r); });
+
+  (actionsRes.data || []).forEach(row => {
+    if(map[row.capa_id]){
+      map[row.capa_id].actions.push(row);
+    }
+  });
+
+  (reviewsRes.data || []).forEach(row => {
+    if(map[row.capa_id]){
+      map[row.capa_id].reviews.push(row);
+    }
+  });
+
+  (eventsRes.data || []).forEach(row => {
+    if(map[row.capa_id]){
+      map[row.capa_id].events.push(row);
+    }
+  });
+
+  (closuresRes.data || []).forEach(row => {
+    if(map[row.capa_id]){
+      map[row.capa_id].closures.push(row);
+    }
+  });
+
+  (appealsRes.data || []).forEach(row => {
+    if(map[row.capa_id]){
+      map[row.capa_id].appeals.push(row);
+    }
+  });
 
   capaApprovalRecords = map;
   capaApprovalLoaded = true;
   render();
-}
-
-async function loadFormalCapa(capaId){
-  const { data, error } = await supabaseClient
-    .from("capas").select("*").eq("id", capaId).maybeSingle();
-  if(error){ showToast('Could not load CAPA: ' + error.message, 'error'); return null; }
-  return data;
 }
 
 
