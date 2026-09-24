@@ -3978,44 +3978,45 @@ function parseEvidenceJson(raw){
 
 /* ---------- 6. ADD ACTION ---------- */
 
-
-  async function addFormalCapaAction(capaId){
-  console.log('[CAPA DEBUG] addFormalCapaAction started', {
+async function addFormalCapaAction(capaId){
+  console.log('[CAPA DEBUG] NEW addFormalCapaAction started', {
     capaId
   });
 
-  try {
-    console.log('[CAPA DEBUG] loading CAPA');
+  try{
+    console.log('[CAPA DEBUG] before loadFormalCapa');
 
     const capa = await loadFormalCapa(capaId);
 
-    console.log('[CAPA DEBUG] loaded CAPA', capa);
+    console.log('[CAPA DEBUG] after loadFormalCapa', {
+      capa
+    });
 
     if(!capa){
-      console.error('[CAPA DEBUG] CAPA returned null');
       showToast('CAPA could not be loaded.', 'error');
       return;
     }
 
-    const closed = formalCapaIsClosed(capa);
+    console.log('[CAPA DEBUG] before formalCapaIsClosed');
 
-    console.log('[CAPA DEBUG] CAPA closed check', {
-      closed,
+    const isClosed = formalCapaIsClosed(capa);
+
+    console.log('[CAPA DEBUG] after formalCapaIsClosed', {
+      isClosed,
       status: capa.status
     });
 
-    if(closed){
+    if(isClosed){
       showToast('This CAPA is closed.', 'error');
       return;
     }
 
-    console.log('[CAPA DEBUG] opening description prompt');
+    console.log('[CAPA DEBUG] before description prompt');
 
     const description = window.prompt('Action description');
 
-    console.log('[CAPA DEBUG] description prompt completed', {
-      cancelled: description === null,
-      hasValue: !!description
+    console.log('[CAPA DEBUG] after description prompt', {
+      description
     });
 
     if(!description || !description.trim()){
@@ -4035,7 +4036,11 @@ function parseEvidenceJson(raw){
 
     const actionType = rawActionType.trim().toUpperCase();
 
-    if(!['CONTAINMENT', 'CORRECTIVE', 'PREVENTIVE'].includes(actionType)){
+    if(![
+      'CONTAINMENT',
+      'CORRECTIVE',
+      'PREVENTIVE'
+    ].includes(actionType)){
       showToast('Invalid action type.', 'error');
       return;
     }
@@ -4053,12 +4058,12 @@ function parseEvidenceJson(raw){
     const { data: userData, error: userError } =
       await supabaseClient.auth.getUser();
 
+    const actorId = userData?.user?.id || null;
+
     console.log('[CAPA DEBUG] auth result', {
-      hasUser: !!userData?.user,
+      actorId,
       userError
     });
-
-    const actorId = userData?.user?.id;
 
     if(userError || !actorId){
       showToast('Please sign in again.', 'error');
@@ -4075,7 +4080,7 @@ function parseEvidenceJson(raw){
       return;
     }
 
-    console.log('[CAPA DEBUG] inserting action');
+    console.log('[CAPA DEBUG] before action insert');
 
     const { error } = await supabaseClient
       .from('capa_actions')
@@ -4090,24 +4095,35 @@ function parseEvidenceJson(raw){
       }]);
 
     if(error){
-      console.error('[CAPA DEBUG] insert failed', error);
-      showToast('Could not add action: ' + error.message, 'error');
+      console.error('[CAPA DEBUG] action insert failed', error);
+
+      showToast(
+        'Could not add action: ' + error.message,
+        'error'
+      );
+
       return;
     }
 
-    console.log('[CAPA DEBUG] action inserted');
+    console.log('[CAPA DEBUG] action inserted successfully');
 
-    logActivity(
-      'CAPA action added: ' +
-      (capa.reference_number || capa.id)
-    );
+    if(typeof logActivity === 'function'){
+      logActivity(
+        'CAPA action added: ' +
+        (capa.reference_number || capa.id)
+      );
+    }
 
     showToast('Action added.');
     await fetchCapaApprovalRecords();
 
   } catch(error){
     console.error('[CAPA DEBUG] add action crashed', error);
-    showToast('Could not add action: ' + error.message, 'error');
+
+    showToast(
+      'Could not add action: ' + error.message,
+      'error'
+    );
   }
 }
 
