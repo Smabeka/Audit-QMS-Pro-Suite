@@ -4505,6 +4505,13 @@ function bindCorrectionModalField(){
   sel.onchange = () => {
     correctionField = sel.value;
     render();
+    return `
+  <main>
+    ${renderCurrentPage()}
+  </main>
+
+  ${renderCorrectionModal()}
+`;
   };
 }
 
