@@ -2179,8 +2179,14 @@ function bindCapaApprovalHandlers(){
   });
 }
 
-function renderFormalActionModal(){
+ function renderFormalActionModal(){
   if(!formalActionTarget) return "";
+
+  const capaId =
+    formalActionTarget.capaId ||
+    formalActionTarget.id ||
+    formalActionTarget.capa_id ||
+    "";
 
   return `
     <div
@@ -2207,11 +2213,14 @@ function renderFormalActionModal(){
         <label class="field">
           Action Type
           <select id="formal-action-type">
-            <option value="CORRECTIVE"
+            <option
+              value="CORRECTIVE"
               ${formalActionDraft.action_type === "CORRECTIVE" ? "selected" : ""}>
               Corrective
             </option>
-            <option value="PREVENTIVE"
+
+            <option
+              value="PREVENTIVE"
               ${formalActionDraft.action_type === "PREVENTIVE" ? "selected" : ""}>
               Preventive
             </option>
@@ -2220,6 +2229,7 @@ function renderFormalActionModal(){
 
         <label class="field" style="margin-top:8px;">
           Description
+
           <textarea
             id="formal-action-description"
             rows="4"
@@ -2230,6 +2240,7 @@ function renderFormalActionModal(){
 
         <label class="field" style="margin-top:8px;">
           Due Date
+
           <input
             id="formal-action-due-date"
             type="date"
@@ -2246,11 +2257,12 @@ function renderFormalActionModal(){
           </button>
 
           <button
-          class="btn btn-ghost"
-          data-action="add-formal-action"
-          data-id="THE-CAPA-UUID">
-         + Add Action
-         </button>
+            class="btn btn-ghost"
+            data-action="add-formal-action"
+            data-id="${esc(capaId)}">
+            + Add Action
+          </button>
+
         </div>
       </div>
     </div>
