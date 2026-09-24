@@ -2160,7 +2160,7 @@ function bindCapaApprovalHandlers(){
    /* ---------- Formal CAPA workflow (consolidation block) ---------- */
    document
   .querySelectorAll(
-    '[data-action="submit-formal-action"],' +
+    '[data-action="add-formal-action"],' +
     '[data-action="complete-formal-action"],' +
     '[data-action="submit-formal-effectiveness"],' +
     '[data-action="close-formal-capa"],' +
@@ -3978,10 +3978,11 @@ function parseEvidenceJson(raw){
 
 /* ---------- 6. ADD ACTION ---------- */
 
-function addFormalCapaAction(capaId){
-  if(!capaId){
-    showToast("CAPA ID is missing.", "error");
-    return;
+async function addFormalCapaAction(capaId){
+  const capa = await loadFormalCapa(capaId);
+
+  if(!capa) return;
+
   }
 
   formalActionTarget = capaId;
@@ -4514,8 +4515,8 @@ function renderCapaApprovalTab(){
    submit-new-capa-approval and retry-capa-approval. */
 
 const FORMAL_CAPA_HANDLERS = {
-  'submit-formal-action': (el) =>
-    submitFormalCapaAction(el.dataset.id),
+  'add-formal-action': (el) =>
+    addFormalCapaAction(el.dataset.id),
 
   'complete-formal-action': (el) =>
     completeFormalCapaAction(el.dataset.actionId),
