@@ -2133,18 +2133,27 @@ function bindCapaApprovalHandlers(){
     submitCapaTransitionSigned();
   });
 
-  /* ---------- Formal CAPA workflow (consolidation block) ---------- */
-  document.querySelectorAll(
+   /* ---------- Formal CAPA workflow (consolidation block) ---------- */
+   document.querySelectorAll(
     '[data-action="add-formal-action"],' +
     '[data-action="complete-formal-action"],' +
     '[data-action="submit-formal-effectiveness"],' +
     '[data-action="close-formal-capa"],' +
     '[data-action="reopen-formal-capa"],' +
-    '[data-action="create-formal-followup"]'
-  ).forEach(el=>{
-    el.onclick = () => handleFormalCapaAction(el);
+    '[data-action="create-formal-followup"],' +
+    '[data-action="resolve-capa-appeal"]'
+  ).forEach(el => {
+    el.onclick = async () => {
+      if(el.dataset.action === 'resolve-capa-appeal'){
+        await handleCapaAppealDecision(el);
+        return;
+      }
+
+      await handleFormalCapaAction(el);
+    };
   });
 }
+
 
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
