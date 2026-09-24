@@ -2132,7 +2132,22 @@ function bindCapaApprovalHandlers(){
   document.querySelectorAll('[data-action="submit-capa-password"]').forEach(el=>el.onclick=()=>{
     submitCapaTransitionSigned();
   });
+    document
+    .querySelectorAll('[data-action="close-formal-action-modal"]')
+    .forEach(el => {
+      el.onclick = () => {
+        formalActionTarget = null;
+        render();
+      };
+    });
 
+  document
+    .querySelectorAll('[data-action="submit-formal-action"]')
+    .forEach(el => {
+      el.onclick = async () => {
+        await submitFormalAction();
+      };
+    });
    /* ---------- Formal CAPA workflow (consolidation block) ---------- */
    document.querySelectorAll(
     '[data-action="add-formal-action"],' +
@@ -2154,7 +2169,83 @@ function bindCapaApprovalHandlers(){
   });
 }
 
+function renderFormalActionModal(){
+  if(!formalActionTarget) return "";
 
+  return `
+    <div
+      class="modal-overlay"
+      data-action="close-formal-action-modal">
+
+      <div
+        class="modal-card"
+        style="max-width:460px;"
+        onclick="event.stopPropagation()">
+
+        <h3
+          class="serif"
+          style="margin:0 0 4px;font-size:16px;color:var(--navy);">
+          Add CAPA Action
+        </h3>
+
+        <p
+          class="muted-italic"
+          style="font-size:12px;margin:0 0 12px;">
+          Add a corrective or preventive action to this CAPA.
+        </p>
+
+        <label class="field">
+          Action Type
+          <select id="formal-action-type">
+            <option value="CORRECTIVE"
+              ${formalActionDraft.action_type === "CORRECTIVE" ? "selected" : ""}>
+              Corrective
+            </option>
+            <option value="PREVENTIVE"
+              ${formalActionDraft.action_type === "PREVENTIVE" ? "selected" : ""}>
+              Preventive
+            </option>
+          </select>
+        </label>
+
+        <label class="field" style="margin-top:8px;">
+          Description
+          <textarea
+            id="formal-action-description"
+            rows="4"
+            placeholder="Describe the action to be completed.">${esc(
+              formalActionDraft.description || ""
+            )}</textarea>
+        </label>
+
+        <label class="field" style="margin-top:8px;">
+          Due Date
+          <input
+            id="formal-action-due-date"
+            type="date"
+            value="${esc(formalActionDraft.due_date || "")}" />
+        </label>
+
+        <div
+          style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+
+          <button
+            class="btn btn-ghost"
+            data-action="close-formal-action-modal">
+            Cancel
+          </button>
+
+          <button
+            class="btn btn-primary"
+            data-action="submit-formal-action">
+            Add Action
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+  
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
 function formatAuditNumber(n, year){ return `AUD-${year}-${String(n).padStart(4,'0')}`; }
@@ -3866,44 +3957,103 @@ function parseEvidenceJson(raw){
   }
 }
 
-
 /* ---------- 6. ADD ACTION ---------- */
 
 async function addFormalCapaAction(capaId){
+  console.log('Add action clicked:', capaId);
+
   const capa = await loadFormalCapa(capaId);
+
+  console.log('Loaded CAPA:', capa);
+
   if(!capa) return;
-  if(formalCapaIsClosed(capa)){ showToast('This CAPA is closed.', 'error'); return; }
 
-  const description = prompt('Action description');
-  if(!description || !description.trim()) return;
+  if(formalCapaIsClosed(capa)){
+    showToast('This CAPA is closed.', 'error');
+    return;
+  }
 
-  const actionType = prompt('Type: CONTAINMENT, CORRECTIVE, or PREVENTIVE', 'CORRECTIVE');
-  const allowed = ['CONTAINMENT','CORRECTIVE','PREVENTIVE'];
-  if(!allowed.includes(actionType)){ showToast('Invalid action type.', 'error'); return; }
+  const description = window.prompt('Action description');
 
-  const dueDate = prompt('Due date (YYYY-MM-DD)', todayPlusDays(30));
-  if(!dueDate){ showToast('Due date is required.', 'error'); return; }
+  if(!description || !description.trim()){
+    return;
+  }
 
-  const { data: userData, error: userError } = await supabaseClient.auth.getUser();
-  const actorId = userData && userData.user && userData.user.id;
-  if(userError || !actorId){ showToast('Please sign in again.', 'error'); return; }
+  const rawActionType = window.prompt(
+    'Type: CONTAINMENT, CORRECTIVE, or PREVENTIVE',
+    'CORRECTIVE'
+  );
 
-  const responsible = prompt('Responsible person profile UUID', actorId);
-  if(!responsible){ showToast('Responsible person is required.', 'error'); return; }
+  if(!rawActionType){
+    return;
+  }
 
-  const { error } = await supabaseClient.from("capa_actions").insert([{
-    capa_id: capa.id,
-    description: description.trim(),
-    action_type: actionType,
-    responsible_person: responsible,
-    due_date: dueDate,
-    created_by: actorId,
-    organization_id: capa.organization_id
-  }]);
+  const actionType = rawActionType.trim().toUpperCase();
 
-  if(error){ showToast('Could not add action: ' + error.message, 'error'); return; }
+  const allowed = [
+    'CONTAINMENT',
+    'CORRECTIVE',
+    'PREVENTIVE'
+  ];
 
-  logActivity('CAPA action added: ' + (capa.reference_number || capa.id));
+  if(!allowed.includes(actionType)){
+    showToast('Invalid action type.', 'error');
+    return;
+  }
+
+  const dueDate = window.prompt(
+    'Due date (YYYY-MM-DD)',
+    todayPlusDays(30)
+  );
+
+  if(!dueDate || !dueDate.trim()){
+    showToast('Due date is required.', 'error');
+    return;
+  }
+
+  const { data: userData, error: userError } =
+    await supabaseClient.auth.getUser();
+
+  const actorId = userData?.user?.id || null;
+
+  if(userError || !actorId){
+    showToast('Please sign in again.', 'error');
+    return;
+  }
+
+  const responsible = window.prompt(
+    'Responsible person profile UUID',
+    actorId
+  );
+
+  if(!responsible || !responsible.trim()){
+    showToast('Responsible person is required.', 'error');
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from('capa_actions')
+    .insert([{
+      capa_id: capa.id,
+      description: description.trim(),
+      action_type: actionType,
+      responsible_person: responsible.trim(),
+      due_date: dueDate.trim(),
+      created_by: actorId,
+      organization_id: capa.organization_id
+    }]);
+
+  if(error){
+    console.error('Could not add CAPA action:', error);
+    showToast('Could not add action: ' + error.message, 'error');
+    return;
+  }
+
+  logActivity(
+    'CAPA action added: ' +
+    (capa.reference_number || capa.id)
+  );
+
   showToast('Action added.');
   await fetchCapaApprovalRecords();
 }
@@ -4361,6 +4511,22 @@ async function handleFormalCapaAction(el){
   return true;
 }
 
+  function addFormalCapaAction(capaId){
+  if(!capaId){
+    showToast("CAPA ID is missing.", "error");
+    return;
+  }
+
+  formalActionTarget = capaId;
+
+  formalActionDraft = {
+    action_type: "CORRECTIVE",
+    description: "",
+    due_date: ""
+  };
+
+  render();
+}
 
 function renderFindingCorrection(a, f){
   const pending = lastPendingCorrection(f);
@@ -4515,6 +4681,7 @@ function bindCorrectionModalField(){
   };
 }
 
+  
 
 /* ---------------- Shared Risk Management (Day 3) ----------------
    Same pattern as Documents/CAPA: state.riskAssessments stays exactly
