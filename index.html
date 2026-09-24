@@ -4001,7 +4001,6 @@ async function createFormalFollowupCapa(capaId){
   await fetchCapaApprovalRecords();
 }
 
-
 /* ---------- 11. FORMAL PANEL ---------- */
 
 function renderFormalCapaPanel(r){
@@ -4011,15 +4010,51 @@ function renderFormalCapaPanel(r){
   const closure = (r.closures || [])[0] || null;
   const capaStatus = String(r.status || '').toLowerCase();
 
-const canStartEffectiveness = [
-  'approved',
-  'effectiveness_review'
-].includes(capaStatus);
+  const canStartEffectiveness = [
+    'approved',
+    'effectiveness_review'
+  ].includes(capaStatus);
 
-const canClose = [
-  'approved',
-  'effectiveness_review'
-].includes(capaStatus);                                               
+  const canClose = [
+    'approved',
+    'effectiveness_review'
+  ].includes(capaStatus);
+
+  const pendingAppeal = (r.appeals || []).find(
+    appeal =>
+      String(appeal.status || '').toLowerCase() ===
+      'under_independent_review'
+  );
+
+  const currentUserId =
+    window.currentUserId ||
+    window.currentProfile?.id ||
+    null;
+
+  const currentUserRole =
+    window.currentUserRole ||
+    window.currentProfile?.role ||
+    '';
+
+  const originalReviewerId =
+    (r.reviews || []).find(
+      review => review.review_type === 'initial'
+    )?.reviewer_id || null;
+
+  const normalizedRole =
+  String(currentUserRole || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, '_');
+
+const canResolveAppeal =
+  capaStatus === 'independent_review' &&
+  !!pendingAppeal &&
+  ['approver', 'admin', 'capa_approver'].includes(normalizedRole) &&
+  currentUserId &&
+  currentUserId !== r.created_by &&
+  currentUserId !== originalReviewerId;
+                                   
   const actionRows = (r.actions || []).length
     ? r.actions.map(a => `
         <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);">
@@ -4052,6 +4087,37 @@ const canClose = [
 
   return `
     <div class="top-border" style="margin-top:12px;padding-top:12px;">
+     ${canResolveAppeal ? `
+        <div class="card p4" style="margin:10px 0;background:#fffaf0;border-color:var(--line);">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">
+            Independent Appeal Decision
+          </div>
+
+          <p style="font-size:12px;margin:0 0 8px;">
+            ${esc(pendingAppeal.reason || 'Appeal submitted for independent review.')}
+          </p>
+
+          <button
+            class="btn btn-primary"
+            style="font-size:11px;"
+            data-action="resolve-capa-appeal"
+            data-capa-id="${esc(r.id)}"
+            data-appeal-id="${esc(pendingAppeal.id)}"
+            data-decision="approved">
+            Uphold Appeal
+          </button>
+
+          <button
+            class="btn btn-ghost"
+            style="font-size:11px;margin-left:6px;"
+            data-action="resolve-capa-appeal"
+            data-capa-id="${esc(r.id)}"
+            data-appeal-id="${esc(pendingAppeal.id)}"
+            data-decision="rejected">
+            Deny Appeal
+          </button>
+        </div>
+      ` : ''}
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
         Formal CAPA \u2014 Actions, Effectiveness &amp; Closure
       </div>
@@ -4062,7 +4128,7 @@ const canClose = [
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
       ${reviewRows}
-${(!isClosed && canStartEffectiveness && !blockers.some(b => b.indexOf('action') === 0))
+      ${(!isClosed && canStartEffectiveness && !blockers.some(b => b.indexOf('action') === 0))
         ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
         : ''}
       ${(!isClosed && hasEffective)
@@ -4079,15 +4145,31 @@ ${(!isClosed && canStartEffectiveness && !blockers.some(b => b.indexOf('action')
         <button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="reopen-formal-capa" data-id="${esc(r.id)}">Reopen CAPA</button>
       ` : `
         ${blockers.length
-          ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">Blocked: ${esc(blockers.join(', '))}</p>`
-          : (!isApproved
-              ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">Blocked: CAPA must be approved before closure.</p>`
-              : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">All closure conditions met.</p>`)}
-        <button class="btn btn-primary" style="font-size:12px;" data-action="close-formal-capa" data-id="${esc(r.id)}" ${(blockers.length || !isApproved) ? 'disabled' : ''}>Approve Closure</button>
+  ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">
+       Blocked: ${esc(blockers.join(', '))}
+     </p>`
+  : (!canClose
+      ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">
+           Blocked: CAPA must be approved before closure.
+         </p>`
+      : `<p class="muted-italic" style="font-size:11.5px;margin:0 0 6px;">
+           All closure conditions met.
+         </p>`)}
+
+<button
+  class="btn btn-primary"
+  style="font-size:12px;"
+  data-action="close-formal-capa"
+  data-id="${esc(r.id)}"
+  ${(blockers.length || !canClose) ? 'disabled' : ''}>
+  Approve Closure
+</button>
       `}
     </div>
   `;
 }
+
+
 
 /* ---------- 12. CAPA TAB (overrides renderCapaApprovalTab) ---------- */
 
