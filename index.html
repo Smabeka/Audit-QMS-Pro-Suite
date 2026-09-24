@@ -2179,14 +2179,8 @@ function bindCapaApprovalHandlers(){
   });
 }
 
- function renderFormalActionModal(){
+function renderFormalActionModal(){
   if(!formalActionTarget) return "";
-
-  const capaId =
-    formalActionTarget.capaId ||
-    formalActionTarget.id ||
-    formalActionTarget.capa_id ||
-    "";
 
   return `
     <div
@@ -2212,6 +2206,7 @@ function bindCapaApprovalHandlers(){
 
         <label class="field">
           Action Type
+
           <select id="formal-action-type">
             <option
               value="CORRECTIVE"
@@ -2259,7 +2254,7 @@ function bindCapaApprovalHandlers(){
           <button
             class="btn btn-ghost"
             data-action="add-formal-action"
-            data-id="${esc(capaId)}">
+            data-id="${esc(formalActionTarget)}">
             + Add Action
           </button>
 
@@ -2267,8 +2262,9 @@ function bindCapaApprovalHandlers(){
       </div>
     </div>
   `;
-}
-  
+} 
+          
+
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
 function formatAuditNumber(n, year){ return `AUD-${year}-${String(n).padStart(4,'0')}`; }
