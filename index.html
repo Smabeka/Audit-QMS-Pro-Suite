@@ -2159,7 +2159,8 @@ function bindCapaApprovalHandlers(){
     });
    /* ---------- Formal CAPA workflow (consolidation block) ---------- */
    document
-    .querySelectorAll(
+  .querySelectorAll(
+    '[data-action="submit-formal-action"],' +
     '[data-action="complete-formal-action"],' +
     '[data-action="submit-formal-effectiveness"],' +
     '[data-action="close-formal-capa"],' +
@@ -4513,8 +4514,8 @@ function renderCapaApprovalTab(){
    submit-new-capa-approval and retry-capa-approval. */
 
 const FORMAL_CAPA_HANDLERS = {
-  'add-formal-action': (el) =>
-    addFormalCapaAction(el.dataset.id),
+  'submit-formal-action': (el) =>
+    submitFormalCapaAction(el.dataset.id),
 
   'complete-formal-action': (el) =>
     completeFormalCapaAction(el.dataset.actionId),
