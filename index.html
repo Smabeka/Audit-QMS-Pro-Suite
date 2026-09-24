@@ -5320,6 +5320,12 @@ function clearOpenDetailViews(){
   if(typeof openChecklistId!=="undefined") openChecklistId=null;
 }
 let capaFilter = "All";
+let formalActionTarget = null;
+let formalActionDraft = {
+  action_type: "CORRECTIVE",
+  description: "",
+  due_date: ""
+}; 
 let savedFlashTimer = null;
 let auditSearch = "";
 let auditStandardFilter = "All";
