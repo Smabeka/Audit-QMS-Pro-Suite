@@ -3978,11 +3978,10 @@ function parseEvidenceJson(raw){
 
 /* ---------- 6. ADD ACTION ---------- */
 
-async function addFormalCapaAction(capaId){
-  const capa = await loadFormalCapa(capaId);
-
-  if(!capa) return;
-
+  function addFormalCapaAction(capaId){
+  if(!capaId){
+    showToast("CAPA ID is missing.", "error");
+    return;
   }
 
   formalActionTarget = capaId;
@@ -4088,7 +4087,6 @@ async function submitFormalAction(){
 
   render();
 }
-
 
 
 /* ---------- 7. COMPLETE ACTION ---------- */
