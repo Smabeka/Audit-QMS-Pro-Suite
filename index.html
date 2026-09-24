@@ -2250,13 +2250,12 @@ function renderFormalActionModal(){
             data-action="close-formal-action-modal">
             Cancel
           </button>
-
-          <button
-            class="btn btn-ghost"
-            data-action="add-formal-action"
-            data-id="${esc(formalActionTarget)}">
-            + Add Action
-          </button>
+  
+             <button
+           class="btn btn-primary"
+        data-action="submit-formal-action">
+      + Add Action
+      </button> 
 
         </div>
       </div>
@@ -3978,55 +3977,66 @@ function parseEvidenceJson(raw){
 
 /* ---------- 6. ADD ACTION ---------- */
 
-async function addFormalCapaAction(capaId){
-  console.log('Add action clicked:', capaId);
+function addFormalCapaAction(capaId){
+  if(!capaId){
+    showToast("CAPA ID is missing.", "error");
+    return;
+  }
+
+  formalActionTarget = capaId;
+
+  formalActionDraft = {
+    action_type: "CORRECTIVE",
+    description: "",
+    due_date: ""
+  };
+
+  render();
+}
+
+async function submitFormalAction(){
+  if(!formalActionTarget){
+    showToast("CAPA ID is missing.", "error");
+    return;
+  }
+
+  const capaId = formalActionTarget;
 
   const capa = await loadFormalCapa(capaId);
-
-  console.log('Loaded CAPA:', capa);
 
   if(!capa) return;
 
   if(formalCapaIsClosed(capa)){
-    showToast('This CAPA is closed.', 'error');
+    showToast("This CAPA is closed.", "error");
     return;
   }
 
-  const description = window.prompt('Action description');
+  const actionType =
+    document.getElementById("formal-action-type")?.value?.trim().toUpperCase() || "";
 
-  if(!description || !description.trim()){
+  const description =
+    document.getElementById("formal-action-description")?.value?.trim() || "";
+
+  const dueDate =
+    document.getElementById("formal-action-due-date")?.value?.trim() || "";
+
+  if(!actionType){
+    showToast("Action type is required.", "error");
     return;
   }
 
-  const rawActionType = window.prompt(
-    'Type: CONTAINMENT, CORRECTIVE, or PREVENTIVE',
-    'CORRECTIVE'
-  );
-
-  if(!rawActionType){
+  if(!["CORRECTIVE", "PREVENTIVE"].includes(actionType)){
+    showToast("Invalid action type.", "error");
     return;
   }
 
-  const actionType = rawActionType.trim().toUpperCase();
-
-  const allowed = [
-    'CONTAINMENT',
-    'CORRECTIVE',
-    'PREVENTIVE'
-  ];
-
-  if(!allowed.includes(actionType)){
-    showToast('Invalid action type.', 'error');
+  if(!description){
+    showToast("Action description is required.", "error");
     return;
   }
 
-  const dueDate = window.prompt(
-    'Due date (YYYY-MM-DD)',
-    todayPlusDays(30)
-  );
-
-  if(!dueDate || !dueDate.trim()){
-    showToast('Due date is required.', 'error');
+  if(!dueDate){
+    showToast("Due date is required.", "error");
     return;
   }
 
@@ -4036,46 +4046,47 @@ async function addFormalCapaAction(capaId){
   const actorId = userData?.user?.id || null;
 
   if(userError || !actorId){
-    showToast('Please sign in again.', 'error');
-    return;
-  }
-
-  const responsible = window.prompt(
-    'Responsible person profile UUID',
-    actorId
-  );
-
-  if(!responsible || !responsible.trim()){
-    showToast('Responsible person is required.', 'error');
+    showToast("Please sign in again.", "error");
     return;
   }
 
   const { error } = await supabaseClient
-    .from('capa_actions')
+    .from("capa_actions")
     .insert([{
       capa_id: capa.id,
-      description: description.trim(),
+      description: description,
       action_type: actionType,
-      responsible_person: responsible.trim(),
-      due_date: dueDate.trim(),
+      due_date: dueDate,
       created_by: actorId,
       organization_id: capa.organization_id
     }]);
 
   if(error){
-    console.error('Could not add CAPA action:', error);
-    showToast('Could not add action: ' + error.message, 'error');
+    console.error("Could not add CAPA action:", error);
+    showToast("Could not add action: " + error.message, "error");
     return;
   }
 
   logActivity(
-    'CAPA action added: ' +
+    "CAPA action added: " +
     (capa.reference_number || capa.id)
   );
 
-  showToast('Action added.');
+  showToast("CAPA action added.");
+
+  formalActionTarget = null;
+
+  formalActionDraft = {
+    action_type: "CORRECTIVE",
+    description: "",
+    due_date: ""
+  };
+
   await fetchCapaApprovalRecords();
+
+  render();
 }
+
 
 
 /* ---------- 7. COMPLETE ACTION ---------- */
