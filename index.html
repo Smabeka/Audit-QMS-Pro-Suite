@@ -4287,6 +4287,15 @@ function renderCapaApprovalTab(){
   const records = Object.values(capaApprovalRecords)
     .sort((a,b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
+  console.log('[CAPA DEBUG] transition check', {
+  capa: r.reference_number,
+  status: r.status,
+  rawRole: currentUser()?.role,
+  currentUserId: currentCloudUser?.id,
+  creatorId: r.created_by,
+  edges
+});
+  
   return `
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -4321,10 +4330,18 @@ function renderCapaApprovalTab(){
               `).join('') || `<p class="muted-italic" style="font-size:12px;">No events yet.</p>`}
 
               ${renderFormalCapaPanel(r)}
-
-              <div class="flex-wrap" style="margin-top:10px;">
-                ${edges.map(edge => `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-capa-transition" data-id="${esc(r.id)}" data-to="${esc(edge.to)}">${esc(edge.label)}</button>`).join('')}
-              </div>
+         <div class="flex-wrap" style="margin-top:10px;">
+          ${edges.map(edge => `
+           <button
+          class="btn btn-ghost"
+      style="font-size:12px;"
+      data-action="open-capa-transition"
+      data-id="${esc(r.id)}"
+      data-to="${esc(edge.to)}">
+      ${esc(edge.label)}
+         </button>
+         `).join('')}
+        </div>
             </div>
           ` : ''}
         </div>
