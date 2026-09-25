@@ -2754,6 +2754,7 @@ function unsubscribeCapaRealtime(){
   if(capaRealtimeChannel){ supabaseClient.removeChannel(capaRealtimeChannel); capaRealtimeChannel = null; }
 }
 
+
 /* ---------------- Finding Dispute Events ----------------
    Same pattern as CAPA above: state.audits[].findings[] stays exactly
    as every render function already expects it. This just adds an
@@ -2786,11 +2787,10 @@ async function signFindingEvent(eventId, meaning){
   return data;
 }
 async function fetchFindingEventsFromCloud(){
-  console.warn(
-    '[CAPA] capa_finding_events table is not installed; skipping legacy finding events.'
-  );
-
-  return [];
+  if(!cloudReady()) return;
+  const { data, error } = await supabaseClient.from("capa_finding_events").select("*").order("created_at", { ascending:true });
+  if(error){ console.error(error.message); return; }
+  mergeCloudEventsIntoLocalFindings(data||[]);
 }
 function mergeCloudEventsIntoLocalFindings(rows){
   const byFinding = {};
@@ -2801,12 +2801,17 @@ function mergeCloudEventsIntoLocalFindings(rows){
   render();
 }
 function subscribeFindingEventsRealtime(){
-  return;
+  if(!cloudReady() || findingEventsRealtimeChannel) return;
+  findingEventsRealtimeChannel = supabaseClient.channel("capa-finding-events-changes")
+    .on("postgres_changes", { event:"INSERT", schema:"public", table:"capa_finding_events" }, (payload) => {
+      mergeCloudEventsIntoLocalFindings([payload.new]);
+    })
+    .subscribe();
+}
+function unsubscribeFindingEventsRealtime(){
+  if(findingEventsRealtimeChannel){ supabaseClient.removeChannel(findingEventsRealtimeChannel); findingEventsRealtimeChannel = null; }
 }
 
-function unsubscribeFindingEventsRealtime(){
-  return;
-}
 
 function disputeEventTone(type){
   return { PROPOSED_RECLASSIFICATION:"amber", CHALLENGED:"rust", APPROVED:"green", REJECTED:"rust", CLOSED:"navy",
