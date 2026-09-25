@@ -2079,90 +2079,6 @@ function bindHiraPtwTabHandlers(){
     await fetchHiraAndPermitRecords();
   });
 }
-  
-function renderFormalActionModal(){
-  if(!formalActionTarget) return "";
-
-  return `
-    <div
-      class="modal-overlay"
-      data-action="close-formal-action-modal">
-
-      <div
-        class="modal-card"
-        style="max-width:460px;"
-        onclick="event.stopPropagation()">
-
-        <h3
-          class="serif"
-          style="margin:0 0 4px;font-size:16px;color:var(--navy);">
-          Add CAPA Action
-        </h3>
-
-        <p
-          class="muted-italic"
-          style="font-size:12px;margin:0 0 12px;">
-          Add a corrective or preventive action to this CAPA.
-        </p>
-
-        <label class="field">
-          Action Type
-
-          <select id="formal-action-type">
-            <option
-              value="CORRECTIVE"
-              ${formalActionDraft.action_type === "CORRECTIVE" ? "selected" : ""}>
-              Corrective
-            </option>
-
-            <option
-              value="PREVENTIVE"
-              ${formalActionDraft.action_type === "PREVENTIVE" ? "selected" : ""}>
-              Preventive
-            </option>
-          </select>
-        </label>
-
-        <label class="field" style="margin-top:8px;">
-          Description
-
-          <textarea
-            id="formal-action-description"
-            rows="4"
-            placeholder="Describe the action to be completed.">${esc(
-              formalActionDraft.description || ""
-            )}</textarea>
-        </label>
-
-        <label class="field" style="margin-top:8px;">
-          Due Date
-
-          <input
-            id="formal-action-due-date"
-            type="date"
-            value="${esc(formalActionDraft.due_date || "")}" />
-        </label>
-
-        <div
-          style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
-
-          <button
-            class="btn btn-ghost"
-            data-action="close-formal-action-modal">
-            Cancel
-            </button>
-  
-          <button
-            class="btn btn-primary"
-            data-action="submit-formal-action">
-            Add Action
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-} 
-          
 
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
@@ -5590,11 +5506,6 @@ function clearOpenDetailViews(){
   if(typeof openChecklistId!=="undefined") openChecklistId=null;
 }
 let capaFilter = "All";
-let formalActionTarget = null;
-let formalActionDraft = {
-  action_type: "CORRECTIVE",
-  description: "",
-  due_date: ""
 }; 
 let savedFlashTimer = null;
 let auditSearch = "";
