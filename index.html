@@ -3793,6 +3793,25 @@ function parseEvidenceJson(raw){
 
 /* ---------- 6. ADD ACTION ---------- */
 
+  async function loadFormalCapa(capaId){
+  const { data, error } = await supabaseClient
+    .from('capas')
+    .select('*')
+    .eq('id', capaId)
+    .maybeSingle();
+
+  if(error){
+    showToast(
+      'Could not load CAPA: ' + error.message,
+      'error'
+    );
+    return null;
+  }
+
+  return data;
+}
+
+
 async function addFormalCapaAction(capaId){
   console.log('[CAPA DEBUG] addFormalCapaAction started', capaId);
 
@@ -3885,7 +3904,6 @@ async function addFormalCapaAction(capaId){
       }]);
 
     if(error){
-      console.error('[CAPA DEBUG] action insert failed', error);
       showToast(
         'Could not add action: ' + error.message,
         'error'
@@ -3897,15 +3915,20 @@ async function addFormalCapaAction(capaId){
     await fetchCapaApprovalRecords();
 
   } catch(error){
-    console.error('[CAPA DEBUG] add action failed', error);
+    console.error(
+      '[CAPA DEBUG] add action failed:',
+      error
+    );
+
     showToast(
-      'Could not action: ' +
+      'Could not add action: ' +
       (error?.message || String(error)),
       'error'
     );
   }
 }
-    
+
+  
     
 /* ---------- 7. COMPLETE ACTION ---------- */
 
