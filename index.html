@@ -3837,23 +3837,6 @@ if(firstError){
   return;
 }
 
-  const firstError = [
-    capasRes,
-    actionsRes,
-    reviewsRes,
-    eventsRes,
-    closuresRes,
-    appealsRes
-  ].find(result => result.error);
-
-  if(firstError){
-    console.error(firstError.error.message);
-    capaApprovalFetchError = firstError.error.message;
-    capaApprovalLoaded = true;
-    render();
-    return;
-  }
-
   capaApprovalFetchError = "";
 
   const map = {};
