@@ -2786,10 +2786,11 @@ async function signFindingEvent(eventId, meaning){
   return data;
 }
 async function fetchFindingEventsFromCloud(){
-  if(!cloudReady()) return;
-  const { data, error } = await supabaseClient.from("capa_finding_events").select("*").order("created_at", { ascending:true });
-  if(error){ console.error(error.message); return; }
-  mergeCloudEventsIntoLocalFindings(data||[]);
+  console.warn(
+    '[CAPA] capa_finding_events table is not installed; skipping legacy finding events.'
+  );
+
+  return [];
 }
 function mergeCloudEventsIntoLocalFindings(rows){
   const byFinding = {};
@@ -2800,15 +2801,11 @@ function mergeCloudEventsIntoLocalFindings(rows){
   render();
 }
 function subscribeFindingEventsRealtime(){
-  if(!cloudReady() || findingEventsRealtimeChannel) return;
-  findingEventsRealtimeChannel = supabaseClient.channel("capa-finding-events-changes")
-    .on("postgres_changes", { event:"INSERT", schema:"public", table:"capa_finding_events" }, (payload) => {
-      mergeCloudEventsIntoLocalFindings([payload.new]);
-    })
-    .subscribe();
+  return;
 }
+
 function unsubscribeFindingEventsRealtime(){
-  if(findingEventsRealtimeChannel){ supabaseClient.removeChannel(findingEventsRealtimeChannel); findingEventsRealtimeChannel = null; }
+  return;
 }
 
 function disputeEventTone(type){
@@ -2990,7 +2987,15 @@ function findingActionLabel(actionType){
     RECLASSIFIED:"INDEPENDENT REVIEW & DECISION", RAISED:"FINDING RAISED", CLOSED:"CLOSED" }[actionType] || actionType.replace(/_/g,' ');
 }
 async function fetchFindingsV2FromCloud(){
-  if(!cloudReady()) return;
+  console.warn(
+    '[CAPA] Findings v2 tables are not enabled; skipping findings-v2 load.'
+  );
+
+  findingsV2 = {};
+  findingsV2Loaded = true;
+
+  return {};
+}
   const [findingsRes, historyRes, sigsRes, rcaRes] = await Promise.all([
     supabaseClient.from("findings").select("*"),
     supabaseClient.from("finding_dispute_history").select("*").order("created_at", { ascending:true }),
@@ -3008,7 +3013,12 @@ async function fetchFindingsV2FromCloud(){
   render();
 }
 function subscribeFindingsV2Realtime(){
-  if(!cloudReady() || findingsV2RealtimeChannel) return;
+  return;
+}
+
+function unsubscribeFindingsV2Realtime(){
+  return;
+}
   findingsV2RealtimeChannel = supabaseClient.channel("findings-v2-changes")
     .on("postgres_changes", { event:"*", schema:"public", table:"findings" }, () => fetchFindingsV2FromCloud())
     .on("postgres_changes", { event:"*", schema:"public", table:"finding_dispute_history" }, () => fetchFindingsV2FromCloud())
@@ -3805,6 +3815,34 @@ async function fetchCapaApprovalRecords(){
       .select("*")
       .order("created_at", { ascending: true })
   ]);
+  const responses = [
+  capasRes,
+  actionsRes,
+  reviewsRes,
+  eventsRes,
+  closuresRes,
+  appealsRes
+];
+
+const firstError = responses.find(
+  response => response.error
+);
+
+if(firstError){
+  const message =
+    firstError.error?.message ||
+    'Unknown CAPA loading error';
+
+  console.error(
+    '[CAPA] formal workflow load failed:',
+    firstError.error
+  );
+
+  capaApprovalFetchError = message;
+  capaApprovalLoaded = true;
+  render();
+  return;
+}
 
   const firstError = [
     capasRes,
