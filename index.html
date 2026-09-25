@@ -2992,15 +2992,7 @@ function findingActionLabel(actionType){
     RECLASSIFIED:"INDEPENDENT REVIEW & DECISION", RAISED:"FINDING RAISED", CLOSED:"CLOSED" }[actionType] || actionType.replace(/_/g,' ');
 }
 async function fetchFindingsV2FromCloud(){
-  console.warn(
-    '[CAPA] Findings v2 tables are not enabled; skipping findings-v2 load.'
-  );
-
-  findingsV2 = {};
-  findingsV2Loaded = true;
-
-  return {};
-}
+  if(!cloudReady()) return;
   const [findingsRes, historyRes, sigsRes, rcaRes] = await Promise.all([
     supabaseClient.from("findings").select("*"),
     supabaseClient.from("finding_dispute_history").select("*").order("created_at", { ascending:true }),
@@ -3018,12 +3010,7 @@ async function fetchFindingsV2FromCloud(){
   render();
 }
 function subscribeFindingsV2Realtime(){
-  return;
-}
-
-function unsubscribeFindingsV2Realtime(){
-  return;
-}
+  if(!cloudReady() || findingsV2RealtimeChannel) return;
   findingsV2RealtimeChannel = supabaseClient.channel("findings-v2-changes")
     .on("postgres_changes", { event:"*", schema:"public", table:"findings" }, () => fetchFindingsV2FromCloud())
     .on("postgres_changes", { event:"*", schema:"public", table:"finding_dispute_history" }, () => fetchFindingsV2FromCloud())
@@ -3036,6 +3023,7 @@ function unsubscribeFindingsV2Realtime(){
 }
 async function startFindingV2(a, f){
   if(!cloudReady()){ alert("This requires cloud sign-in — please sign in first."); return; }
+
   const severityMap = { Critical:"CRITICAL", Major:"MAJOR", Minor:"MINOR" };
   const { data, error } = await supabaseClient.rpc("create_finding", {
     p_audit_id: a.id,
