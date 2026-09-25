@@ -4266,113 +4266,358 @@ const canResolveAppeal =
 
 /* ---------- 12. CAPA TAB (overrides renderCapaApprovalTab) ---------- */
 
-function renderCapaApprovalTab(){
+  function renderCapaApprovalTab(){
   if(!cloudReady()){
-    return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use the CAPA Approval Workflow.</p></div>`;
+    return `
+      <div class="card">
+        <p class="muted-italic">
+          Sign in to your cloud account to use the CAPA Approval Workflow.
+        </p>
+      </div>
+    `;
   }
+
   if(!capaApprovalLoaded){
     fetchCapaApprovalRecords();
-    return `<div class="card"><p class="muted-italic">Loading\u2026</p></div>`;
+
+    return `
+      <div class="card">
+        <p class="muted-italic">Loading…</p>
+      </div>
+    `;
   }
+
   if(capaApprovalFetchError){
     return `
       <div class="card">
-        <h2 class="serif" style="margin:0 0 8px;font-size:18px;">\ud83d\uddc2\ufe0f CAPA Approval Workflow</h2>
-        <p style="color:var(--rust);font-size:13px;">\u26a0 Could not load CAPA records: ${esc(capaApprovalFetchError)}</p>
-        <button class="btn btn-ghost" style="font-size:12px;margin-top:8px;" data-action="retry-capa-approval">Retry</button>
+        <h2
+          class="serif"
+          style="margin:0 0 8px;font-size:18px;">
+          🗂️ CAPA Approval Workflow
+        </h2>
+
+        <p style="color:var(--rust);font-size:13px;">
+          ⚠ Could not load CAPA records:
+          ${esc(capaApprovalFetchError)}
+        </p>
+
+        <button
+          class="btn btn-ghost"
+          style="font-size:12px;margin-top:8px;"
+          data-action="retry-capa-approval">
+          Retry
+        </button>
       </div>
     `;
   }
 
   const records = Object.values(capaApprovalRecords)
-    .sort((a,b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    .sort((a, b) =>
+      (b.created_at || '').localeCompare(a.created_at || '')
+    );
 
-  console.log('[CAPA DEBUG] transition check', {
-  capa: r.reference_number,
-  status: r.status,
-  rawRole: currentUser()?.role,
-  currentUserId: currentCloudUser?.id,
-  creatorId: r.created_by,
-  edges
-});
-  
   return `
     <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <h2 class="serif" style="margin:0;font-size:18px;">\ud83d\uddc2\ufe0f CAPA Approval Workflow</h2>
-        <button class="btn btn-primary" data-action="open-new-capa-approval">+ New CAPA Record</button>
-      </div>
-      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Approval, effectiveness verification and closure of the corrective action itself. Separate from Dispute Tracking (v2) on individual findings.</p>
-      ${records.length === 0 ? `<p class="muted-italic">No CAPA records yet.</p>` : records.map(r => {
-        const isOpen = capaApprovalOpenId === r.id;
-        const edges = eligibleCapaTransitions(r);
-        return `
-        <div class="top-border" style="padding:10px 0;">
-          <button data-action="toggle-capa-approval" data-id="${esc(r.id)}" style="all:unset;cursor:pointer;display:flex;width:100%;justify-content:space-between;align-items:flex-start;gap:8px;">
-            <div>
-              <div style="font-weight:600;">${esc(r.reference_number || '(no ref)')} \u2014 ${esc(r.title)}</div>
-              <div class="muted-italic" style="font-size:12px;">${esc((r.description || '').slice(0,100))}${(r.description || '').length > 100 ? '\u2026' : ''}</div>
-            </div>
-            <span class="tag tag-${capaApprovalStatusTone(r.status)}" style="font-size:10px;white-space:nowrap;">${esc(capaApprovalStatusLabel(r.status))}</span>
-          </button>
-          ${isOpen ? `
-            <div style="margin-top:10px;padding:10px;border:1px solid var(--line2);border-radius:8px;">
-              ${r.root_cause ? `<p style="font-size:13px;"><b>Root Cause:</b> ${esc(r.root_cause)}</p>` : ''}
-              ${r.corrective_action ? `<p style="font-size:13px;"><b>Corrective Action:</b> ${esc(r.corrective_action)}</p>` : ''}
+      <div
+        style="display:flex;justify-content:space-between;
+               align-items:center;margin-bottom:10px;">
 
-              <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 4px;">Approval History</div>
-              ${(r.events || []).map(ev => `
-                <div style="padding:5px 0;border-bottom:1px solid var(--line2);">
-                  <span class="tag tag-${capaApprovalStatusTone(ev.new_status)}" style="font-size:10px;">${esc(ev.event_type)}</span>
-                  <span style="font-size:12px;margin-left:4px;">${esc(ev.reason || '')}</span>
-                  <div class="muted-italic" style="font-size:10.5px;margin-top:2px;">${new Date(ev.timestamp || ev.created_at).toLocaleString()}</div>
+        <h2
+          class="serif"
+          style="margin:0;font-size:18px;">
+          🗂️ CAPA Approval Workflow
+        </h2>
+
+        <button
+          class="btn btn-primary"
+          data-action="open-new-capa-approval">
+          + New CAPA Record
+        </button>
+      </div>
+
+      <p
+        class="muted-italic"
+        style="font-size:12px;margin-bottom:12px;">
+        Approval, effectiveness verification and closure of the
+        corrective action itself. Separate from Dispute Tracking (v2)
+        on individual findings.
+      </p>
+
+      ${
+        records.length === 0
+          ? `<p class="muted-italic">No CAPA records yet.</p>`
+          : records.map(record => {
+              const isOpen =
+                capaApprovalOpenId === record.id;
+
+              const edges =
+                eligibleCapaTransitions(record);
+
+              return `
+                <div
+                  class="top-border"
+                  style="padding:10px 0;">
+
+                  <button
+                    data-action="toggle-capa-approval"
+                    data-id="${esc(record.id)}"
+                    style="
+                      all:unset;
+                      cursor:pointer;
+                      display:flex;
+                      width:100%;
+                      justify-content:space-between;
+                      align-items:flex-start;
+                      gap:8px;
+                    ">
+
+                    <div>
+                      <div style="font-weight:600;">
+                        ${esc(record.reference_number || '(no ref)')}
+                        — ${esc(record.title || '')}
+                      </div>
+
+                      <div
+                        class="muted-italic"
+                        style="font-size:12px;">
+                        ${esc(
+                          (record.description || '').slice(0, 100)
+                        )}
+                        ${
+                          (record.description || '').length > 100
+                            ? '…'
+                            : ''
+                        }
+                      </div>
+                    </div>
+
+                    <span
+                      class="tag tag-${capaApprovalStatusTone(record.status)}"
+                      style="font-size:10px;white-space:nowrap;">
+                      ${esc(
+                        capaApprovalStatusLabel(record.status)
+                      )}
+                    </span>
+                  </button>
+
+                  ${
+                    isOpen
+                      ? `
+                        <div
+                          style="
+                            margin-top:10px;
+                            padding:10px;
+                            border:1px solid var(--line2);
+                            border-radius:8px;
+                          ">
+
+                          ${
+                            record.root_cause
+                              ? `
+                                <p style="font-size:13px;">
+                                  <b>Root Cause:</b>
+                                  ${esc(record.root_cause)}
+                                </p>
+                              `
+                              : ''
+                          }
+
+                          ${
+                            record.corrective_action
+                              ? `
+                                <p style="font-size:13px;">
+                                  <b>Corrective Action:</b>
+                                  ${esc(record.corrective_action)}
+                                </p>
+                              `
+                              : ''
+                          }
+
+                          <div
+                            style="
+                              font-size:11px;
+                              color:var(--muted);
+                              text-transform:uppercase;
+                              letter-spacing:.04em;
+                              margin:10px 0 4px;
+                            ">
+                            Approval History
+                          </div>
+
+                          ${
+                            (record.events || [])
+                              .map(event => `
+                                <div
+                                  style="
+                                    padding:5px 0;
+                                    border-bottom:1px solid var(--line2);
+                                  ">
+
+                                  <span
+                                    class="tag tag-${capaApprovalStatusTone(
+                                      event.new_status
+                                    )}"
+                                    style="font-size:10px;">
+                                    ${esc(event.event_type || '')}
+                                  </span>
+
+                                  <span
+                                    style="
+                                      font-size:12px;
+                                      margin-left:4px;
+                                    ">
+                                    ${esc(event.reason || '')}
+                                  </span>
+
+                                  <div
+                                    class="muted-italic"
+                                    style="
+                                      font-size:10.5px;
+                                      margin-top:2px;
+                                    ">
+                                    ${new Date(
+                                      event.timestamp ||
+                                      event.created_at
+                                    ).toLocaleString()}
+                                  </div>
+                                </div>
+                              `)
+                              .join('')
+                              ||
+                              `
+                                <p
+                                  class="muted-italic"
+                                  style="font-size:12px;">
+                                  No events yet.
+                                </p>
+                              `
+                          }
+
+                          ${renderFormalCapaPanel(record)}
+
+                          ${
+                            edges.length
+                              ? `
+                                <div
+                                  class="flex-wrap"
+                                  style="margin-top:10px;">
+
+                                  ${edges.map(edge => `
+                                    <button
+                                      class="btn btn-ghost"
+                                      style="font-size:12px;"
+                                      data-action="open-capa-transition"
+                                      data-id="${esc(record.id)}"
+                                      data-to="${esc(edge.to)}">
+                                      ${esc(edge.label)}
+                                    </button>
+                                  `).join('')}
+                                </div>
+                              `
+                              : ''
+                          }
+                        </div>
+                      `
+                      : ''
+                  }
                 </div>
-              `).join('') || `<p class="muted-italic" style="font-size:12px;">No events yet.</p>`}
-
-              ${renderFormalCapaPanel(r)}
-         <div class="flex-wrap" style="margin-top:10px;">
-          ${edges.map(edge => `
-           <button
-          class="btn btn-ghost"
-      style="font-size:12px;"
-      data-action="open-capa-transition"
-      data-id="${esc(r.id)}"
-      data-to="${esc(edge.to)}">
-      ${esc(edge.label)}
-         </button>
-         `).join('')}
-        </div>
-            </div>
-          ` : ''}
-        </div>
-      `;}).join('')}
+              `;
+            }).join('')
+      }
     </div>
-    ${showNewCapaApproval ? `
-      <div class="modal-overlay" data-action="close-new-capa-approval">
-        <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
-          <h3 class="serif" style="margin:0 0 12px;font-size:17px;color:var(--navy);">New CAPA Record</h3>
-          <label class="field" style="margin-bottom:8px;">Title
-            <input id="new-capa-title" value="${esc(newCapaApprovalDraft.title)}" />
-          </label>
-          <label class="field" style="margin-bottom:8px;">Description
-            <textarea id="new-capa-description" rows="3">${esc(newCapaApprovalDraft.description)}</textarea>
-          </label>
-          <label class="field" style="margin-bottom:8px;">Root Cause (optional)
-            <textarea id="new-capa-root-cause" rows="2">${esc(newCapaApprovalDraft.root_cause)}</textarea>
-          </label>
-          <label class="field" style="margin-bottom:8px;">Corrective Action (optional)
-            <textarea id="new-capa-corrective-action" rows="2">${esc(newCapaApprovalDraft.corrective_action)}</textarea>
-          </label>
-          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-            <button class="btn btn-ghost" data-action="close-new-capa-approval">Cancel</button>
-            <button class="btn btn-primary" data-action="submit-new-capa-approval">Create Draft</button>
+
+    ${
+      showNewCapaApproval
+        ? `
+          <div
+            class="modal-overlay"
+            data-action="close-new-capa-approval">
+
+            <div
+              class="modal-card"
+              style="max-width:520px;"
+              onclick="event.stopPropagation()">
+
+              <h3
+                class="serif"
+                style="
+                  margin:0 0 12px;
+                  font-size:17px;
+                  color:var(--navy);
+                ">
+                New CAPA Record
+              </h3>
+
+              <label
+                class="field"
+                style="margin-bottom:8px;">
+                Title
+                <input
+                  id="new-capa-title"
+                  value="${esc(newCapaApprovalDraft.title)}" />
+              </label>
+
+              <label
+                class="field"
+                style="margin-bottom:8px;">
+                Description
+                <textarea
+                  id="new-capa-description"
+                  rows="3">${esc(
+                    newCapaApprovalDraft.description
+                  )}</textarea>
+              </label>
+
+              <label
+                class="field"
+                style="margin-bottom:8px;">
+                Root Cause (optional)
+                <textarea
+                  id="new-capa-root-cause"
+                  rows="2">${esc(
+                    newCapaApprovalDraft.root_cause
+                  )}</textarea>
+              </label>
+
+              <label
+                class="field"
+                style="margin-bottom:8px;">
+                Corrective Action (optional)
+                <textarea
+                  id="new-capa-corrective-action"
+                  rows="2">${esc(
+                    newCapaApprovalDraft.corrective_action
+                  )}</textarea>
+              </label>
+
+              <div
+                style="
+                  display:flex;
+                  justify-content:flex-end;
+                  gap:8px;
+                  margin-top:12px;
+                ">
+
+                <button
+                  class="btn btn-ghost"
+                  data-action="close-new-capa-approval">
+                  Cancel
+                </button>
+
+                <button
+                  class="btn btn-primary"
+                  data-action="submit-new-capa-approval">
+                  Create Draft
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    ` : ''}
+        `
+        : ''
+    }
   `;
 }
-
+        
 
 /* ---------- 13. ACTION HANDLERS ----------
    Register these in your existing click dispatcher, alongside the
