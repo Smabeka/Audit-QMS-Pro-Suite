@@ -3434,51 +3434,172 @@ function renderCapaPasswordModal(){
 }
 async function submitCapaTransitionSigned(){
   const target = capaTransitionTarget;
-  const record = target && capaApprovalRecords[target.capaId];
-  if(!target || !record) return;
-  const edge = target.edge;
-  capaTransitionSubmitting = true; capaTransitionError = ""; render();
 
-  const { data: sessionData } = await supabaseClient.auth.getSession();
-  const accessToken = sessionData?.session?.access_token;
-  if(!accessToken){ capaTransitionError = "Your session has expired — please sign in again."; capaTransitionSubmitting = false; render(); return; }
-
-  // For resolve_capa_appeal we need the currently-open appeal's id.
-  let appealId = null;
-  if(edge.rpc === "resolve_capa_appeal"){
-    const openAppeal = (record.appeals||[]).find(ap => !ap.resolved_at);
-    if(!openAppeal){ capaTransitionError = "No open appeal found for this CAPA."; capaTransitionSubmitting = false; render(); return; }
-    appealId = openAppeal.id;
+  if(!target || !target.edge){
+    capaTransitionError = 'No CAPA transition selected.';
+    render();
+    return;
   }
 
-  try {
-    const res = await fetch("https://rchzyvnkfgofvdkgoawm.supabase.co/functions/v1/capa-transition-signed", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({
-        rpc: edge.rpc,
-        capa_id: target.capaId,
-        appeal_id: appealId,
-        event_type: edge.eventType,
-        reason: capaTransitionReason.trim(),
-        review_type: edge.reviewType || null,
-        decision: edge.decision || null,
-        // Explicitly attribute the reviewer so the server's
-        // segregation-of-duties check (reviewer cannot be the CAPA
-        // creator) actually fires — not just the UI hiding the button.
-        reviewer_id: edge.reviewType ? currentCloudUser?.id : null,
-        password: capaPasswordValue,
-      }),
-    });
-    const body = await res.json();
-    if(!res.ok){ capaTransitionError = body.error || "Transition failed."; capaTransitionSubmitting = false; render(); return; }
+  const record =
+    capaApprovalRecords[target.capaId];
 
-    logActivity(`CAPA transition: ${record.reference_number} → ${capaApprovalStatusLabel(edge.to)} — ${currentUser()?.fullName||'Unknown'}`);
-    capaTransitionTarget = null; capaPasswordModalOpen = false; capaPasswordValue = ""; capaTransitionSubmitting = false;
+  if(!record){
+    capaTransitionError =
+      'CAPA record could not be found. Refresh and try again.';
+    render();
+    return;
+  }
+
+  const password =
+    String(capaPasswordValue || '').trim();
+
+  const reason =
+    String(capaTransitionReason || '').trim();
+
+  if(!password){
+    capaTransitionError = 'Password is required.';
+    render();
+    return;
+  }
+
+  if(reason.length < target.edge.minChars){
+    capaPasswordModalOpen = false;
+    capaTransitionError =
+      `Reason must be at least ${target.edge.minChars} characters.`;
+    render();
+    return;
+  }
+
+  capaTransitionSubmitting = true;
+  capaTransitionError = '';
+  render();
+
+  try{
+    const {
+      data: sessionData,
+      error: sessionError
+    } = await supabaseClient.auth.getSession();
+
+    if(sessionError){
+      throw new Error(sessionError.message);
+    }
+
+    const accessToken =
+      sessionData?.session?.access_token;
+
+    if(!accessToken){
+      throw new Error(
+        'Your session has expired. Please sign in again.'
+      );
+    }
+
+    let appealId = null;
+
+    if(target.edge.rpc === 'resolve_capa_appeal'){
+      const openAppeal =
+        (record.appeals || []).find(
+          appeal =>
+            !appeal.resolved_at &&
+            String(appeal.status || '').toLowerCase() !== 'resolved'
+        );
+
+      if(!openAppeal){
+        throw new Error(
+          'No open appeal was found for this CAPA.'
+        );
+      }
+
+      appealId = openAppeal.id;
+    }
+
+    const payload = {
+      rpc: target.edge.rpc,
+      capa_id: target.capaId,
+      appeal_id: appealId,
+      event_type: target.edge.eventType,
+      reason,
+      review_type: target.edge.reviewType || null,
+      decision: target.edge.decision || null,
+      reviewer_id:
+        target.edge.reviewType
+          ? currentCloudUser?.id || null
+          : null,
+      password
+    };
+
+    console.log('[CAPA DEBUG] transition payload', {
+      rpc: payload.rpc,
+      capa_id: payload.capa_id,
+      appeal_id: payload.appeal_id,
+      event_type: payload.event_type,
+      hasReason: !!payload.reason,
+      hasPassword: !!payload.password
+    });
+
+    const response = await fetch(
+      'https://rchzyvnkfgofvdkgoawm.supabase.co/functions/v1/capa-transition-signed',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+          'apikey': SUPABASE_ANON_KEY
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    const responseText =
+      await response.text();
+
+    let body = {};
+
+    try{
+      body = responseText
+        ? JSON.parse(responseText)
+        : {};
+    } catch{
+      body = {
+        error: responseText
+      };
+    }
+
+    if(!response.ok){
+      throw new Error(
+        body.error ||
+        body.message ||
+        `Transition failed (${response.status})`
+      );
+    }
+
+    capaTransitionTarget = null;
+    capaTransitionReason = '';
+    capaPasswordModalOpen = false;
+    capaPasswordValue = '';
+    capaTransitionSubmitting = false;
+    capaTransitionError = '';
+
+    showToast(
+      `CAPA moved to ${
+        capaApprovalStatusLabel(target.edge.to)
+      }.`
+    );
+
     await fetchCapaApprovalRecords();
-  } catch(e){
-    capaTransitionError = e.message || "Network error — please try again.";
-    capaTransitionSubmitting = false; render();
+
+  } catch(error){
+    console.error(
+      '[CAPA DEBUG] signed transition failed',
+      error
+    );
+
+    capaTransitionSubmitting = false;
+    capaTransitionError =
+      error?.message ||
+      String(error);
+
+    render();
   }
 }
 function renderCapaApprovalTab(){
