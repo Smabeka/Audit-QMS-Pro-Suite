@@ -2080,105 +2080,6 @@ function bindHiraPtwTabHandlers(){
   });
 }
   
-
-function bindCapaApprovalHandlers(){
-  attachFormalCapaDelegatedHandler();
-
-  document
-    .querySelectorAll('[data-action="retry-capa-approval"]')
-    .forEach(el => {
-      el.onclick = () => {
-        capaApprovalLoaded = false;
-        capaApprovalFetchError = "";
-        render();
-      };
-    });
-  document.querySelectorAll('[data-action="open-new-capa-approval"]').forEach(el=>el.onclick=()=>{
-    showNewCapaApproval = true;
-    newCapaApprovalDraft = { title:"", description:"", root_cause:"", corrective_action:"" };
-    render();
-  });
-  document.querySelectorAll('[data-action="close-new-capa-approval"]').forEach(el=>el.onclick=()=>{
-    showNewCapaApproval = false; render();
-  });
-  document.querySelectorAll('[data-action="submit-new-capa-approval"]').forEach(el=>el.onclick=()=>{
-    newCapaApprovalDraft = {
-      title: document.getElementById('new-capa-title')?.value.trim() || "",
-      description: document.getElementById('new-capa-description')?.value.trim() || "",
-      root_cause: document.getElementById('new-capa-root-cause')?.value.trim() || "",
-      corrective_action: document.getElementById('new-capa-corrective-action')?.value.trim() || "",
-    };
-    createCapaApprovalRecord();
-  });
-  document.querySelectorAll('[data-action="toggle-capa-approval"]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.id;
-    capaApprovalOpenId = capaApprovalOpenId === id ? null : id;
-    render();
-  });
-  document.querySelectorAll('[data-action="open-capa-transition"]').forEach(el=>el.onclick=()=>{
-    const record = capaApprovalRecords[el.dataset.id];
-    if(!record) return;
-    const edge = eligibleCapaTransitions(record).find(e=>e.to===el.dataset.to);
-    if(!edge) return;
-    openCapaTransition(el.dataset.id, edge);
-  });
-  document.querySelectorAll('[data-action="close-capa-transition-modal"]').forEach(el=>el.onclick=()=>{
-    capaTransitionTarget = null; render();
-  });
-  const capaReasonInput = document.getElementById('capa-transition-reason');
-  if(capaReasonInput) capaReasonInput.oninput = () => { capaTransitionReason = capaReasonInput.value; render(); };
-  document.querySelectorAll('[data-action="proceed-capa-transition"]').forEach(el=>el.onclick=()=>{
-    if(!capaTransitionTarget) return;
-    capaPasswordModalOpen = true; capaPasswordValue = ""; capaTransitionError = "";
-    render();
-  });
-  document.querySelectorAll('[data-action="close-capa-password-modal"]').forEach(el=>el.onclick=()=>{
-    capaPasswordModalOpen = false; capaPasswordValue = ""; capaTransitionTarget = null; capaTransitionError = "";
-    render();
-  });
-  const capaPasswordInput = document.getElementById('capa-password-input');
-  if(capaPasswordInput) capaPasswordInput.oninput = () => { capaPasswordValue = capaPasswordInput.value; };
-  document.querySelectorAll('[data-action="submit-capa-password"]').forEach(el=>el.onclick=()=>{
-    submitCapaTransitionSigned();
-  });
-    document
-    .querySelectorAll('[data-action="close-formal-action-modal"]')
-    .forEach(el => {
-      el.onclick = () => {
-        formalActionTarget = null;
-        render();
-      };
-    });
-
-  document
-    .querySelectorAll('[data-action="submit-formal-action"]')
-    .forEach(el => {
-      el.onclick = async () => {
-        await submitFormalAction();
-      };
-    });
-   /* ---------- Formal CAPA workflow (consolidation block) ---------- */
-   document
-  .querySelectorAll(
-    '[data-action="complete-formal-action"],' +
-    '[data-action="submit-formal-effectiveness"],' +
-    '[data-action="close-formal-capa"],' +
-    '[data-action="reopen-formal-capa"],' +
-    '[data-action="create-formal-followup"],' +
-    '[data-action="resolve-capa-appeal"]'
-  )
-  .forEach(el => {
-    el.onclick = async () => {
-      if(el.dataset.action === 'resolve-capa-appeal'){
-        await handleCapaAppealDecision(el);
-        return;
-      }
-
-      await handleFormalCapaAction(el);
-    };
-  });
-}
-
 function renderFormalActionModal(){
   if(!formalActionTarget) return "";
 
@@ -4523,30 +4424,25 @@ function renderCapaApprovalTab(){
 }
 
 
-
-
 /* ---------- 13. ACTION HANDLERS ----------
    Register these in your existing click dispatcher, alongside the
    handlers you already have for open-capa-transition, toggle-capa-approval,
    submit-new-capa-approval and retry-capa-approval. */
 
 const FORMAL_CAPA_HANDLERS = {
-  'add-formal-action': (el) =>
-    addFormalCapaAction(el.dataset.id),
-
-  'complete-formal-action': (el) =>
+  'complete-formal-action': el =>
     completeFormalCapaAction(el.dataset.actionId),
 
-  'submit-formal-effectiveness': (el) =>
+  'submit-formal-effectiveness': el =>
     submitFormalCapaEffectivenessReview(el.dataset.id),
 
-  'close-formal-capa': (el) =>
+  'close-formal-capa': el =>
     closeFormalCapa(el.dataset.id),
 
-  'reopen-formal-capa': (el) =>
+  'reopen-formal-capa': el =>
     reopenFormalCapa(el.dataset.id),
 
-  'create-formal-followup': (el) =>
+  'create-formal-followup': el =>
     createFormalFollowupCapa(el.dataset.id)
 };
 
@@ -4558,6 +4454,82 @@ async function handleFormalCapaAction(el){
   await fn(el);
   return true;
 }
+
+async function handleCapaAppealDecision(el){
+  const capaId = el.dataset.capaId;
+  const appealId = el.dataset.appealId;
+  const decision = el.dataset.decision;
+
+  if(!capaId || !appealId || !decision){
+    showToast('Appeal information is incomplete.', 'error');
+    return;
+  }
+
+  if(!['approved', 'rejected'].includes(decision)){
+    showToast('Invalid appeal decision.', 'error');
+    return;
+  }
+
+  const comments = window.prompt(
+    decision === 'approved'
+      ? 'Reason for upholding the appeal:'
+      : 'Reason for denying the appeal:'
+  );
+
+  if(!comments || !comments.trim()){
+    showToast('A decision reason is required.', 'error');
+    return;
+  }
+
+  el.disabled = true;
+
+  try{
+    const { error } = await supabaseClient.rpc(
+      'resolve_capa_appeal',
+      {
+        p_capa_id: capaId,
+        p_appeal_id: appealId,
+        p_decision: decision,
+        p_comments: comments.trim()
+      }
+    );
+
+    if(error){
+      el.disabled = false;
+      showToast(
+        'Could not resolve appeal: ' + error.message,
+        'error'
+      );
+      return;
+    }
+
+    showToast(
+      decision === 'approved'
+        ? 'Appeal upheld.'
+        : 'Appeal denied.'
+    );
+
+    await fetchCapaApprovalRecords();
+
+  } catch(error){
+    el.disabled = false;
+
+    console.error(
+      'Appeal decision failed:',
+      error
+    );
+
+    showToast(
+      'Could not resolve appeal: ' +
+      (error?.message || String(error)),
+      'error'
+    );
+  }
+}
+
+
+/* ---------- 13A. ADD-ACTION DELEGATED HANDLER ---------- */
+
 let formalCapaDelegatedHandlerAttached = false;
 
 function attachFormalCapaDelegatedHandler(){
@@ -4566,7 +4538,15 @@ function attachFormalCapaDelegatedHandler(){
   formalCapaDelegatedHandlerAttached = true;
 
   document.addEventListener('click', async event => {
-    const el = event.target.closest('[data-action="add-formal-action"]');
+    const target = event.target;
+
+    if(!target || typeof target.closest !== 'function'){
+      return;
+    }
+
+    const el = target.closest(
+      '[data-action="add-formal-action"]'
+    );
 
     if(!el) return;
 
@@ -4575,187 +4555,235 @@ function attachFormalCapaDelegatedHandler(){
 
     const capaId = el.dataset.id;
 
-    console.log('Add CAPA action clicked:', capaId);
+    console.log(
+      'Add CAPA action clicked:',
+      capaId
+    );
 
     if(!capaId){
       showToast('CAPA ID is missing.', 'error');
       return;
     }
 
-    await addFormalCapaAction(capaId);
+    try{
+      await addFormalCapaAction(capaId);
+
+    } catch(error){
+      console.error(
+        'Add CAPA action failed:',
+        error
+      );
+
+      showToast(
+        'Could not add action: ' +
+        (error?.message || String(error)),
+        'error'
+      );
+    }
   });
 }
-  
-  function addFormalCapaAction(capaId){
-  if(!capaId){
-    showToast("CAPA ID is missing.", "error");
-    return;
+
+
+/* ---------- 13B. CAPA APPROVAL BINDINGS ---------- */
+
+function bindCapaApprovalHandlers(){
+  attachFormalCapaDelegatedHandler();
+
+  document
+    .querySelectorAll('[data-action="retry-capa-approval"]')
+    .forEach(el => {
+      el.onclick = () => {
+        capaApprovalLoaded = false;
+        capaApprovalFetchError = '';
+        render();
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="open-new-capa-approval"]')
+    .forEach(el => {
+      el.onclick = () => {
+        showNewCapaApproval = true;
+
+        newCapaApprovalDraft = {
+          title: '',
+          description: '',
+          root_cause: '',
+          corrective_action: ''
+        };
+
+        render();
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="close-new-capa-approval"]')
+    .forEach(el => {
+      el.onclick = () => {
+        showNewCapaApproval = false;
+        render();
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="submit-new-capa-approval"]')
+    .forEach(el => {
+      el.onclick = async () => {
+        newCapaApprovalDraft = {
+          title:
+            document
+              .getElementById('new-capa-title')
+              ?.value.trim() || '',
+
+          description:
+            document
+              .getElementById('new-capa-description')
+              ?.value.trim() || '',
+
+          root_cause:
+            document
+              .getElementById('new-capa-root-cause')
+              ?.value.trim() || '',
+
+          corrective_action:
+            document
+              .getElementById('new-capa-corrective-action')
+              ?.value.trim() || ''
+        };
+
+        await createCapaApprovalRecord();
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="toggle-capa-approval"]')
+    .forEach(el => {
+      el.onclick = () => {
+        capaApprovalOpenId =
+          capaApprovalOpenId === el.dataset.id
+            ? null
+            : el.dataset.id;
+
+        render();
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="open-capa-transition"]')
+    .forEach(el => {
+      el.onclick = () => {
+        const record = capaApprovalRecords[el.dataset.id];
+
+        if(!record) return;
+
+        const edge = eligibleCapaTransitions(record)
+          .find(item => item.to === el.dataset.to);
+
+        if(!edge) return;
+
+        openCapaTransition(el.dataset.id, edge);
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="close-capa-transition-modal"]')
+    .forEach(el => {
+      el.onclick = () => {
+        capaTransitionTarget = null;
+        render();
+      };
+    });
+
+  const capaReasonInput =
+    document.getElementById('capa-transition-reason');
+
+  if(capaReasonInput){
+    capaReasonInput.oninput = () => {
+      capaTransitionReason = capaReasonInput.value;
+    };
   }
 
-  formalActionTarget = capaId;
+  document
+    .querySelectorAll('[data-action="proceed-capa-transition"]')
+    .forEach(el => {
+      el.onclick = () => {
+        if(!capaTransitionTarget) return;
 
-  formalActionDraft = {
-    action_type: "CORRECTIVE",
-    description: "",
-    due_date: ""
-  };
+        capaPasswordModalOpen = true;
+        capaPasswordValue = '';
+        capaTransitionError = '';
 
-  render();
+        render();
+      };
+    });
+
+  document
+    .querySelectorAll('[data-action="close-capa-password-modal"]')
+    .forEach(el => {
+      el.onclick = () => {
+        capaPasswordModalOpen = false;
+        capaPasswordValue = '';
+        capaTransitionTarget = null;
+        capaTransitionError = '';
+
+        render();
+      };
+    });
+
+  const capaPasswordInput =
+    document.getElementById('capa-password-input');
+
+  if(capaPasswordInput){
+    capaPasswordInput.oninput = () => {
+      capaPasswordValue = capaPasswordInput.value;
+    };
+  }
+
+  document
+    .querySelectorAll('[data-action="submit-capa-password"]')
+    .forEach(el => {
+      el.onclick = async () => {
+        await submitCapaTransitionSigned();
+      };
+    });
+
+  document
+    .querySelectorAll(
+      '[data-action="complete-formal-action"],' +
+      '[data-action="submit-formal-effectiveness"],' +
+      '[data-action="close-formal-capa"],' +
+      '[data-action="reopen-formal-capa"],' +
+      '[data-action="create-formal-followup"],' +
+      '[data-action="resolve-capa-appeal"]'
+    )
+    .forEach(el => {
+      el.onclick = async () => {
+        if(el.dataset.action === 'resolve-capa-appeal'){
+          await handleCapaAppealDecision(el);
+          return;
+        }
+
+        await handleFormalCapaAction(el);
+      };
+    });
+
+  bindCorrectionModalField();
 }
 
-function renderFindingCorrection(a, f){
-  const pending = lastPendingCorrection(f);
-  const canReview = can("manageCapa") || can("closeOthersCapa");
-  const canRequest =
-    can("respondFindings") ||
-    can("addFindings") ||
-    canReview;
 
-  const isOwnRequest =
-    pending &&
-    pending.actor_name === currentUser()?.fullName;
-
-  return `
-    <!-- existing correction markup -->
-  `;
-}
-
-function renderCorrectionModal(){
-  if(!correctionModalTarget) return '';
-
-  const a = state.audits.find(
-    x => x.id === correctionModalTarget.auditId
-  );
-
-  const f = a && a.findings.find(
-    x => x.id === correctionModalTarget.findingId
-  );
-
-  if(!f) return '';
-
-  const fieldDef =
-    CORRECTION_FIELDS.find(fd => fd.id === correctionField) ||
-    CORRECTION_FIELDS[0];
-
-  const currentValue = f[fieldDef.id] || '';
-
-  const valueInput =
-    fieldDef.type === 'select'
-      ? `<select id="corr-new-value">
-          ${(fieldDef.options || [])
-            .map(option => `
-              <option
-                ${option === currentValue ? 'selected' : ''}>
-                ${esc(option)}
-              </option>
-            `)
-            .join('')}
-        </select>`
-      : fieldDef.type === 'date'
-        ? `<input
-             type="date"
-             id="corr-new-value"
-             value="${esc(currentValue)}" />`
-        : `<input
-             id="corr-new-value"
-             value="${esc(currentValue)}" />`;
-
-  return `
-    <div
-      class="modal-overlay"
-      data-action="close-correction-modal">
-
-      <div
-        class="modal-card"
-        style="max-width:460px;"
-        onclick="event.stopPropagation()">
-
-        <h3
-          class="serif"
-          style="margin:0 0 4px;font-size:16px;color:var(--navy);">
-          Request Finding Correction
-        </h3>
-
-        <p
-          class="muted-italic"
-          style="font-size:12px;margin:0 0 12px;">
-          Corrections require independent review before they are applied.
-          The original value stays visible in this finding's history.
-        </p>
-
-        <label class="field">
-          Field to Correct
-          <select id="corr-field">
-            ${CORRECTION_FIELDS.map(field => `
-              <option
-                value="${esc(field.id)}"
-                ${field.id === fieldDef.id ? 'selected' : ''}>
-                ${esc(field.label)}
-              </option>
-            `).join('')}
-          </select>
-        </label>
-
-        <label class="field" style="margin-top:8px;">
-          Current Value
-          <input
-            value="${esc(currentValue)}"
-            disabled
-            style="opacity:.7;" />
-        </label>
-
-        <label class="field" style="margin-top:8px;">
-          Corrected Value
-          ${valueInput}
-        </label>
-
-        <label class="field" style="margin-top:8px;">
-          Reason for Correction
-          <textarea
-            id="corr-reason"
-            rows="3"
-            placeholder="Why is this correction needed? (min 15 characters)">
-          </textarea>
-        </label>
-
-        <div
-          style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
-
-          <button
-            class="btn btn-ghost"
-            data-action="close-correction-modal">
-            Cancel
-          </button>
-
-          <button
-            class="btn btn-primary"
-            data-action="submit-correction-request">
-            Submit for Review
-          </button>
-        </div>
-      </div>
-    </div>
-  `;
-}
+/* ---------- 13C. CORRECTION FIELD BINDING ---------- */
 
 function bindCorrectionModalField(){
-  const sel = document.getElementById('corr-field');
+  const fieldSelect =
+    document.getElementById('corr-field');
 
-  if(!sel) return;
+  if(!fieldSelect) return;
 
-  sel.onchange = () => {
-    correctionField = sel.value;
+  fieldSelect.onchange = () => {
+    correctionField = fieldSelect.value;
     render();
-    return `
-  <main>
-    ${renderCurrentPage()}
-  </main>
-
-  ${renderCorrectionModal()}
-`;
   };
-}
-
+}      
   
 
 /* ---------------- Shared Risk Management (Day 3) ----------------
