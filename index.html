@@ -4376,7 +4376,13 @@ const FORMAL_CAPA_HANDLERS = {
     reopenFormalCapa(el.dataset.id),
 
   'create-formal-followup': el =>
-    createFormalFollowupCapa(el.dataset.id)
+    createFormalFollowupCapa(el.dataset.id),
+
+  'approve-formal-capa': el =>
+    approveFormalCapa(el.dataset.id),
+
+  'reject-formal-capa': el =>
+    rejectFormalCapa(el.dataset.id)
 };
 
 async function handleFormalCapaAction(el){
@@ -4681,27 +4687,140 @@ function bindCapaApprovalHandlers(){
     });
 
   document
-    .querySelectorAll(
-      '[data-action="complete-formal-action"],' +
-      '[data-action="submit-formal-effectiveness"],' +
-      '[data-action="close-formal-capa"],' +
-      '[data-action="reopen-formal-capa"],' +
-      '[data-action="create-formal-followup"],' +
-      '[data-action="resolve-capa-appeal"]'
-    )
-    .forEach(el => {
-      el.onclick = async () => {
-        if(el.dataset.action === 'resolve-capa-appeal'){
-          await handleCapaAppealDecision(el);
-          return;
-        }
+  .querySelectorAll(
+    '[data-action="complete-formal-action"],' +
+    '[data-action="submit-formal-effectiveness"],' +
+    '[data-action="close-formal-capa"],' +
+    '[data-action="reopen-formal-capa"],' +
+    '[data-action="create-formal-followup"],' +
+    '[data-action="approve-formal-capa"],' +
+    '[data-action="reject-formal-capa"],' +
+    '[data-action="resolve-capa-appeal"]'
+  )
+  .forEach(el => {
+    el.onclick = async () => {
+      if(el.dataset.action === 'resolve-capa-appeal'){
+        await handleCapaAppealDecision(el);
+        return;
+      }
 
-        await handleFormalCapaAction(el);
-      };
-    });
+      await handleFormalCapaAction(el);
+    };
+  });
 
   bindCorrectionModalField();
 }
+  
+async function approveFormalCapa(capaId){
+  const reason = window.prompt(
+    'Reason for approving this CAPA:',
+    ''
+  );
+
+  if(!reason || !reason.trim()){
+    showToast(
+      'Approval reason is required.',
+      'error'
+    );
+    return;
+  }
+
+  try{
+    const { error } = await supabaseClient.rpc(
+      'log_capa_event',
+      {
+        p_capa_id: capaId,
+        p_event_type: 'approved',
+        p_new_status: 'approved',
+        p_reason: reason.trim()
+      }
+    );
+
+    if(error){
+      console.error(
+        'Approve CAPA RPC failed:',
+        error
+      );
+
+      showToast(
+        'Could not approve CAPA: ' + error.message,
+        'error'
+      );
+      return;
+    }
+
+    showToast('CAPA approved.');
+    await fetchCapaApprovalRecords();
+
+  } catch(error){
+    console.error(
+      'Approve CAPA failed:',
+      error
+    );
+
+    showToast(
+      'Could not approve CAPA: ' +
+      (error?.message || String(error)),
+      'error'
+    );
+  }
+}
+
+async function rejectFormalCapa(capaId){
+  const reason = window.prompt(
+    'Reason for rejecting this CAPA:',
+    ''
+  );
+
+  if(!reason || !reason.trim()){
+    showToast(
+      'Rejection reason is required.',
+      'error'
+    );
+    return;
+  }
+
+  try{
+    const { error } = await supabaseClient.rpc(
+      'log_capa_event',
+      {
+        p_capa_id: capaId,
+        p_event_type: 'rejected',
+        p_new_status: 'rejected',
+        p_reason: reason.trim()
+      }
+    );
+
+    if(error){
+      console.error(
+        'Reject CAPA RPC failed:',
+        error
+      );
+
+      showToast(
+        'Could not reject CAPA: ' + error.message,
+        'error'
+      );
+      return;
+    }
+
+    showToast('CAPA rejected.');
+    await fetchCapaApprovalRecords();
+
+  } catch(error){
+    console.error(
+      'Reject CAPA failed:',
+      error
+    );
+
+    showToast(
+      'Could not reject CAPA: ' +
+      (error?.message || String(error)),
+      'error'
+    );
+  }
+}
+  
 
 
 /* ---------- 13C. CORRECTION FIELD BINDING ---------- */
