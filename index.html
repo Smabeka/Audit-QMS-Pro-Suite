@@ -4085,6 +4085,7 @@ async function createFormalFollowupCapa(capaId){
 
 /* ---------- 11. FORMAL PANEL ---------- */
 
+
 function renderFormalCapaPanel(r){
   const isClosed = formalCapaIsClosed(r);
   const blockers = formalCapaClosureBlockers(r);
@@ -4108,6 +4109,16 @@ function renderFormalCapaPanel(r){
       'under_independent_review'
   );
 
+console.log('[CAPA DEBUG] effectiveness state', {
+  status: r.status,
+  capaStatus,
+  actionStatuses: (r.actions || []).map(a => a.status),
+  openActions: formalCapaOpenActions(r).length,
+  blockers,
+  canStartEffectiveness
+});
+
+  
   const currentUserId =
     window.currentUserId ||
     window.currentProfile?.id ||
