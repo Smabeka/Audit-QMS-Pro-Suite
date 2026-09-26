@@ -3633,10 +3633,13 @@ function renderCapaPasswordModal(){
   `;
 }
 
-async function submitCapaTransitionSigned(){
+  async function submitCapaTransitionSigned(){
+  console.log('[CAPA DEBUG] transition submit started');
+
   const target = capaTransitionTarget;
 
   if(!target || !target.edge){
+    console.error('[CAPA DEBUG] missing transition target');
     capaTransitionError = 'No CAPA transition selected.';
     render();
     return;
@@ -3646,6 +3649,7 @@ async function submitCapaTransitionSigned(){
     capaApprovalRecords[target.capaId];
 
   if(!record){
+    console.error('[CAPA DEBUG] missing CAPA record', target.capaId);
     capaTransitionError =
       'CAPA record could not be found. Refresh and try again.';
     render();
@@ -3665,7 +3669,6 @@ async function submitCapaTransitionSigned(){
   }
 
   if(reason.length < target.edge.minChars){
-    capaPasswordModalOpen = false;
     capaTransitionError =
       `Reason must be at least ${target.edge.minChars} characters.`;
     render();
@@ -3677,79 +3680,61 @@ async function submitCapaTransitionSigned(){
   render();
 
   try{
+    console.log('[CAPA DEBUG] reading current user');
+
     const {
       data: userData,
       error: userError
     } = await supabaseClient.auth.getUser();
 
-    if(userError || !userData?.user?.email){
+    if(userError){
       throw new Error(
-        userError?.message ||
-        'Could not identify the signed-in user.'
+        'getUser failed: ' + userError.message
       );
     }
 
-    const email =
-      userData.user.email;
+    const user =
+      userData?.user;
+
+    if(!user?.email){
+      throw new Error(
+        'No authenticated email was found.'
+      );
+    }
+
+    console.log('[CAPA DEBUG] reauthenticating', {
+      email: user.email
+    });
 
     const {
       data: authData,
       error: authError
     } = await supabaseClient.auth.signInWithPassword({
-      email,
+      email: user.email,
       password
     });
 
-    if(authError || !authData?.session){
+    if(authError){
       throw new Error(
-        authError?.message ||
-        'Password verification failed.'
+        'Password verification failed: ' +
+        authError.message
       );
     }
 
-    const appealId =
-      target.edge.rpc === 'resolve_capa_appeal'
-        ? (record.appeals || []).find(
-            appeal =>
-              !appeal.resolved_at &&
-              String(appeal.status || '').toLowerCase() !== 'resolved'
-          )?.id || null
-        : null;
-
-    if(
-      target.edge.rpc === 'resolve_capa_appeal' &&
-      !appealId
-    ){
+    if(!authData?.session){
       throw new Error(
-        'No open appeal was found for this CAPA.'
+        'Password was accepted, but no session was returned.'
       );
     }
 
-    const {
-      error: transitionError
-    } = await supabaseClient.rpc(
-      'log_capa_event',
-      {
-        p_capa_id: target.capaId,
-        p_event_type: target.edge.eventType,
-        p_reason: reason,
-        p_new_status: target.edge.to,
-        p_review_type: target.edge.reviewType || null,
-        p_decision: target.edge.decision || null,
-        p_reviewer_id:
-          target.edge.reviewType
-            ? authData.user?.id || userData.user.id
-            : null,
-        p_appeal_id: appealId
-      }
-    );
+    console.log('[CAPA DEBUG] password verified');
 
-    if(transitionError){
-      throw new Error(
-        transitionError.message
-      );
-    }
-
+    /*
+     * Stop here temporarily.
+     *
+     * This proves whether the password works independently
+     * from the CAPA database transition.
+     */
     capaTransitionTarget = null;
     capaTransitionReason = '';
     capaPasswordModalOpen = false;
@@ -3758,16 +3743,14 @@ async function submitCapaTransitionSigned(){
     capaTransitionError = '';
 
     showToast(
-      `CAPA moved to ${
-        capaApprovalStatusLabel(target.edge.to)
-      }.`
+      'Password verified. The remaining issue is the CAPA transition RPC.'
     );
 
     await fetchCapaApprovalRecords();
 
   } catch(error){
     console.error(
-      '[CAPA DEBUG] password transition failed:',
+      '[CAPA DEBUG] password verification failed:',
       error
     );
 
