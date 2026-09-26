@@ -3766,6 +3766,20 @@ async function submitCapaTransitionSigned(){
       reasonLength: reason.length
     });
 
+   console.log('[CAPA DEBUG] transition request', {
+  functionUrl:
+    'https://rchzyvnkfgofvdkgoawm.supabase.co/functions/v1/capa-transition-signed',
+
+  rpc: target.edge.rpc,
+  capaId: target.capaId,
+  eventType: target.edge.eventType,
+  reasonLength: capaTransitionReason.trim().length,
+  passwordEntered: !!capaPasswordValue,
+  tokenPresent: !!accessToken,
+  tokenLength: accessToken?.length || 0,
+  userId: currentCloudUser?.id || null
+});
+  
     const response = await fetch(
   'https://rchzyvnkfgofvdkgoawm.supabase.co/functions/v1/capa-transition-signed',
   {
