@@ -3671,119 +3671,81 @@ function renderCapaPasswordModal(){
     return;
   }
 
+  let appealId = null;
+
+  if(target.edge.rpc === 'resolve_capa_appeal'){
+    const openAppeal =
+      (record.appeals || []).find(
+        appeal =>
+          !appeal.resolved_at &&
+          String(appeal.status || '').toLowerCase() !== 'resolved'
+      );
+
+    if(!openAppeal){
+      capaTransitionError =
+        'No open appeal was found for this CAPA.';
+      render();
+      return;
+    }
+
+    appealId = openAppeal.id;
+  }
+
   capaTransitionSubmitting = true;
   capaTransitionError = '';
   render();
 
   try{
-    const {
-      data: userData,
-      error: userError
-    } = await supabaseClient.auth.getUser();
-
-    if(userError || !userData?.user?.email){
-      throw new Error(
-        userError?.message ||
-        'Could not identify the signed-in user.'
-      );
-    }
-
-    const user =
-      userData.user;
-
-    const {
-      data: authData,
-      error: authError
-    } = await supabaseClient.auth.signInWithPassword({
-      email: user.email,
-      password
-    });
-
-    if(authError || !authData?.session){
-      throw new Error(
-        authError?.message ||
-        'Password verification failed.'
-      );
-    }
-
-    const actingAs =
-      authData.user?.id ||
-      user.id;
-
-    let transitionResult;
-
-    if(target.edge.rpc === 'log_capa_event'){
-      transitionResult = await supabaseClient.rpc(
-        'log_capa_event',
+    const { data, error } =
+      await supabaseClient.functions.invoke(
+        'capa-transition-signed',
         {
-          p_capa_id: target.capaId,
-          p_event_type: target.edge.eventType,
-          p_reason: reason,
-          p_metadata: {
-            source: 'capa-approval-ui',
-            transition_from: target.edge.from,
-            transition_to: target.edge.to
-          },
-          p_reviewer_id:
-            target.edge.reviewType
-              ? actingAs
-              : null,
-          p_review_type:
-            target.edge.reviewType || null,
-          p_decision:
-            target.edge.decision || null,
-          p_acting_as: actingAs
+          body: {
+            rpc: target.edge.rpc,
+            capa_id: target.capaId,
+            appeal_id: appealId,
+            event_type: target.edge.eventType,
+            reason,
+            metadata: {
+              source: 'capa-approval-ui',
+              transition_from: target.edge.from,
+              transition_to: target.edge.to
+            },
+            reviewer_id:
+              target.edge.reviewType
+                ? currentCloudUser?.id || null
+                : null,
+            review_type:
+              target.edge.reviewType || null,
+            decision:
+              target.edge.decision || null,
+            password
+          }
         }
       );
-    }
 
-    else if(target.edge.rpc === 'submit_capa_appeal'){
-      transitionResult = await supabaseClient.rpc(
-        'submit_capa_appeal',
-        {
-          p_capa_id: target.capaId,
-          p_reason: reason,
-          p_acting_as: actingAs
+    if(error){
+      let message = error.message;
+
+      if(error.context){
+        try{
+          const details =
+            await error.context.json();
+
+          message =
+            details.error ||
+            details.message ||
+            message;
+        } catch{
+          // Keep the original error message.
         }
-      );
-    }
-
-    else if(target.edge.rpc === 'resolve_capa_appeal'){
-      const openAppeal =
-        (record.appeals || []).find(
-          appeal =>
-            !appeal.resolved_at &&
-            String(appeal.status || '').toLowerCase() !== 'resolved'
-        );
-
-      if(!openAppeal){
-        throw new Error(
-          'No open appeal was found for this CAPA.'
-        );
       }
 
-      transitionResult = await supabaseClient.rpc(
-        'resolve_capa_appeal',
-        {
-          p_capa_id: target.capaId,
-          p_appeal_id: openAppeal.id,
-          p_decision: target.edge.decision,
-          p_comments: reason,
-          p_acting_as: actingAs
-        }
-      );
+      throw new Error(message);
     }
 
-    else{
-      throw new Error(
-        'Unsupported CAPA RPC: ' + target.edge.rpc
-      );
-    }
-
-    if(transitionResult?.error){
-      throw new Error(
-        transitionResult.error.message
-      );
+    if(data?.error){
+      throw new Error(data.error);
     }
 
     capaTransitionTarget = null;
@@ -3803,7 +3765,7 @@ function renderCapaPasswordModal(){
 
   } catch(error){
     console.error(
-      '[CAPA DEBUG] CAPA transition failed:',
+      '[CAPA DEBUG] signed CAPA transition failed:',
       error
     );
 
@@ -3815,6 +3777,7 @@ function renderCapaPasswordModal(){
     render();
   }
 }
+
     
 function renderCapaApprovalTab(){
   if(!cloudReady()){
