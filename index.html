@@ -3764,7 +3764,6 @@ CAPA_TRANSITIONS.push(
   { from:"independent_review", to:"rejected",         rpc:"resolve_capa_appeal", eventType:"appeal_denied",    roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Deny Appeal", decision:"rejected" }
 );
 
-
 /* ---------- 4. LOADER ---------- */
 
 async function fetchCapaApprovalRecords(){
@@ -3808,34 +3807,25 @@ async function fetchCapaApprovalRecords(){
       .select("*")
       .order("created_at", { ascending: true })
   ]);
-  const responses = [
-  capasRes,
-  actionsRes,
-  reviewsRes,
-  eventsRes,
-  closuresRes,
-  appealsRes
-];
 
-const firstError = responses.find(
-  response => response.error
-);
+  const firstError = [
+    capasRes,
+    actionsRes,
+    reviewsRes,
+    eventsRes,
+    closuresRes,
+    appealsRes
+  ].find(result => result.error);
 
-if(firstError){
-  const message =
-    firstError.error?.message ||
-    'Unknown CAPA loading error';
+  if(firstError){
+    console.error(firstError.error.message);
+    capaApprovalFetchError = firstError.error.message;
+    capaApprovalLoaded = true;
+    render();
+    return;
+  }
 
-  console.error(
-    '[CAPA] formal workflow load failed:',
-    firstError.error
-  );
-
-  capaApprovalFetchError = message;
-  capaApprovalLoaded = true;
-  render();
-  return;
-}
+  capaApprovalFetchError = "";
 
   const map = {};
 
