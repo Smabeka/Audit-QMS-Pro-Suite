@@ -3933,13 +3933,85 @@ function capaApprovalStatusLabel(status){
    complete with a single log_capa_event call, bypassing all of it. */
 
 CAPA_TRANSITIONS.length = 0;
+
 CAPA_TRANSITIONS.push(
-  { from:"draft",              to:"under_review",     rpc:"log_capa_event",     eventType:"submitted",       roles:["Employee","Department Manager","Admin"], creatorOnly:true,  independentReview:false, minChars:10, label:"Submit for Review" },
-  { from:"under_review",       to:"approved",         rpc:"log_capa_event",     eventType:"approved",        roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:true,  minChars:20, label:"Approve CAPA", reviewType:"initial", decision:"approved" },
-  { from:"under_review",       to:"rejected",         rpc:"log_capa_event",     eventType:"rejected",        roles:["Quality Manager","Admin"],                creatorOnly:false, independentReview:true,  minChars:10, label:"Reject CAPA", reviewType:"initial", decision:"rejected" },
-  { from:"rejected",           to:"independent_review", rpc:"submit_capa_appeal", eventType:"appeal_submitted", roles:["Employee","Department Manager","Admin"], creatorOnly:true,  independentReview:false, minChars:20, label:"Appeal Rejection" },
-  { from:"independent_review", to:"approved",         rpc:"resolve_capa_appeal", eventType:"appeal_upheld",    roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Uphold Appeal (Approve)", decision:"approved" },
-  { from:"independent_review", to:"rejected",         rpc:"resolve_capa_appeal", eventType:"appeal_denied",    roles:["Approver","Admin"],                       creatorOnly:false, independentReview:true,  minChars:20, label:"Deny Appeal", decision:"rejected" }
+  {
+    from: "draft",
+    to: "under_review",
+    rpc: "log_capa_event",
+    eventType: "submitted",
+    roles: ["Employee", "Department Manager", "Admin"],
+    creatorOnly: true,
+    independentReview: false,
+    minChars: 10,
+    label: "Submit for Review"
+  },
+
+  {
+    from: "under_review",
+    to: "approved",
+    rpc: "log_capa_event",
+    eventType: "approved",
+    roles: ["Quality Manager", "Admin"],
+    creatorOnly: false,
+    independentReview: true,
+    minChars: 20,
+    label: "Approve CAPA",
+    reviewType: "initial",
+    decision: "approved"
+  },
+
+  {
+    from: "under_review",
+    to: "rejected",
+    rpc: "log_capa_event",
+    eventType: "rejected",
+    roles: ["Quality Manager", "Admin"],
+    creatorOnly: false,
+    independentReview: true,
+    minChars: 10,
+    label: "Reject CAPA",
+    reviewType: "initial",
+    decision: "rejected"
+  },
+
+  {
+    from: "rejected",
+    to: "independent_review",
+    rpc: "submit_capa_appeal",
+    eventType: "appeal_submitted",
+    roles: ["Employee", "Department Manager", "Admin"],
+    creatorOnly: true,
+    independentReview: false,
+    minChars: 20,
+    label: "Appeal Rejection"
+  },
+
+  {
+    from: "independent_review",
+    to: "approved",
+    rpc: "resolve_capa_appeal",
+    eventType: "appeal_upheld",
+    roles: ["Approver", "Admin"],
+    creatorOnly: false,
+    independentReview: true,
+    minChars: 20,
+    label: "Uphold Appeal (Approve)",
+    decision: "approved"
+  },
+
+  {
+    from: "independent_review",
+    to: "rejected",
+    rpc: "resolve_capa_appeal",
+    eventType: "appeal_denied",
+    roles: ["Approver", "Admin"],
+    creatorOnly: false,
+    independentReview: true,
+    minChars: 20,
+    label: "Deny Appeal",
+    decision: "rejected"
+  }
 );
 
 /* ---------- 4. LOADER ---------- */
@@ -5203,35 +5275,64 @@ if(capaReasonInput){
   capaReasonInput.oninput = event => {
     capaTransitionReason = event.target.value;
 
-    const counter =
-      event.target
-        .closest('.modal-card')
-        ?.querySelector('.capa-reason-counter');
+    const modal =
+      event.target.closest('.modal-card');
 
-    const continueButton =
-      event.target
-        .closest('.modal-card')
-        ?.querySelector(
-          '[data-action="proceed-capa-transition"]'
-        );
+    const count =
+      capaTransitionReason.trim().length;
 
     const minimum =
       capaTransitionTarget?.edge?.minChars || 0;
 
-    const length =
-      capaTransitionReason.trim().length;
+    const counter =
+      modal?.querySelector('.capa-reason-counter');
+
+    const continueButton =
+      modal?.querySelector(
+        '[data-action="proceed-capa-transition"]'
+      );
 
     if(counter){
       counter.textContent =
-        `${length} / ${minimum} characters`;
+        `${count} / ${minimum} characters`;
     }
 
     if(continueButton){
       continueButton.disabled =
-        length < minimum;
+        count < minimum;
     }
   };
 }
+
+document
+  .querySelectorAll('[data-action="proceed-capa-transition"]')
+  .forEach(el => {
+    el.onclick = () => {
+      if(!capaTransitionTarget){
+        return;
+      }
+
+      const reason =
+        String(capaTransitionReason || '').trim();
+
+      const minimum =
+        capaTransitionTarget.edge.minChars;
+
+      if(reason.length < minimum){
+        capaTransitionError =
+          `Reason must be at least ${minimum} characters.`;
+
+        render();
+        return;
+      }
+
+      capaPasswordModalOpen = true;
+      capaPasswordValue = '';
+      capaTransitionError = '';
+
+      render();
+    };
+  });
 
   document
     .querySelectorAll('[data-action="close-capa-password-modal"]')
