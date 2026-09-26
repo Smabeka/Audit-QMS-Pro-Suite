@@ -3634,12 +3634,9 @@ function renderCapaPasswordModal(){
 }
 
   async function submitCapaTransitionSigned(){
-  console.log('[CAPA DEBUG] transition submit started');
-
   const target = capaTransitionTarget;
 
   if(!target || !target.edge){
-    console.error('[CAPA DEBUG] missing transition target');
     capaTransitionError = 'No CAPA transition selected.';
     render();
     return;
@@ -3649,7 +3646,6 @@ function renderCapaPasswordModal(){
     capaApprovalRecords[target.capaId];
 
   if(!record){
-    console.error('[CAPA DEBUG] missing CAPA record', target.capaId);
     capaTransitionError =
       'CAPA record could not be found. Refresh and try again.';
     render();
@@ -3680,31 +3676,20 @@ function renderCapaPasswordModal(){
   render();
 
   try{
-    console.log('[CAPA DEBUG] reading current user');
-
     const {
       data: userData,
       error: userError
     } = await supabaseClient.auth.getUser();
 
-    if(userError){
+    if(userError || !userData?.user?.email){
       throw new Error(
-        'getUser failed: ' + userError.message
+        userError?.message ||
+        'Could not identify the signed-in user.'
       );
     }
 
     const user =
-      userData?.user;
-
-    if(!user?.email){
-      throw new Error(
-        'No authenticated email was found.'
-      );
-    }
-
-    console.log('[CAPA DEBUG] reauthenticating', {
-      email: user.email
-    });
+      userData.user;
 
     const {
       data: authData,
@@ -3714,27 +3699,93 @@ function renderCapaPasswordModal(){
       password
     });
 
-    if(authError){
+    if(authError || !authData?.session){
       throw new Error(
-        'Password verification failed: ' +
-        authError.message
+        authError?.message ||
+        'Password verification failed.'
       );
     }
 
-    if(!authData?.session){
-      throw new Error(
-        'Password was accepted, but no session was returned.'
+    const actingAs =
+      authData.user?.id ||
+      user.id;
+
+    let transitionResult;
+
+    if(target.edge.rpc === 'log_capa_event'){
+      transitionResult = await supabaseClient.rpc(
+        'log_capa_event',
+        {
+          p_capa_id: target.capaId,
+          p_event_type: target.edge.eventType,
+          p_reason: reason,
+          p_metadata: {
+            source: 'capa-approval-ui',
+            transition_from: target.edge.from,
+            transition_to: target.edge.to
+          },
+          p_reviewer_id:
+            target.edge.reviewType
+              ? actingAs
+              : null,
+          p_review_type:
+            target.edge.reviewType || null,
+          p_decision:
+            target.edge.decision || null,
+          p_acting_as: actingAs
+        }
       );
     }
 
-    console.log('[CAPA DEBUG] password verified');
+    else if(target.edge.rpc === 'submit_capa_appeal'){
+      transitionResult = await supabaseClient.rpc(
+        'submit_capa_appeal',
+        {
+          p_capa_id: target.capaId,
+          p_reason: reason,
+          p_acting_as: actingAs
+        }
+      );
+    }
 
-    /*
-     * Stop here temporarily.
-     *
-     * This proves whether the password works independently
-     * from the CAPA database transition.
-     */
+    else if(target.edge.rpc === 'resolve_capa_appeal'){
+      const openAppeal =
+        (record.appeals || []).find(
+          appeal =>
+            !appeal.resolved_at &&
+            String(appeal.status || '').toLowerCase() !== 'resolved'
+        );
+
+      if(!openAppeal){
+        throw new Error(
+          'No open appeal was found for this CAPA.'
+        );
+      }
+
+      transitionResult = await supabaseClient.rpc(
+        'resolve_capa_appeal',
+        {
+          p_capa_id: target.capaId,
+          p_appeal_id: openAppeal.id,
+          p_decision: target.edge.decision,
+          p_comments: reason,
+          p_acting_as: actingAs
+        }
+      );
+    }
+
+    else{
+      throw new Error(
+        'Unsupported CAPA RPC: ' + target.edge.rpc
+      );
+    }
+
+    if(transitionResult?.error){
+      throw new Error(
+        transitionResult.error.message
+      );
+    }
+
     capaTransitionTarget = null;
     capaTransitionReason = '';
     capaPasswordModalOpen = false;
@@ -3743,14 +3794,16 @@ function renderCapaPasswordModal(){
     capaTransitionError = '';
 
     showToast(
-      'Password verified. The remaining issue is the CAPA transition RPC.'
+      `CAPA moved to ${
+        capaApprovalStatusLabel(target.edge.to)
+      }.`
     );
 
     await fetchCapaApprovalRecords();
 
   } catch(error){
     console.error(
-      '[CAPA DEBUG] password verification failed:',
+      '[CAPA DEBUG] CAPA transition failed:',
       error
     );
 
