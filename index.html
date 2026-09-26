@@ -3603,7 +3603,11 @@ function renderCapaTransitionModal(){
         <label class="field" style="margin-bottom:4px;">Reason (min ${edge.minChars} characters)
           <textarea id="capa-transition-reason" rows="3" placeholder="Explain this decision...">${esc(capaTransitionReason)}</textarea>
         </label>
-        <div class="muted-italic" style="font-size:11px;margin-bottom:8px;">${chars} / ${edge.minChars} characters</div>
+        <div
+  class="muted-italic capa-reason-counter"
+  style="font-size:11px;margin-bottom:8px;">
+  ${chars} / ${edge.minChars} characters
+</div>
         ${capaTransitionError ? `<p style="color:var(--rust);font-size:12px;">${esc(capaTransitionError)}</p>` : ''}
         <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
           <button class="btn btn-ghost" data-action="close-capa-transition-modal">Cancel</button>
@@ -5193,27 +5197,41 @@ function bindCapaApprovalHandlers(){
     });
 
   const capaReasonInput =
-    document.getElementById('capa-transition-reason');
+  document.getElementById('capa-transition-reason');
 
-  if(capaReasonInput){
-    capaReasonInput.oninput = () => {
-      capaTransitionReason = capaReasonInput.value;
-    };
-  }
+if(capaReasonInput){
+  capaReasonInput.oninput = event => {
+    capaTransitionReason = event.target.value;
 
-  document
-    .querySelectorAll('[data-action="proceed-capa-transition"]')
-    .forEach(el => {
-      el.onclick = () => {
-        if(!capaTransitionTarget) return;
+    const counter =
+      event.target
+        .closest('.modal-card')
+        ?.querySelector('.capa-reason-counter');
 
-        capaPasswordModalOpen = true;
-        capaPasswordValue = '';
-        capaTransitionError = '';
+    const continueButton =
+      event.target
+        .closest('.modal-card')
+        ?.querySelector(
+          '[data-action="proceed-capa-transition"]'
+        );
 
-        render();
-      };
-    });
+    const minimum =
+      capaTransitionTarget?.edge?.minChars || 0;
+
+    const length =
+      capaTransitionReason.trim().length;
+
+    if(counter){
+      counter.textContent =
+        `${length} / ${minimum} characters`;
+    }
+
+    if(continueButton){
+      continueButton.disabled =
+        length < minimum;
+    }
+  };
+}
 
   document
     .querySelectorAll('[data-action="close-capa-password-modal"]')
