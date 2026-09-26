@@ -3632,7 +3632,7 @@ function renderCapaPasswordModal(){
     </div>
   `;
 }
-    
+
 async function submitCapaTransitionSigned(){
   const target = capaTransitionTarget;
 
@@ -3678,150 +3678,77 @@ async function submitCapaTransitionSigned(){
 
   try{
     const {
-      data: sessionData,
-      error: sessionError
-    } = await supabaseClient.auth.getSession();
+      data: userData,
+      error: userError
+    } = await supabaseClient.auth.getUser();
 
-    if(sessionError){
-      throw new Error(sessionError.message);
+    if(userError || !userData?.user?.email){
+      throw new Error(
+        userError?.message ||
+        'Could not identify the signed-in user.'
+      );
     }
 
-    const session =
-      sessionData?.session;
+    const email =
+      userData.user.email;
 
-    const accessToken =
-      session?.access_token;
+    const {
+      data: authData,
+      error: authError
+    } = await supabaseClient.auth.signInWithPassword({
+      email,
+      password
+    });
 
-    if(!accessToken){
+    if(authError || !authData?.session){
       throw new Error(
-        'Your session has expired. Please sign in again.'
+        authError?.message ||
+        'Password verification failed.'
+      );
+    }
+
+    const appealId =
+      target.edge.rpc === 'resolve_capa_appeal'
+        ? (record.appeals || []).find(
+            appeal =>
+              !appeal.resolved_at &&
+              String(appeal.status || '').toLowerCase() !== 'resolved'
+          )?.id || null
+        : null;
+
+    if(
+      target.edge.rpc === 'resolve_capa_appeal' &&
+      !appealId
+    ){
+      throw new Error(
+        'No open appeal was found for this CAPA.'
       );
     }
 
     const {
-      data: userData,
-      error: userError
-    } = await supabaseClient.auth.getUser(
-      accessToken
+      error: transitionError
+    } = await supabaseClient.rpc(
+      'log_capa_event',
+      {
+        p_capa_id: target.capaId,
+        p_event_type: target.edge.eventType,
+        p_reason: reason,
+        p_new_status: target.edge.to,
+        p_review_type: target.edge.reviewType || null,
+        p_decision: target.edge.decision || null,
+        p_reviewer_id:
+          target.edge.reviewType
+            ? authData.user?.id || userData.user.id
+            : null,
+        p_appeal_id: appealId
+      }
     );
 
-    if(userError || !userData?.user){
+    if(transitionError){
       throw new Error(
-        userError?.message ||
-        'Could not verify the signed-in user.'
+        transitionError.message
       );
     }
-
-    const user =
-      userData.user;
-
-    let appealId = null;
-
-    if(target.edge.rpc === 'resolve_capa_appeal'){
-      const openAppeal =
-        (record.appeals || []).find(
-          appeal =>
-            !appeal.resolved_at &&
-            String(appeal.status || '').toLowerCase() !== 'resolved'
-        );
-
-      if(!openAppeal){
-        throw new Error(
-          'No open appeal was found for this CAPA.'
-        );
-      }
-
-      appealId = openAppeal.id;
-    }
-
-    const payload = {
-      rpc: target.edge.rpc,
-      capa_id: target.capaId,
-      appeal_id: appealId,
-      event_type: target.edge.eventType,
-      reason,
-      review_type: target.edge.reviewType || null,
-      decision: target.edge.decision || null,
-      reviewer_id:
-        target.edge.reviewType
-          ? user.id
-          : null,
-
-      /*
-       * Include all common names temporarily so the Edge Function
-       * can be matched to the client without guessing.
-       */
-      password,
-      current_password: password,
-      email: user.email,
-      user_email: user.email
-    };
-
-    console.log('[CAPA DEBUG] signed transition request', {
-      rpc: payload.rpc,
-      capaId: payload.capa_id,
-      userId: user.id,
-      email: user.email,
-      hasPassword: password.length > 0,
-      reasonLength: reason.length
-    });
-
-   console.log('[CAPA DEBUG] authenticated user', {
-  id: sessionData?.session?.user?.id,
-  email: sessionData?.session?.user?.email,
-  projectUrl: supabaseClient.supabaseUrl
-});
-    const response = await fetch(
-  'https://rchzyvnkfgofvdkgoawm.supabase.co/functions/v1/capa-transition-signed',
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': SUPABASE_ANON_KEY,
-      'Authorization': `Bearer ${accessToken}`
-    },
-    body: JSON.stringify({
-      rpc: target.edge.rpc,
-      capa_id: target.capaId,
-      appeal_id: appealId,
-      event_type: target.edge.eventType,
-      reason: capaTransitionReason.trim(),
-      review_type: target.edge.reviewType || null,
-      decision: target.edge.decision || null,
-      reviewer_id: target.edge.reviewType
-        ? currentCloudUser?.id || null
-        : null,
-      password: capaPasswordValue
-    })
-  }
-);
-
-const responseText = await response.text();
-
-let responseBody = {};
-
-try{
-  responseBody = responseText
-    ? JSON.parse(responseText)
-    : {};
-} catch{
-  responseBody = {
-    error: responseText
-  };
-}
-
-console.log('[CAPA DEBUG] transition response', {
-  status: response.status,
-  body: responseBody
-});
-
-if(!response.ok){
-  throw new Error(
-    responseBody.error ||
-    responseBody.message ||
-    `Transition failed with HTTP ${response.status}`
-  );
-}
 
     capaTransitionTarget = null;
     capaTransitionReason = '';
@@ -3840,7 +3767,7 @@ if(!response.ok){
 
   } catch(error){
     console.error(
-      '[CAPA DEBUG] signed transition failed:',
+      '[CAPA DEBUG] password transition failed:',
       error
     );
 
@@ -3852,6 +3779,7 @@ if(!response.ok){
     render();
   }
 }
+    
 function renderCapaApprovalTab(){
   if(!cloudReady()){
     return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use the CAPA Approval Workflow.</p></div>`;
