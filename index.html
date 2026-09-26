@@ -3435,6 +3435,7 @@ function renderCapaPasswordModal(){
     </div>
   `;
 }
+    
 async function submitCapaTransitionSigned(){
   const target = capaTransitionTarget;
 
@@ -3455,7 +3456,7 @@ async function submitCapaTransitionSigned(){
   }
 
   const password =
-    String(capaPasswordValue || '').trim();
+    String(capaPasswordValue || '');
 
   const reason =
     String(capaTransitionReason || '').trim();
@@ -3488,14 +3489,34 @@ async function submitCapaTransitionSigned(){
       throw new Error(sessionError.message);
     }
 
+    const session =
+      sessionData?.session;
+
     const accessToken =
-      sessionData?.session?.access_token;
+      session?.access_token;
 
     if(!accessToken){
       throw new Error(
         'Your session has expired. Please sign in again.'
       );
     }
+
+    const {
+      data: userData,
+      error: userError
+    } = await supabaseClient.auth.getUser(
+      accessToken
+    );
+
+    if(userError || !userData?.user){
+      throw new Error(
+        userError?.message ||
+        'Could not verify the signed-in user.'
+      );
+    }
+
+    const user =
+      userData.user;
 
     let appealId = null;
 
@@ -3526,18 +3547,26 @@ async function submitCapaTransitionSigned(){
       decision: target.edge.decision || null,
       reviewer_id:
         target.edge.reviewType
-          ? currentCloudUser?.id || null
+          ? user.id
           : null,
-      password
+
+      /*
+       * Include all common names temporarily so the Edge Function
+       * can be matched to the client without guessing.
+       */
+      password,
+      current_password: password,
+      email: user.email,
+      user_email: user.email
     };
 
-    console.log('[CAPA DEBUG] transition payload', {
+    console.log('[CAPA DEBUG] signed transition request', {
       rpc: payload.rpc,
-      capa_id: payload.capa_id,
-      appeal_id: payload.appeal_id,
-      event_type: payload.event_type,
-      hasReason: !!payload.reason,
-      hasPassword: !!payload.password
+      capaId: payload.capa_id,
+      userId: user.id,
+      email: user.email,
+      hasPassword: password.length > 0,
+      reasonLength: reason.length
     });
 
     const response = await fetch(
@@ -3568,11 +3597,16 @@ async function submitCapaTransitionSigned(){
       };
     }
 
+    console.log('[CAPA DEBUG] signed transition response', {
+      status: response.status,
+      body
+    });
+
     if(!response.ok){
       throw new Error(
         body.error ||
         body.message ||
-        `Transition failed (${response.status})`
+        `Transition failed with HTTP ${response.status}.`
       );
     }
 
@@ -3593,7 +3627,7 @@ async function submitCapaTransitionSigned(){
 
   } catch(error){
     console.error(
-      '[CAPA DEBUG] signed transition failed',
+      '[CAPA DEBUG] signed transition failed:',
       error
     );
 
