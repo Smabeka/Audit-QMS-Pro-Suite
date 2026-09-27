@@ -5389,6 +5389,121 @@ document
   bindCorrectionModalField();
 }
   
+
+  async function submitFormalCapaDecision(
+  capaId,
+  eventType,
+  reason,
+  decision
+){
+  if(!supabaseClient){
+    showToast('Supabase is not available.', 'error');
+    return;
+  }
+
+  const cleanReason =
+    String(reason || '').trim();
+
+  const minimum =
+    eventType === 'approved'
+      ? 20
+      : 10;
+
+  if(cleanReason.length < minimum){
+    showToast(
+      `Reason must be at least ${minimum} characters.`,
+      'error'
+    );
+    return;
+  }
+
+  try{
+    const {
+      data: {
+        user
+      },
+      error: userError
+    } = await supabaseClient.auth.getUser();
+
+    if(userError || !user){
+      showToast('Please sign in again.', 'error');
+      return;
+    }
+
+    const password =
+      window.prompt(
+        'Re-enter your password to sign this CAPA decision:'
+      );
+
+    if(!password){
+      showToast(
+        'Password confirmation is required.',
+        'error'
+      );
+      return;
+    }
+
+    const { data, error } =
+      await supabaseClient.functions.invoke(
+        'capa-transition-signed',
+        {
+          body: {
+            rpc: 'log_capa_event',
+            capa_id: capaId,
+            event_type: eventType,
+            reason: cleanReason,
+            metadata: {
+              source: 'formal-capa-decision',
+              transition_to:
+                decision === 'approved'
+                  ? 'approved'
+                  : 'rejected'
+            },
+            reviewer_id: user.id,
+            review_type: 'initial',
+            decision,
+            password
+          }
+        }
+      );
+
+    if(error){
+      console.error(
+        'Signed CAPA transition failed:',
+        error,
+        data
+      );
+
+      showToast(
+        error.message ||
+        'Could not complete the CAPA decision.',
+        'error'
+      );
+      return;
+    }
+
+    showToast(
+      decision === 'approved'
+        ? 'CAPA approved.'
+        : 'CAPA rejected.'
+    );
+
+    await fetchCapaApprovalRecords();
+
+  }catch(error){
+    console.error(
+      'Formal CAPA decision failed:',
+      error
+    );
+
+    showToast(
+      'Could not complete the CAPA decision: ' +
+      (error?.message || String(error)),
+      'error'
+    );
+  }
+}
+
 async function approveFormalCapa(capaId){
   const reason = window.prompt(
     'Reason for approving this CAPA:',
@@ -5403,45 +5518,12 @@ async function approveFormalCapa(capaId){
     return;
   }
 
-  try{
-    const { error } = await supabaseClient.rpc(
-      'log_capa_event',
-      {
-        p_capa_id: capaId,
-        p_event_type: 'approved',
-        p_new_status: 'approved',
-        p_reason: reason.trim()
-      }
-    );
-
-    if(error){
-      console.error(
-        'Approve CAPA RPC failed:',
-        error
-      );
-
-      showToast(
-        'Could not approve CAPA: ' + error.message,
-        'error'
-      );
-      return;
-    }
-
-    showToast('CAPA approved.');
-    await fetchCapaApprovalRecords();
-
-  } catch(error){
-    console.error(
-      'Approve CAPA failed:',
-      error
-    );
-
-    showToast(
-      'Could not approve CAPA: ' +
-      (error?.message || String(error)),
-      'error'
-    );
-  }
+  await submitFormalCapaDecision(
+    capaId,
+    'approved',
+    reason,
+    'approved'
+  );
 }
 
 async function rejectFormalCapa(capaId){
@@ -5458,47 +5540,13 @@ async function rejectFormalCapa(capaId){
     return;
   }
 
-  try{
-    const { error } = await supabaseClient.rpc(
-      'log_capa_event',
-      {
-        p_capa_id: capaId,
-        p_event_type: 'rejected',
-        p_new_status: 'rejected',
-        p_reason: reason.trim()
-      }
-    );
-
-    if(error){
-      console.error(
-        'Reject CAPA RPC failed:',
-        error
-      );
-
-      showToast(
-        'Could not reject CAPA: ' + error.message,
-        'error'
-      );
-      return;
-    }
-
-    showToast('CAPA rejected.');
-    await fetchCapaApprovalRecords();
-
-  } catch(error){
-    console.error(
-      'Reject CAPA failed:',
-      error
-    );
-
-    showToast(
-      'Could not reject CAPA: ' +
-      (error?.message || String(error)),
-      'error'
-    );
-  }
+  await submitFormalCapaDecision(
+    capaId,
+    'rejected',
+    reason,
+    'rejected'
+  );
 }
-  
 
 
 /* ---------- 13C. CORRECTION FIELD BINDING ---------- */
