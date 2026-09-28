@@ -3640,12 +3640,14 @@ function renderCapaPasswordModal(){
     </div>
   `;
 }
+ async function submitCapaTransitionSigned(){
 
-  async function submitCapaTransitionSigned(){
-  const target = capaTransitionTarget;
+  const target =
+    capaTransitionTarget;
 
   if(!target || !target.edge){
-    capaTransitionError = 'No CAPA transition selected.';
+    capaTransitionError =
+      'No CAPA transition selected.';
     render();
     return;
   }
@@ -3660,6 +3662,9 @@ function renderCapaPasswordModal(){
     return;
   }
 
+  const edge =
+    target.edge;
+
   const password =
     String(capaPasswordValue || '');
 
@@ -3667,26 +3672,30 @@ function renderCapaPasswordModal(){
     String(capaTransitionReason || '').trim();
 
   if(!password){
-    capaTransitionError = 'Password is required.';
+    capaTransitionError =
+      'Password is required.';
     render();
     return;
   }
 
-  if(reason.length < target.edge.minChars){
+  if(reason.length < edge.minChars){
     capaTransitionError =
-      `Reason must be at least ${target.edge.minChars} characters.`;
+      `Reason must be at least ${edge.minChars} characters.`;
     render();
     return;
   }
 
   let appealId = null;
 
-  if(target.edge.rpc === 'resolve_capa_appeal'){
+  if(edge.rpc === 'resolve_capa_appeal'){
     const openAppeal =
       (record.appeals || []).find(
         appeal =>
           !appeal.resolved_at &&
-          String(appeal.status || '').toLowerCase() !== 'resolved'
+          !appeal.resolvedAt &&
+          String(
+            appeal.status || ''
+          ).toLowerCase() !== 'resolved'
       );
 
     if(!openAppeal){
@@ -3696,7 +3705,8 @@ function renderCapaPasswordModal(){
       return;
     }
 
-    appealId = openAppeal.id;
+    appealId =
+      openAppeal.id;
   }
 
   capaTransitionSubmitting = true;
@@ -3704,36 +3714,89 @@ function renderCapaPasswordModal(){
   render();
 
   try{
-    const { data, error } =
+
+    /*
+     * Build only the fields required by each RPC.
+     */
+    const requestBody = {
+      rpc: edge.rpc,
+      capa_id: target.capaId,
+      reason,
+      password
+    };
+
+    /*
+     * Initial submission, approval, or rejection.
+     */
+    if(edge.rpc === 'log_capa_event'){
+      requestBody.event_type =
+        edge.eventType;
+
+      requestBody.metadata = {
+        source: 'capa-approval-ui',
+        transition_from: edge.from,
+        transition_to: edge.to
+      };
+
+      requestBody.reviewer_id =
+        edge.reviewType
+          ? currentCloudUser?.id || null
+          : null;
+
+      requestBody.review_type =
+        edge.reviewType || null;
+
+      requestBody.decision =
+        edge.decision || null;
+    }
+
+    /*
+     * Appeal submission needs only:
+     * rpc, capa_id, reason and password.
+     */
+    if(edge.rpc === 'submit_capa_appeal'){
+      // No event_type, reviewer_id, review_type,
+      // decision, metadata or appeal_id is needed.
+    }
+
+    /*
+     * Appeal resolution needs the appeal ID and decision.
+     */
+    if(edge.rpc === 'resolve_capa_appeal'){
+      requestBody.appeal_id =
+        appealId;
+
+      requestBody.decision =
+        edge.decision || null;
+    }
+
+    console.log(
+      '[CAPA DEBUG] transition request:',
+      {
+        rpc: requestBody.rpc,
+        capa_id: requestBody.capa_id,
+        event_type: requestBody.event_type || null,
+        appeal_id: requestBody.appeal_id || null,
+        reason_length: reason.length,
+        has_password: Boolean(password)
+      }
+    );
+
+    const {
+      data,
+      error
+    } =
       await supabaseClient.functions.invoke(
         'capa-transition-signed',
         {
-          body: {
-            rpc: target.edge.rpc,
-            capa_id: target.capaId,
-            appeal_id: appealId,
-            event_type: target.edge.eventType,
-            reason,
-            metadata: {
-              source: 'capa-approval-ui',
-              transition_from: target.edge.from,
-              transition_to: target.edge.to
-            },
-            reviewer_id:
-              target.edge.reviewType
-                ? currentCloudUser?.id || null
-                : null,
-            review_type:
-              target.edge.reviewType || null,
-            decision:
-              target.edge.decision || null,
-            password
-          }
+          body: requestBody
         }
       );
 
     if(error){
-      let message = error.message;
+      let message =
+        error.message ||
+        'CAPA transition failed.';
 
       if(error.context){
         try{
@@ -3744,8 +3807,8 @@ function renderCapaPasswordModal(){
             details.error ||
             details.message ||
             message;
-        } catch{
-          // Keep the original error message.
+        }catch{
+          // Keep the original message.
         }
       }
 
@@ -3753,39 +3816,54 @@ function renderCapaPasswordModal(){
     }
 
     if(data?.error){
-      throw new Error(data.error);
+      throw new Error(
+        data.error
+      );
     }
 
-    capaTransitionTarget = null;
-    capaTransitionReason = '';
-    capaPasswordModalOpen = false;
-    capaPasswordValue = '';
-    capaTransitionSubmitting = false;
-    capaTransitionError = '';
+    capaTransitionTarget =
+      null;
+
+    capaTransitionReason =
+      '';
+
+    capaPasswordModalOpen =
+      false;
+
+    capaPasswordValue =
+      '';
+
+    capaTransitionSubmitting =
+      false;
+
+    capaTransitionError =
+      '';
 
     showToast(
       `CAPA moved to ${
-        capaApprovalStatusLabel(target.edge.to)
+        capaApprovalStatusLabel(edge.to)
       }.`
     );
 
     await fetchCapaApprovalRecords();
 
-  } catch(error){
+  }catch(error){
     console.error(
       '[CAPA DEBUG] signed CAPA transition failed:',
       error
     );
 
-    capaTransitionSubmitting = false;
+    capaTransitionSubmitting =
+      false;
+
     capaTransitionError =
       error?.message ||
       String(error);
 
     render();
   }
-}
-
+}          
+      
     
 function renderCapaApprovalTab(){
   if(!cloudReady()){
