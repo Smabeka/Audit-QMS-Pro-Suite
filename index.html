@@ -5537,22 +5537,35 @@ document
     '[data-action="reopen-formal-capa"],' +
     '[data-action="create-formal-followup"],' +
     '[data-action="approve-formal-capa"],' +
-    '[data-action="reject-formal-capa"],' +
-    '[data-action="resolve-capa-appeal"]'
+    '[data-action="reject-formal-capa"]'
   )
   .forEach(el => {
     el.onclick = async () => {
-      if(el.dataset.action === 'resolve-capa-appeal'){
-        await handleCapaAppealDecision(el);
-        return;
-      }
-
       await handleFormalCapaAction(el);
     };
   });
 
-  bindCorrectionModalField();
-}
+document
+  .querySelectorAll(
+    '[data-action="resolve-capa-appeal"]'
+  )
+  .forEach(el => {
+    el.onclick = async event => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      console.log(
+        '[CAPA DEBUG] appeal decision button:',
+        {
+          capaId: el.dataset.capaId,
+          appealId: el.dataset.appealId,
+          decision: el.dataset.decision
+        }
+      );
+
+      await handleCapaAppealDecision(el);
+    };
+  });
   
 
   async function submitFormalCapaDecision(
