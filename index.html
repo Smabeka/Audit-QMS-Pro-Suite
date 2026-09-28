@@ -3641,6 +3641,9 @@ function renderCapaPasswordModal(){
   `;
 }
  async function submitCapaTransitionSigned(){
+  if(capaTransitionSubmitting){
+  return;
+} 
 
   const target =
     capaTransitionTarget;
@@ -4649,27 +4652,28 @@ const canResolveAppeal =
           </p>
 
           <button
-  class="btn btn-primary"
-  data-action="resolve-capa-appeal"
-  data-capa-id="${esc(r.id)}"
-  data-appeal-id="${esc(pendingAppeal.id)}"
-  data-decision="approved">
-  Uphold Appeal
-</button>
+          <button
+          class="btn btn-primary"
+          data-action="resolve-capa-appeal"
+         data-capa-id="${esc(r.id)}"
+         data-appeal-id="${esc(pendingAppeal.id)}"
+         data-decision="approved">
+        Uphold Appeal
+        </button>
 
-<button
-  class="btn btn-ghost"
-  data-action="resolve-capa-appeal"
-  data-capa-id="${esc(r.id)}"
-  data-appeal-id="${esc(pendingAppeal.id)}"
-  data-decision="rejected">
-  Deny Appeal
-</button>
-        </div>
-      ` : ''}
-      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
-        Formal CAPA \u2014 Actions, Effectiveness &amp; Closure
-      </div>
+      <button
+      class="btn btn-ghost"
+      data-action="resolve-capa-appeal"
+      data-capa-id="${esc(r.id)}"
+     data-appeal-id="${esc(pendingAppeal.id)}"
+    data-decision="rejected">
+   Deny Appeal
+  </button>
+  </div>
+  ` : ''}
+  <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
+  Formal CAPA \u2014 Actions, Effectiveness &amp; Closure
+</div>
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 4px;">Actions</div>
       ${actionRows}
