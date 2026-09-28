@@ -3343,16 +3343,21 @@ CAPA_TRANSITIONS.push(
     decision: "rejected"
   },
 
-  {
-    from: "rejected",
-    to: "independent_review",
-    rpc: "submit_capa_appeal",
-    eventType: "appeal_submitted",
-    roles: ["Employee", "Department Manager", "Admin"],
-    creatorOnly: true,
-    independentReview: false,
-    minChars: 20,
-    label: "Appeal Rejection"
+    {
+  from: "rejected",
+  to: "independent_review",
+  rpc: "submit_capa_appeal",
+  eventType: "appeal_submitted",
+  roles: [
+    "Employee",
+    "Department Manager",
+    "Admin"
+  ],
+  creatorOnly: true,
+  independentReview: false,
+  minChars: 20,
+  label: "Appeal Rejection"
+}
   },
 
   {
@@ -3974,17 +3979,21 @@ CAPA_TRANSITIONS.push(
     reviewType: "initial",
     decision: "rejected"
   },
-
   {
-    from: "rejected",
-    to: "independent_review",
-    rpc: "submit_capa_appeal",
-    eventType: "appeal_submitted",
-    roles: ["Employee", "Department Manager", "Admin"],
-    creatorOnly: true,
-    independentReview: false,
-    minChars: 20,
-    label: "Appeal Rejection"
+  from: "rejected",
+  to: "independent_review",
+  rpc: "submit_capa_appeal",
+  eventType: "appeal_submitted",
+  roles: [
+    "Employee",
+    "Department Manager",
+    "Admin"
+  ],
+  creatorOnly: true,
+  independentReview: false,
+  minChars: 20,
+  label: "Appeal Rejection"
+}
   },
 
   {
@@ -5269,23 +5278,32 @@ function bindCapaApprovalHandlers(){
     });
 
   const capaReasonInput =
-  document.getElementById('capa-transition-reason');
+  document.getElementById(
+    'capa-transition-reason'
+  );
 
 if(capaReasonInput){
   capaReasonInput.oninput = event => {
-    capaTransitionReason = event.target.value;
+    capaTransitionReason =
+      event.target.value;
 
     const modal =
-      event.target.closest('.modal-card');
+      event.target.closest(
+        '.modal-card'
+      );
 
     const count =
       capaTransitionReason.trim().length;
 
     const minimum =
-      capaTransitionTarget?.edge?.minChars || 0;
+      capaTransitionTarget
+        ?.edge
+        ?.minChars || 0;
 
     const counter =
-      modal?.querySelector('.capa-reason-counter');
+      modal?.querySelector(
+        '.capa-reason-counter'
+      );
 
     const continueButton =
       modal?.querySelector(
