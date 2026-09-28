@@ -4649,24 +4649,22 @@ const canResolveAppeal =
           </p>
 
           <button
-            class="btn btn-primary"
-            style="font-size:11px;"
-            data-action="resolve-capa-appeal"
-            data-capa-id="${esc(r.id)}"
-            data-appeal-id="${esc(pendingAppeal.id)}"
-            data-decision="approved">
-            Uphold Appeal
-          </button>
+  class="btn btn-primary"
+  data-action="resolve-capa-appeal"
+  data-capa-id="${esc(r.id)}"
+  data-appeal-id="${esc(pendingAppeal.id)}"
+  data-decision="approved">
+  Uphold Appeal
+</button>
 
-          <button
-            class="btn btn-ghost"
-            style="font-size:11px;margin-left:6px;"
-            data-action="resolve-capa-appeal"
-            data-capa-id="${esc(r.id)}"
-            data-appeal-id="${esc(pendingAppeal.id)}"
-            data-decision="rejected">
-            Deny Appeal
-          </button>
+<button
+  class="btn btn-ghost"
+  data-action="resolve-capa-appeal"
+  data-capa-id="${esc(r.id)}"
+  data-appeal-id="${esc(pendingAppeal.id)}"
+  data-decision="rejected">
+  Deny Appeal
+</button>
         </div>
       ` : ''}
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">
@@ -5115,51 +5113,120 @@ async function handleFormalCapaAction(el){
 }
 
 async function handleCapaAppealDecision(el){
-  const capaId = el.dataset.capaId;
-  const appealId = el.dataset.appealId;
-  const decision = el.dataset.decision;
 
-  if(!capaId || !appealId || !decision){
-    showToast('Appeal information is incomplete.', 'error');
+  const capaId =
+    el.dataset.capaId;
+
+  const appealId =
+    el.dataset.appealId;
+
+  const decision =
+    el.dataset.decision;
+
+  if(
+    !capaId ||
+    !appealId ||
+    !decision
+  ){
+    showToast(
+      'Appeal information is incomplete.',
+      'error'
+    );
     return;
   }
 
-  if(!['approved', 'rejected'].includes(decision)){
-    showToast('Invalid appeal decision.', 'error');
+  if(
+    !['approved', 'rejected']
+      .includes(decision)
+  ){
+    showToast(
+      'Invalid appeal decision.',
+      'error'
+    );
     return;
   }
 
-  const comments = window.prompt(
-    decision === 'approved'
-      ? 'Reason for upholding the appeal:'
-      : 'Reason for denying the appeal:'
-  );
+  const comments =
+    window.prompt(
+      decision === 'approved'
+        ? 'Reason for upholding the appeal:'
+        : 'Reason for denying the appeal:'
+    );
 
-  if(!comments || !comments.trim()){
-    showToast('A decision reason is required.', 'error');
+  if(
+    !comments ||
+    comments.trim().length < 20
+  ){
+    showToast(
+      'Decision reason must be at least 20 characters.',
+      'error'
+    );
+    return;
+  }
+
+  if(el.disabled){
     return;
   }
 
   el.disabled = true;
 
   try{
-    const { error } = await supabaseClient.rpc(
-      'resolve_capa_appeal',
-      {
-        p_capa_id: capaId,
-        p_appeal_id: appealId,
-        p_decision: decision,
-        p_comments: comments.trim()
-      }
-    );
+    const {
+      data: sessionData,
+      error: sessionError
+    } =
+      await supabaseClient.auth.getSession();
+
+    const accessToken =
+      sessionData?.session?.access_token;
+
+    if(
+      sessionError ||
+      !accessToken
+    ){
+      throw new Error(
+        'Your session has expired. Please sign in again.'
+      );
+    }
+
+    const response =
+      await supabaseClient.functions.invoke(
+        'capa-transition-signed',
+        {
+          body: {
+            rpc: 'resolve_capa_appeal',
+            capa_id: capaId,
+            appeal_id: appealId,
+            reason: comments.trim(),
+            decision,
+            review_type: 'appeal',
+            reviewer_id:
+              currentCloudUser?.id || null,
+            password:
+              window.prompt(
+                'Re-enter your password to sign this appeal decision:'
+              )
+          }
+        }
+      );
+
+    const error =
+      response.error;
+
+    const data =
+      response.data;
 
     if(error){
-      el.disabled = false;
-      showToast(
-        'Could not resolve appeal: ' + error.message,
-        'error'
+      throw new Error(
+        error.message ||
+        'Could not resolve appeal.'
       );
-      return;
+    }
+
+    if(data?.error){
+      throw new Error(
+        data.error
+      );
     }
 
     showToast(
@@ -5170,9 +5237,7 @@ async function handleCapaAppealDecision(el){
 
     await fetchCapaApprovalRecords();
 
-  } catch(error){
-    el.disabled = false;
-
+  }catch(error){
     console.error(
       'Appeal decision failed:',
       error
@@ -5180,12 +5245,18 @@ async function handleCapaAppealDecision(el){
 
     showToast(
       'Could not resolve appeal: ' +
-      (error?.message || String(error)),
+      (
+        error?.message ||
+        String(error)
+      ),
       'error'
     );
+
+  }finally{
+    el.disabled = false;
   }
 }
-
+    
 
 /* ---------- 13A. ADD-ACTION DELEGATED HANDLER ---------- */
 
