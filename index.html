@@ -3689,44 +3689,6 @@ function renderCapaTransitionModal(){
     </div>
   `;
 }
-window.capaTransitionReasonChanged =
-  function(input){
-
-    capaTransitionReason =
-      input.value;
-
-    const modal =
-      input.closest('.modal-card');
-
-    const count =
-      capaTransitionReason.trim().length;
-
-    const minimum =
-      capaTransitionTarget
-        ?.edge
-        ?.minChars || 0;
-
-    const counter =
-      modal?.querySelector(
-        '.capa-reason-counter'
-      );
-
-    const continueButton =
-      modal?.querySelector(
-        '[data-action="proceed-capa-transition"]'
-      );
-
-    if(counter){
-      counter.textContent =
-        `${count} / ${minimum} characters`;
-    }
-
-    if(continueButton){
-      continueButton.disabled =
-        count < minimum;
-    }
-  };
-  
 function renderCapaPasswordModal(){
   if(!capaPasswordModalOpen) return '';
   return `
@@ -5576,19 +5538,27 @@ function attachFormalCapaDelegatedHandler(){
 
   document.addEventListener(
   'input',
-  event => {
+  function(event){
+
+    if(!event || !event.target){
+      return;
+    }
+
+    const input =
+      event.target;
+
     if(
-      event.target.id !==
+      input.id !==
       'capa-transition-reason'
     ){
       return;
     }
 
     capaTransitionReason =
-      event.target.value;
+      input.value || '';
 
     const modal =
-      event.target.closest(
+      input.closest(
         '.modal-card'
       );
 
