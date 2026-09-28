@@ -4652,7 +4652,6 @@ const canResolveAppeal =
           </p>
 
           <button
-          <button
           class="btn btn-primary"
           data-action="resolve-capa-appeal"
          data-capa-id="${esc(r.id)}"
@@ -5168,6 +5167,19 @@ async function handleCapaAppealDecision(el){
     return;
   }
 
+  const password =
+    window.prompt(
+      'Re-enter your password to sign this appeal decision:'
+    );
+
+  if(!password){
+    showToast(
+      'Password confirmation is required.',
+      'error'
+    );
+    return;
+  }
+
   if(el.disabled){
     return;
   }
@@ -5193,7 +5205,10 @@ async function handleCapaAppealDecision(el){
       );
     }
 
-    const response =
+    const {
+      data,
+      error
+    } =
       await supabaseClient.functions.invoke(
         'capa-transition-signed',
         {
@@ -5203,22 +5218,13 @@ async function handleCapaAppealDecision(el){
             appeal_id: appealId,
             reason: comments.trim(),
             decision,
-            review_type: 'appeal',
             reviewer_id:
               currentCloudUser?.id || null,
-            password:
-              window.prompt(
-                'Re-enter your password to sign this appeal decision:'
-              )
+            review_type: 'appeal',
+            password
           }
         }
       );
-
-    const error =
-      response.error;
-
-    const data =
-      response.data;
 
     if(error){
       throw new Error(
@@ -5243,7 +5249,7 @@ async function handleCapaAppealDecision(el){
 
   }catch(error){
     console.error(
-      'Appeal decision failed:',
+      '[CAPA DEBUG] appeal decision failed:',
       error
     );
 
@@ -5260,6 +5266,7 @@ async function handleCapaAppealDecision(el){
     el.disabled = false;
   }
 }
+    
     
 
 /* ---------- 13A. ADD-ACTION DELEGATED HANDLER ---------- */
