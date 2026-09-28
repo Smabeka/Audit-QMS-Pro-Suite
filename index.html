@@ -5327,11 +5327,14 @@ function attachFormalCapaDelegatedHandler(){
 
 /* ---------- 13B. CAPA APPROVAL BINDINGS ---------- */
 
-function bindCapaApprovalHandlers(){
+  function bindCapaApprovalHandlers(){
+
   attachFormalCapaDelegatedHandler();
 
   document
-    .querySelectorAll('[data-action="retry-capa-approval"]')
+    .querySelectorAll(
+      '[data-action="retry-capa-approval"]'
+    )
     .forEach(el => {
       el.onclick = () => {
         capaApprovalLoaded = false;
@@ -5341,7 +5344,9 @@ function bindCapaApprovalHandlers(){
     });
 
   document
-    .querySelectorAll('[data-action="open-new-capa-approval"]')
+    .querySelectorAll(
+      '[data-action="open-new-capa-approval"]'
+    )
     .forEach(el => {
       el.onclick = () => {
         showNewCapaApproval = true;
@@ -5358,7 +5363,9 @@ function bindCapaApprovalHandlers(){
     });
 
   document
-    .querySelectorAll('[data-action="close-new-capa-approval"]')
+    .querySelectorAll(
+      '[data-action="close-new-capa-approval"]'
+    )
     .forEach(el => {
       el.onclick = () => {
         showNewCapaApproval = false;
@@ -5367,29 +5374,35 @@ function bindCapaApprovalHandlers(){
     });
 
   document
-    .querySelectorAll('[data-action="submit-new-capa-approval"]')
+    .querySelectorAll(
+      '[data-action="submit-new-capa-approval"]'
+    )
     .forEach(el => {
       el.onclick = async () => {
         newCapaApprovalDraft = {
           title:
             document
               .getElementById('new-capa-title')
-              ?.value.trim() || '',
+              ?.value
+              .trim() || '',
 
           description:
             document
               .getElementById('new-capa-description')
-              ?.value.trim() || '',
+              ?.value
+              .trim() || '',
 
           root_cause:
             document
               .getElementById('new-capa-root-cause')
-              ?.value.trim() || '',
+              ?.value
+              .trim() || '',
 
           corrective_action:
             document
               .getElementById('new-capa-corrective-action')
-              ?.value.trim() || ''
+              ?.value
+              .trim() || ''
         };
 
         await createCapaApprovalRecord();
@@ -5397,7 +5410,9 @@ function bindCapaApprovalHandlers(){
     });
 
   document
-    .querySelectorAll('[data-action="toggle-capa-approval"]')
+    .querySelectorAll(
+      '[data-action="toggle-capa-approval"]'
+    )
     .forEach(el => {
       el.onclick = () => {
         capaApprovalOpenId =
@@ -5410,113 +5425,142 @@ function bindCapaApprovalHandlers(){
     });
 
   document
-    .querySelectorAll('[data-action="open-capa-transition"]')
+    .querySelectorAll(
+      '[data-action="open-capa-transition"]'
+    )
     .forEach(el => {
       el.onclick = () => {
-        const record = capaApprovalRecords[el.dataset.id];
+        const record =
+          capaApprovalRecords[el.dataset.id];
 
-        if(!record) return;
+        if(!record){
+          return;
+        }
 
-        const edge = eligibleCapaTransitions(record)
-          .find(item => item.to === el.dataset.to);
+        const edge =
+          eligibleCapaTransitions(record)
+            .find(
+              item =>
+                item.to === el.dataset.to
+            );
 
-        if(!edge) return;
+        if(!edge){
+          return;
+        }
 
-        openCapaTransition(el.dataset.id, edge);
+        openCapaTransition(
+          el.dataset.id,
+          edge
+        );
       };
     });
 
   document
-    .querySelectorAll('[data-action="close-capa-transition-modal"]')
+    .querySelectorAll(
+      '[data-action="close-capa-transition-modal"]'
+    )
     .forEach(el => {
       el.onclick = () => {
         capaTransitionTarget = null;
+        capaTransitionReason = '';
+        capaTransitionError = '';
         render();
       };
     });
 
   const capaReasonInput =
-  document.getElementById(
-    'capa-transition-reason'
-  );
+    document.getElementById(
+      'capa-transition-reason'
+    );
 
-if(capaReasonInput){
-  capaReasonInput.oninput = event => {
-    capaTransitionReason =
-      event.target.value;
+  if(capaReasonInput){
+    capaReasonInput.oninput = event => {
+      capaTransitionReason =
+        event.target.value;
 
-    const modal =
-      event.target.closest(
-        '.modal-card'
-      );
+      const modal =
+        event.target.closest(
+          '.modal-card'
+        );
 
-    const count =
-      capaTransitionReason.trim().length;
-
-    const minimum =
-      capaTransitionTarget
-        ?.edge
-        ?.minChars || 0;
-
-    const counter =
-      modal?.querySelector(
-        '.capa-reason-counter'
-      );
-
-    const continueButton =
-      modal?.querySelector(
-        '[data-action="proceed-capa-transition"]'
-      );
-
-    if(counter){
-      counter.textContent =
-        `${count} / ${minimum} characters`;
-    }
-
-    if(continueButton){
-      continueButton.disabled =
-        count < minimum;
-    }
-  };
-}
-
-document
-  .querySelectorAll('[data-action="proceed-capa-transition"]')
-  .forEach(el => {
-    el.onclick = () => {
-      if(!capaTransitionTarget){
-        return;
-      }
-
-      const reason =
-        String(capaTransitionReason || '').trim();
+      const count =
+        capaTransitionReason
+          .trim()
+          .length;
 
       const minimum =
-        capaTransitionTarget.edge.minChars;
+        capaTransitionTarget
+          ?.edge
+          ?.minChars || 0;
 
-      if(reason.length < minimum){
-        capaTransitionError =
-          `Reason must be at least ${minimum} characters.`;
+      const counter =
+        modal?.querySelector(
+          '.capa-reason-counter'
+        );
 
-        render();
-        return;
+      const continueButton =
+        modal?.querySelector(
+          '[data-action="proceed-capa-transition"]'
+        );
+
+      if(counter){
+        counter.textContent =
+          `${count} / ${minimum} characters`;
       }
 
-      capaPasswordModalOpen = true;
-      capaPasswordValue = '';
-      capaTransitionError = '';
-
-      render();
+      if(continueButton){
+        continueButton.disabled =
+          count < minimum;
+      }
     };
-  });
+  }
 
   document
-    .querySelectorAll('[data-action="close-capa-password-modal"]')
+    .querySelectorAll(
+      '[data-action="proceed-capa-transition"]'
+    )
+    .forEach(el => {
+      el.onclick = () => {
+        if(!capaTransitionTarget){
+          return;
+        }
+
+        const reason =
+          String(
+            capaTransitionReason || ''
+          ).trim();
+
+        const minimum =
+          capaTransitionTarget
+            .edge
+            .minChars;
+
+        if(reason.length < minimum){
+          capaTransitionError =
+            `Reason must be at least ${minimum} characters.`;
+
+          render();
+          return;
+        }
+
+        capaPasswordModalOpen = true;
+        capaPasswordValue = '';
+        capaTransitionError = '';
+
+        render();
+      };
+    });
+
+  document
+    .querySelectorAll(
+      '[data-action="close-capa-password-modal"]'
+    )
     .forEach(el => {
       el.onclick = () => {
         capaPasswordModalOpen = false;
         capaPasswordValue = '';
         capaTransitionTarget = null;
+        capaTransitionReason = '';
         capaTransitionError = '';
 
         render();
@@ -5524,16 +5568,21 @@ document
     });
 
   const capaPasswordInput =
-    document.getElementById('capa-password-input');
+    document.getElementById(
+      'capa-password-input'
+    );
 
   if(capaPasswordInput){
-    capaPasswordInput.oninput = () => {
-      capaPasswordValue = capaPasswordInput.value;
+    capaPasswordInput.oninput = event => {
+      capaPasswordValue =
+        event.target.value;
     };
   }
 
   document
-    .querySelectorAll('[data-action="submit-capa-password"]')
+    .querySelectorAll(
+      '[data-action="submit-capa-password"]'
+    )
     .forEach(el => {
       el.onclick = async () => {
         await submitCapaTransitionSigned();
@@ -5541,43 +5590,37 @@ document
     });
 
   document
-  .querySelectorAll(
-    '[data-action="complete-formal-action"],' +
-    '[data-action="submit-formal-effectiveness"],' +
-    '[data-action="close-formal-capa"],' +
-    '[data-action="reopen-formal-capa"],' +
-    '[data-action="create-formal-followup"],' +
-    '[data-action="approve-formal-capa"],' +
-    '[data-action="reject-formal-capa"]'
-  )
-  .forEach(el => {
-    el.onclick = async () => {
-      await handleFormalCapaAction(el);
-    };
-  });
+    .querySelectorAll(
+      '[data-action="complete-formal-action"],' +
+      '[data-action="submit-formal-effectiveness"],' +
+      '[data-action="close-formal-capa"],' +
+      '[data-action="reopen-formal-capa"],' +
+      '[data-action="create-formal-followup"],' +
+      '[data-action="approve-formal-capa"],' +
+      '[data-action="reject-formal-capa"]'
+    )
+    .forEach(el => {
+      el.onclick = async () => {
+        await handleFormalCapaAction(el);
+      };
+    });
 
-document
-  .querySelectorAll(
-    '[data-action="resolve-capa-appeal"]'
-  )
-  .forEach(el => {
-    el.onclick = async event => {
-      event.preventDefault();
-      event.stopPropagation();
+  document
+    .querySelectorAll(
+      '[data-action="resolve-capa-appeal"]'
+    )
+    .forEach(el => {
+      el.onclick = async event => {
+        event.preventDefault();
+        event.stopPropagation();
 
-      console.log(
-        '[CAPA DEBUG] appeal decision button:',
-        {
-          capaId: el.dataset.capaId,
-          appealId: el.dataset.appealId,
-          decision: el.dataset.decision
-        }
-      );
+        await handleCapaAppealDecision(el);
+      };
+    });
 
-      await handleCapaAppealDecision(el);
-    };
-  });
-  
+  bindCorrectionModalField();
+}
+            
 
   async function submitFormalCapaDecision(
   capaId,
