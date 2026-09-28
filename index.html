@@ -5574,6 +5574,55 @@ function attachFormalCapaDelegatedHandler(){
       };
     });
 
+  document.addEventListener(
+  'input',
+  event => {
+    if(
+      event.target.id !==
+      'capa-transition-reason'
+    ){
+      return;
+    }
+
+    capaTransitionReason =
+      event.target.value;
+
+    const modal =
+      event.target.closest(
+        '.modal-card'
+      );
+
+    const count =
+      capaTransitionReason
+        .trim()
+        .length;
+
+    const minimum =
+      capaTransitionTarget
+        ?.edge
+        ?.minChars || 0;
+
+    const counter =
+      modal?.querySelector(
+        '.capa-reason-counter'
+      );
+
+    const continueButton =
+      modal?.querySelector(
+        '[data-action="proceed-capa-transition"]'
+      );
+
+    if(counter){
+      counter.textContent =
+        `${count} / ${minimum} characters`;
+    }
+
+    if(continueButton){
+      continueButton.disabled =
+        count < minimum;
+    }
+  }
+);
 
       const modal =
         event.target.closest(
