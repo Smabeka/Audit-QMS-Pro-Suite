@@ -3595,31 +3595,138 @@ function openCapaTransition(capaId, edge){
   render();
 }
 function renderCapaTransitionModal(){
-  if(!capaTransitionTarget) return '';
-  const { edge } = capaTransitionTarget;
-  const chars = capaTransitionReason.trim().length;
-  const ok = chars >= edge.minChars;
+window.capaTransitionReasonChanged =
+  function(input){
+
+    capaTransitionReason =
+      input.value;
+
+    const modal =
+      input.closest('.modal-card');
+
+    const count =
+      capaTransitionReason.trim().length;
+
+    const minimum =
+      capaTransitionTarget
+        ?.edge
+        ?.minChars || 0;
+
+    const counter =
+      modal?.querySelector(
+        '.capa-reason-counter'
+      );
+
+    const continueButton =
+      modal?.querySelector(
+        '[data-action="proceed-capa-transition"]'
+      );
+
+    if(counter){
+      counter.textContent =
+        `${count} / ${minimum} characters`;
+    }
+
+    if(continueButton){
+      continueButton.disabled =
+        count < minimum;
+    }
+  };
+
+  
+  if(!capaTransitionTarget){
+    return '';
+  }
+
+  const {
+    edge
+  } = capaTransitionTarget;
+
+  const chars =
+    String(
+      capaTransitionReason || ''
+    ).trim().length;
+
+  const ok =
+    chars >= edge.minChars;
+
   return `
-    <div class="modal-overlay" data-action="close-capa-transition-modal">
-      <div class="modal-card" style="max-width:520px;" onclick="event.stopPropagation()">
-        <h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">${esc(edge.label)}</h3>
-        <p class="muted-italic" style="font-size:12px;margin:0 0 12px;">${capaApprovalStatusLabel(edge.from)} → ${capaApprovalStatusLabel(edge.to)}. This requires your password to confirm.</p>
-        <label class="field" style="margin-bottom:4px;">Reason (min ${edge.minChars} characters)
-          <textarea id="capa-transition-reason" rows="3" placeholder="Explain this decision...">${esc(capaTransitionReason)}</textarea>
+    <div
+      class="modal-overlay"
+      data-action="close-capa-transition-modal">
+
+      <div
+        class="modal-card"
+        style="max-width:520px;"
+        onclick="event.stopPropagation()">
+
+        <h3
+          class="serif"
+          style="margin:0 0 4px;font-size:17px;color:var(--navy);">
+          ${esc(edge.label)}
+        </h3>
+
+        <p
+          class="muted-italic"
+          style="font-size:12px;margin:0 0 12px;">
+          ${capaApprovalStatusLabel(edge.from)}
+          →
+          ${capaApprovalStatusLabel(edge.to)}.
+          This requires your password to confirm.
+        </p>
+
+        <label
+          class="field"
+          style="margin-bottom:4px;">
+          Reason
+          (min ${edge.minChars} characters)
+
+          <textarea
+            id="capa-transition-reason"
+            rows="3"
+            placeholder="Explain this decision..."
+            oninput="window.capaTransitionReasonChanged(this)"
+          >${esc(capaTransitionReason || '')}</textarea>
         </label>
+
         <div
-  class="muted-italic capa-reason-counter"
-  style="font-size:11px;margin-bottom:8px;">
-  ${chars} / ${edge.minChars} characters
-</div>
-        ${capaTransitionError ? `<p style="color:var(--rust);font-size:12px;">${esc(capaTransitionError)}</p>` : ''}
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
-          <button class="btn btn-ghost" data-action="close-capa-transition-modal">Cancel</button>
-          <button class="btn btn-primary" data-action="proceed-capa-transition" ${ok?'':'disabled'}>Continue to Confirm Password</button>
+          class="muted-italic capa-reason-counter"
+          style="font-size:11px;margin-bottom:8px;">
+          ${chars} / ${edge.minChars} characters
+        </div>
+
+        ${
+          capaTransitionError
+            ? `
+              <p
+                style="color:var(--rust);font-size:12px;">
+                ${esc(capaTransitionError)}
+              </p>
+            `
+            : ''
+        }
+
+        <div
+          style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+
+          <button
+            class="btn btn-ghost"
+            data-action="close-capa-transition-modal">
+            Cancel
+          </button>
+
+          <button
+            class="btn btn-primary"
+            data-action="proceed-capa-transition"
+            ${ok ? '' : 'disabled'}>
+            Continue to Confirm Password
+          </button>
+
         </div>
       </div>
     </div>
   `;
+}
 }
 function renderCapaPasswordModal(){
   if(!capaPasswordModalOpen) return '';
