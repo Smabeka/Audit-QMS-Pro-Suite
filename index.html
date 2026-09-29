@@ -4698,33 +4698,22 @@ console.log('[CAPA DEBUG] effectiveness state', {
 });
 
   
-  const currentUserId =
-    window.currentUserId ||
-    window.currentProfile?.id ||
-    null;
+const currentUserId = currentCloudUser?.id || currentProfile?.id || null;
 
-  const currentUserRole =
-    window.currentUserRole ||
-    window.currentProfile?.role ||
-    '';
+const normalizedRole = String(currentProfile?.role || '')
+  .trim().toLowerCase().replace(/[\s-]+/g, '_');
 
-  const originalReviewerId =
-    (r.reviews || []).find(
-      review => review.review_type === 'initial'
-    )?.reviewer_id || null;
-
-  const normalizedRole =
-  String(currentUserRole || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[\s-]+/g, '_');
+const originalReviewerId = [...(r.events || [])]
+  .reverse()
+  .find(e => e.event_type === 'rejected')?.performed_by || null;
 
 const canResolveAppeal =
   capaStatus === 'independent_review' &&
   !!pendingAppeal &&
-  ['approver', 'admin', 'capa_approver'].includes(normalizedRole) &&
-  currentUserId &&
+  ['approver', 'admin'].includes(normalizedRole) &&
+  !!currentUserId &&
   currentUserId !== r.created_by &&
+  currentUserId !== pendingAppeal.submitted_by &&
   currentUserId !== originalReviewerId;
                                    
   const actionRows = (r.actions || []).length
