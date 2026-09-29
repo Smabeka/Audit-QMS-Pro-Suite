@@ -3761,24 +3761,23 @@ function renderCapaPasswordModal(){
 
   if(edge.rpc === 'resolve_capa_appeal'){
     const openAppeal =
-      (record.appeals || []).find(
-        appeal =>
-          !appeal.resolved_at &&
-          !appeal.resolvedAt &&
-          String(
-            appeal.status || ''
-          ).toLowerCase() !== 'resolved'
-      );
+  (record.appeals || []).find(appeal => {
+    const status =
+      String(appeal.status || '')
+        .trim()
+        .toLowerCase();
 
-    if(!openAppeal){
-      capaTransitionError =
-        'No open appeal was found for this CAPA.';
-      render();
-      return;
-    }
+    return status === 'under_independent_review';
+  });
 
-    appealId =
-      openAppeal.id;
+if(!openAppeal){
+  capaTransitionError =
+    'No appeal under independent review was found for this CAPA.';
+  render();
+  return;
+}
+
+appealId = openAppeal.id;
   }
 
   capaTransitionSubmitting = true;
@@ -3843,16 +3842,17 @@ function renderCapaPasswordModal(){
     }
 
     console.log(
-      '[CAPA DEBUG] transition request:',
-      {
-        rpc: requestBody.rpc,
-        capa_id: requestBody.capa_id,
-        event_type: requestBody.event_type || null,
-        appeal_id: requestBody.appeal_id || null,
-        reason_length: reason.length,
-        has_password: Boolean(password)
-      }
-    );
+  '[CAPA DEBUG] transition request:',
+  {
+    rpc: requestBody.rpc,
+    capa_id: requestBody.capa_id,
+    edge,
+    cachedAppeals: record.appeals,
+    appeal_id: requestBody.appeal_id || null,
+    reason_length: reason.length,
+    has_password: Boolean(password)
+  }
+);
 
     const {
       data,
@@ -5222,6 +5222,9 @@ const FORMAL_CAPA_HANDLERS = {
 
   'reject-formal-capa': el =>
     rejectFormalCapa(el.dataset.id)
+    
+  'resolve-capa-appeal': el =>
+  handleCapaAppealDecision(el)
 };
 
 async function handleFormalCapaAction(el){
