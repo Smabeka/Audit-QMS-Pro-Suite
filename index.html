@@ -3710,6 +3710,11 @@ function renderCapaPasswordModal(){
   `;
 }
  async function submitCapaTransitionSigned(){
+ console.log('[CAPA DEBUG] function environment', {
+  supabaseUrl: Deno.env.get('SUPABASE_URL'),
+  deploymentId: Deno.env.get('DENO_DEPLOYMENT_ID')
+});
+  
   if(capaTransitionSubmitting){
   return;
 } 
