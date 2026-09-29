@@ -3523,6 +3523,7 @@ async function fetchCapaApprovalRecords(){
   render();
 }
 function eligibleCapaTransitions(record){
+  
   const rawRole =
     currentUser()?.role ||
     currentProfile?.role ||
@@ -3549,6 +3550,9 @@ function eligibleCapaTransitions(record){
     null;
 
   return CAPA_TRANSITIONS.filter(edge => {
+    if(edge.rpc === 'resolve_capa_appeal'){
+  return false; // handled by the Independent Appeal Decision card
+}
     if(edge.from !== record.status){
       return false;
     }
