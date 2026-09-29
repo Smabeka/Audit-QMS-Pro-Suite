@@ -4228,6 +4228,35 @@ console.log('[CAPA DEBUG] authenticated user', {
       .order("created_at", { ascending: true })
   ]);
 
+    console.log('[CAPA DEBUG] loader results', {
+  capas: {
+    count: capasRes.data?.length ?? null,
+    error: capasRes.error
+  },
+  actions: {
+    count: actionsRes.data?.length ?? null,
+    error: actionsRes.error
+  },
+  reviews: {
+    count: reviewsRes.data?.length ?? null,
+    error: reviewsRes.error
+  },
+  events: {
+    count: eventsRes.data?.length ?? null,
+    error: eventsRes.error
+  },
+  closures: {
+    count: closuresRes.data?.length ?? null,
+    error: closuresRes.error
+  },
+  appeals: {
+    count: appealsRes.data?.length ?? null,
+    rows: appealsRes.data,
+    error: appealsRes.error
+  }
+});
+
+  
   const firstError = [
     capasRes,
     actionsRes,
