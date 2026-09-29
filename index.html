@@ -5224,7 +5224,7 @@ const FORMAL_CAPA_HANDLERS = {
     rejectFormalCapa(el.dataset.id)
     
   'resolve-capa-appeal': el =>
-  handleCapaAppealDecision(el)
+  handleCapaAppealDecision(el.dataset.id)
 };
 
 async function handleFormalCapaAction(el){
