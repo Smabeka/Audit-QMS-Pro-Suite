@@ -5216,11 +5216,15 @@ async function handleCapaAppealDecision(el){
       );
 
     if(error){
-      throw new Error(
-        error.message ||
-        'Could not resolve appeal.'
-      );
-    }
+  let message = error.message || 'Could not resolve appeal.';
+  if(error.context){
+    try{
+      const details = await error.context.json();
+      message = details.error || details.message || message;
+    }catch{}
+  }
+  throw new Error(message);
+}
 
     if(data?.error){
       throw new Error(
