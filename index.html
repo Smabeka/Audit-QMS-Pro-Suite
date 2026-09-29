@@ -5202,34 +5202,35 @@ const canResolveAppeal =
    submit-new-capa-approval and retry-capa-approval. */
 
 const FORMAL_CAPA_HANDLERS = {
-  'complete-formal-action': el =>
-    completeFormalCapaAction(el.dataset.actionId),
+'complete-formal-action': el =>
+completeFormalCapaAction(el.dataset.actionId),
 
   'submit-formal-effectiveness': el =>
-    submitFormalCapaEffectivenessReview(el.dataset.id),
+submitFormalCapaEffectivenessReview(el.dataset.id),
 
   'close-formal-capa': el =>
-    closeFormalCapa(el.dataset.id),
+closeFormalCapa(el.dataset.id),
 
   'reopen-formal-capa': el =>
-    reopenFormalCapa(el.dataset.id),
+reopenFormalCapa(el.dataset.id),
 
   'create-formal-followup': el =>
-    createFormalFollowupCapa(el.dataset.id),
+createFormalFollowupCapa(el.dataset.id),
 
   'approve-formal-capa': el =>
-    approveFormalCapa(el.dataset.id),
+approveFormalCapa(el.dataset.id),
 
   'reject-formal-capa': el =>
-    rejectFormalCapa(el.dataset.id)
+rejectFormalCapa(el.dataset.id)
+};
 
 async function handleFormalCapaAction(el){
-  const fn = FORMAL_CAPA_HANDLERS[el.dataset.action];
+const fn = FORMAL_CAPA_HANDLERS[el.dataset.action];
 
   if(!fn) return false;
 
   await fn(el);
-  return true;
+return true;
 }
 
 async function handleCapaAppealDecision(el){
