@@ -3401,6 +3401,8 @@ function capaApprovalStatusLabel(status){
 let capaApprovalFetchError = "";
 
 async function fetchCapaApprovalRecords(){
+  
+  
   if(!cloudReady()) return;
 
   const [
@@ -4172,6 +4174,19 @@ CAPA_TRANSITIONS.push(
 /* ---------- 4. LOADER ---------- */
 
 async function fetchCapaApprovalRecords(){
+
+  
+const {
+  data: { user },
+  error: userError
+} = await supabaseClient.auth.getUser();
+
+console.log('[CAPA DEBUG] authenticated user', {
+  userId: user?.id ?? null,
+  email: user?.email ?? null,
+  error: userError
+});
+  
   if(!cloudReady()) return;
 
   const [
@@ -4244,6 +4259,13 @@ async function fetchCapaApprovalRecords(){
       appeals: []
     };
   });
+
+  console.log(
+  '[CAPA DEBUG] CAPA-0002 mapped record',
+  Object.values(map).find(
+    row => row.reference_number === 'CAPA-0002'
+  )
+);
 
   (actionsRes.data || []).forEach(row => {
     if(map[row.capa_id]){
