@@ -4690,7 +4690,7 @@ const canResolveAppeal =
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
       ${reviewRows}
-      const closure = (r.closures || []).filter(c => String(c.decision || '').toUpperCase() === 'CLOSED').pop() || null;
+      ${(!isClosed && canStartEffectiveness && !blockers.some(b => b.indexOf('action') === 0))
         ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
         : ''}
       ${(!isClosed && hasEffective)
