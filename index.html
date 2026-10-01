@@ -4549,7 +4549,7 @@ function renderFormalCapaPanel(r){
   const isClosed = formalCapaIsClosed(r);
   const blockers = formalCapaClosureBlockers(r);
   const hasEffective = formalCapaHasEffectiveReview(r);
-  const closure = (r.closures || [])[0] || null;
+  const closure = (r.closures || []).filter(c => String(c.decision || '').toUpperCase() === 'CLOSED').pop() || null;
   const capaStatus = String(r.status || '').toLowerCase();
 
   const canStartEffectiveness = [
