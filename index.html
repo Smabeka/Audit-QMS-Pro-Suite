@@ -4272,8 +4272,7 @@ function parseEvidenceJson(raw){
   return data;
 }
 
-
-async function addFormalCapaAction(capaId){
+  async function addFormalCapaAction(capaId){
   console.log('[CAPA DEBUG] addFormalCapaAction started', capaId);
 
   try{
@@ -4346,33 +4345,11 @@ async function addFormalCapaAction(capaId){
       'Responsible person profile UUID',
       actorId
     );
-function formalCapaClosureBlockers(record){
-  const blockers = [];
-  const open = formalCapaOpenActions(record);
-  if(open.length) blockers.push(open.length + ' action(s) still open');
 
-  if(!(record.reviews || []).length){
-    blockers.push('no effectiveness review');
-  } else if(!formalCapaHasEffectiveReview(record)){
-    blockers.push('no EFFECTIVE result');
-  } else {
-    const reopenTimes = (record.closures || [])
-      .filter(c => String(c.decision || '').toUpperCase() === 'REOPENED')
-      .map(c => new Date(c.approved_at).getTime());
-
-    if(reopenTimes.length){
-      const lastReopen = Math.max(...reopenTimes);
-      const hasFresh = (record.reviews || []).some(v =>
-        v.result === 'EFFECTIVE' &&
-        new Date(v.created_at).getTime() > lastReopen
-      );
-      if(!hasFresh){
-        blockers.push('new EFFECTIVE review required after reopening');
-      }
+    if(!responsible || !responsible.trim()){
+      return;
     }
-  }
-  return blockers;
-}
+
     const { error } = await supabaseClient
       .from('capa_actions')
       .insert([{
@@ -4408,8 +4385,8 @@ function formalCapaClosureBlockers(record){
       'error'
     );
   }
-}
-
+  }
+      
   
     
 /* ---------- 7. COMPLETE ACTION ---------- */
