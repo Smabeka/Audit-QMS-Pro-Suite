@@ -15098,7 +15098,7 @@ function attachHandlers(){
     logActivity(`Document ${doc.docNumber||title} created by ${currentUser()?.fullName||'Unknown'}`);
     openDocumentId = doc.id; showNewDocument=false; persist(); render();
     const saved =
-  await pushDocumentToCloud(doc);
+    pushDocumentToCloud(doc);
 
 if(!saved){
   return;
@@ -15129,7 +15129,7 @@ if(!saved){
     logActivity(`Document ${d.docNumber||d.title} bumped to v${newVersionNumber.trim()} — v${currentEntry?currentEntry.versionNumber:'—'} now obsolete`);
     persist(); render();
     const saved =
-  await pushDocumentToCloud(doc);
+    pushDocumentToCloud(doc);
 
 if(!saved){
   return;
@@ -15169,41 +15169,7 @@ if(!saved){
         d.status = next;
         persist(); render();
         const saved =
-  async function pushDocumentToCloud(d){
-  if(!cloudReady()){
-    documentsSyncError =
-      'Supabase is not available.';
-    render();
-    return false;
-  }
-
-  const row =
-    docLocalToRow(d);
-
-  const {
-    data,
-    error
-  } =
-    await supabaseClient
-      .from('documents')
-      .upsert(row, {
-        onConflict: 'id'
-      })
-      .select()
-      .single();
-
-  if(error){
-    console.error(
-      '[DOCUMENT DEBUG] cloud save failed:',
-      error
-    );
-
-    documentsSyncError =
-      error.message;
-
-    render();
-    return false;
-  }
+        pushDocumentToCloud(doc);
 
   documentsSyncError = '';
   return true;
@@ -15212,11 +15178,8 @@ if(!saved){
       if(field==="version") logActivity(`Document ${d.docNumber||d.title} revised to v${el.value}`);
       persist(); render();
       const saved =
-  await pushDocumentToCloud(doc);
+      pushDocumentToCloud(doc);
 
-if(!saved){
-  return;
-}
   document.querySelectorAll('[data-action="delete-document"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this document record? This cannot be undone.")) return;
     const deletedId = el.dataset.document;
@@ -15233,7 +15196,7 @@ if(!saved){
     d.acknowledgments.push({ name, date: today() });
     persist(); render();
     const saved =
-  await pushDocumentToCloud(doc);
+    pushDocumentToCloud(doc);
 
 if(!saved){
   return;
@@ -15244,7 +15207,7 @@ if(!saved){
     if(d.acknowledgments) d.acknowledgments.splice(idx, 1);
     persist(); render();
     const saved =
-  await pushDocumentToCloud(doc);
+    pushDocumentToCloud(doc);
 
 if(!saved){
   return;
