@@ -15097,8 +15097,12 @@ function attachHandlers(){
     state.documents.unshift(doc);
     logActivity(`Document ${doc.docNumber||title} created by ${currentUser()?.fullName||'Unknown'}`);
     openDocumentId = doc.id; showNewDocument=false; persist(); render();
-    pushDocumentToCloud(doc);
-  };
+    const saved =
+  await pushDocumentToCloud(doc);
+
+if(!saved){
+  return;
+}
   document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleDocument; openDocumentId = openDocumentId===id ? null : id; render();
   });
@@ -15124,8 +15128,12 @@ function attachHandlers(){
     d.version = newVersionNumber.trim();
     logActivity(`Document ${d.docNumber||d.title} bumped to v${newVersionNumber.trim()} — v${currentEntry?currentEntry.versionNumber:'—'} now obsolete`);
     persist(); render();
-    pushDocumentToCloud(d);
-  });
+    const saved =
+  await pushDocumentToCloud(doc);
+
+if(!saved){
+  return;
+}
   document.querySelectorAll('[data-document-filter]').forEach(el=>el.onclick=()=>{
     documentStatusFilter = el.dataset.documentFilter; render();
   });
@@ -15160,15 +15168,21 @@ function attachHandlers(){
         }
         d.status = next;
         persist(); render();
-        pushDocumentToCloud(d);
-        return;
-      }
+        const saved =
+  await pushDocumentToCloud(doc);
+
+if(!saved){
+  return;
+}
       d[field] = el.value;
       if(field==="version") logActivity(`Document ${d.docNumber||d.title} revised to v${el.value}`);
       persist(); render();
-      pushDocumentToCloud(d);
-    };
-  });
+      const saved =
+  await pushDocumentToCloud(doc);
+
+if(!saved){
+  return;
+}
   document.querySelectorAll('[data-action="delete-document"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this document record? This cannot be undone.")) return;
     const deletedId = el.dataset.document;
@@ -15184,15 +15198,23 @@ function attachHandlers(){
     if(!d.acknowledgments) d.acknowledgments = [];
     d.acknowledgments.push({ name, date: today() });
     persist(); render();
-    pushDocumentToCloud(d);
-  });
+    const saved =
+  await pushDocumentToCloud(doc);
+
+if(!saved){
+  return;
+}
   document.querySelectorAll('[data-action="remove-doc-ack"]').forEach(el=>el.onclick=()=>{
     const d = state.documents.find(x=>x.id===el.dataset.document);
     const idx = parseInt(el.dataset.ack, 10);
     if(d.acknowledgments) d.acknowledgments.splice(idx, 1);
     persist(); render();
-    pushDocumentToCloud(d);
-  });
+    const saved =
+  await pushDocumentToCloud(doc);
+
+if(!saved){
+  return;
+}
   const documentsCsvBtn = document.querySelector('[data-action="export-documents-csv"]');
   if(documentsCsvBtn) documentsCsvBtn.onclick=()=>{
     const headers = ["Title","Document Number","Category","Version","Status","Owner","Issue Date","Next Review Date","Notes"];
