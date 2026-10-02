@@ -15169,10 +15169,44 @@ if(!saved){
         d.status = next;
         persist(); render();
         const saved =
-  await pushDocumentToCloud(doc);
+  async function pushDocumentToCloud(d){
+  if(!cloudReady()){
+    documentsSyncError =
+      'Supabase is not available.';
+    render();
+    return false;
+  }
 
-if(!saved){
-  return;
+  const row =
+    docLocalToRow(d);
+
+  const {
+    data,
+    error
+  } =
+    await supabaseClient
+      .from('documents')
+      .upsert(row, {
+        onConflict: 'id'
+      })
+      .select()
+      .single();
+
+  if(error){
+    console.error(
+      '[DOCUMENT DEBUG] cloud save failed:',
+      error
+    );
+
+    documentsSyncError =
+      error.message;
+
+    render();
+    return false;
+  }
+
+  documentsSyncError = '';
+  return true;
 }
       d[field] = el.value;
       if(field==="version") logActivity(`Document ${d.docNumber||d.title} revised to v${el.value}`);
