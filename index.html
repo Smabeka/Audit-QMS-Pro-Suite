@@ -15097,12 +15097,8 @@ function attachHandlers(){
     state.documents.unshift(doc);
     logActivity(`Document ${doc.docNumber||title} created by ${currentUser()?.fullName||'Unknown'}`);
     openDocumentId = doc.id; showNewDocument=false; persist(); render();
-    const saved =
     pushDocumentToCloud(doc);
-
-if(!saved){
-  return;
-}
+  };
   document.querySelectorAll('[data-toggle-document]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.toggleDocument; openDocumentId = openDocumentId===id ? null : id; render();
   });
@@ -15128,12 +15124,8 @@ if(!saved){
     d.version = newVersionNumber.trim();
     logActivity(`Document ${d.docNumber||d.title} bumped to v${newVersionNumber.trim()} — v${currentEntry?currentEntry.versionNumber:'—'} now obsolete`);
     persist(); render();
-    const saved =
-    pushDocumentToCloud(doc);
-
-if(!saved){
-  return;
-}
+    pushDocumentToCloud(d);
+  });
   document.querySelectorAll('[data-document-filter]').forEach(el=>el.onclick=()=>{
     documentStatusFilter = el.dataset.documentFilter; render();
   });
@@ -15168,18 +15160,15 @@ if(!saved){
         }
         d.status = next;
         persist(); render();
-        const saved =
-        pushDocumentToCloud(doc);
-
-  documentsSyncError = '';
-  return true;
-}
+        pushDocumentToCloud(d);
+        return;
+      }
       d[field] = el.value;
       if(field==="version") logActivity(`Document ${d.docNumber||d.title} revised to v${el.value}`);
       persist(); render();
-      const saved =
-      pushDocumentToCloud(doc);
-
+      pushDocumentToCloud(d);
+    };
+  });
   document.querySelectorAll('[data-action="delete-document"]').forEach(el=>el.onclick=()=>{
     if(!confirm("Delete this document record? This cannot be undone.")) return;
     const deletedId = el.dataset.document;
@@ -15195,23 +15184,15 @@ if(!saved){
     if(!d.acknowledgments) d.acknowledgments = [];
     d.acknowledgments.push({ name, date: today() });
     persist(); render();
-    const saved =
-    pushDocumentToCloud(doc);
-
-if(!saved){
-  return;
-}
+    pushDocumentToCloud(d);
+  });
   document.querySelectorAll('[data-action="remove-doc-ack"]').forEach(el=>el.onclick=()=>{
     const d = state.documents.find(x=>x.id===el.dataset.document);
     const idx = parseInt(el.dataset.ack, 10);
     if(d.acknowledgments) d.acknowledgments.splice(idx, 1);
     persist(); render();
-    const saved =
-    pushDocumentToCloud(doc);
-
-if(!saved){
-  return;
-}
+    pushDocumentToCloud(d);
+  });
   const documentsCsvBtn = document.querySelector('[data-action="export-documents-csv"]');
   if(documentsCsvBtn) documentsCsvBtn.onclick=()=>{
     const headers = ["Title","Document Number","Category","Version","Status","Owner","Issue Date","Next Review Date","Notes"];
