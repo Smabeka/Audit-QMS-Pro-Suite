@@ -10671,6 +10671,7 @@ function renderDocuments(){
       </div>
     </div>
     ${documentsSyncError ? `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-bottom:14px;"><p style="color:var(--rust);font-size:13px;margin:0;">⚠ Sync issue: ${esc(documentsSyncError)}</p><p class="muted-italic" style="font-size:11px;margin-top:6px;">Your change is saved locally, but may not have reached the shared cloud copy yet. Check your connection and try again.</p></div>` : ''}
+    ${typeof renderControlledDocuments === 'function' ? renderControlledDocuments() : ''}
     <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
       ${statCard("📄", "Total Documents", all.length)}
       ${statCard("✅", "Approved", all.filter(d=>d.status==="Approved").length)}
@@ -10898,7 +10899,7 @@ const documentControlCloud = {
       supabaseClient
         .from("document_version_approvals")
         .select("*")
-        .order("created_at", { ascending:false }),
+        .order("decided_at", { ascending:false }),
 
       supabaseClient
         .from("document_version_events")
@@ -16619,7 +16620,511 @@ function showUpdateBanner(){
   document.body.appendChild(banner);
   document.getElementById('reload-app-btn').onclick = () => window.location.reload();
 }
-</script> 
+</script>
+<script>
+/* ---------- Controlled Documents (signed workflow) ---------- */
+(function(){
+  'use strict';
+  if(window.__controlledDocsInstalled) return;
+  window.__controlledDocsInstalled = true;
+
+  var TYPES = [
+    ['policy','Policy'], ['procedure','Procedure (SOP)'], ['work_instruction','Work Instruction'],
+    ['form_record','Form/Record'], ['haccp_plan','HACCP Plan'], ['specification','Specification'],
+    ['external_standard','External Standard'], ['other','Other']
+  ];
+  var CONF = ['internal','public','confidential','restricted'];
+  var STATE_TONE = { draft:'neutral', in_review:'amber', approved:'amber', published:'green', obsolete:'rust' };
+  var STATE_LABEL = { draft:'Draft', in_review:'In review', approved:'Approved', published:'Published', obsolete:'Obsolete' };
+
+  var cd = {
+    loaded:false, loading:false, error:'',
+    families:[], versions:[], approvals:[], events:[], acks:[], rules:[], profiles:[],
+    open:null
+  };
+  var modal = null;
+
+  function e(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+  function fmt(iso){
+    if(!iso) return '—';
+    var d = new Date(iso);
+    return isNaN(d.getTime()) ? '—' : d.toLocaleString();
+  }
+  function toast(msg, type){
+    if(typeof showToast === 'function') showToast(msg, type); else alert(msg);
+  }
+  function myId(){
+    try{
+      if(typeof currentCloudUser !== 'undefined' && currentCloudUser && currentCloudUser.id) return currentCloudUser.id;
+      if(typeof currentProfile !== 'undefined' && currentProfile && currentProfile.id) return currentProfile.id;
+    }catch(_){}
+    return null;
+  }
+  function myRole(){
+    try{
+      if(typeof currentProfile !== 'undefined' && currentProfile){
+        return String(currentProfile.role || '').trim().toLowerCase();
+      }
+    }catch(_){}
+    return '';
+  }
+  function nameOf(id){
+    if(!id) return '—';
+    for(var i = 0; i < cd.profiles.length; i++){
+      if(cd.profiles[i].id === id) return cd.profiles[i].full_name || String(id).slice(0, 8);
+    }
+    return String(id).slice(0, 8);
+  }
+  function rerender(){
+    if(typeof render === 'function') render();
+  }
+
+  async function load(){
+    if(cd.loading) return;
+    if(typeof supabaseClient === 'undefined' || !supabaseClient) return;
+    cd.loading = true;
+    try{
+      var sel = function(t){ return supabaseClient.from(t).select('*'); };
+      var res = await Promise.all([
+        sel('document_families').order('document_number'),
+        sel('document_versions').order('created_at', { ascending:false }),
+        sel('document_version_approvals').order('decided_at', { ascending:false }),
+        sel('document_version_events').order('created_at', { ascending:false }).limit(1000),
+        sel('document_acknowledgements').order('acknowledged_at', { ascending:false }),
+        sel('document_distribution_rules'),
+        supabaseClient.from('profiles').select('id, full_name, role, status')
+      ]);
+      for(var i = 0; i < 6; i++){ if(res[i].error) throw res[i].error; }
+      cd.families = res[0].data || [];
+      cd.versions = res[1].data || [];
+      cd.approvals = res[2].data || [];
+      cd.events = res[3].data || [];
+      cd.acks = res[4].data || [];
+      cd.rules = res[5].data || [];
+      cd.profiles = res[6].error ? [] : (res[6].data || []);
+      cd.error = '';
+    }catch(err){
+      cd.error = (err && err.message) ? err.message : String(err);
+    }finally{
+      cd.loading = false;
+      cd.loaded = true;
+      rerender();
+    }
+  }
+
+  function versionsOf(familyId){
+    return cd.versions.filter(function(v){ return v.document_family_id === familyId; })
+      .sort(function(a, b){
+        return (b.version_major - a.version_major) || (b.version_minor - a.version_minor);
+      });
+  }
+  function label(v){
+    var l = String(v.version_label || (v.version_major + '.' + v.version_minor));
+    return /^v/i.test(l) ? l : 'v' + l;
+  }
+  function eventsOf(versionId){
+    return cd.events.filter(function(x){ return x.document_version_id === versionId; });
+  }
+  function cycle(v){
+    var sub = eventsOf(v.id).filter(function(x){ return x.event_type === 'submitted_for_review'; })[0];
+    var start = sub ? new Date(sub.created_at).getTime() : 0;
+    var inCycle = cd.approvals.filter(function(a){
+      return a.document_version_id === v.id && a.decision === 'approved' &&
+             new Date(a.decided_at).getTime() >= start;
+    });
+    return {
+      reviewer: inCycle.filter(function(a){ return a.approval_role === 'reviewer'; })[0] || null,
+      approver: inCycle.filter(function(a){ return a.approval_role === 'qa_approver'; })[0] || null
+    };
+  }
+  function rulesOf(versionId){
+    return cd.rules.filter(function(r){ return r.document_version_id === versionId; });
+  }
+  function acksOf(versionId){
+    return cd.acks.filter(function(a){ return a.document_version_id === versionId; });
+  }
+  function canAcknowledge(v, f){
+    var me = myId();
+    if(!me || v.state !== 'published' || f.current_version_id !== v.id) return false;
+    var mine = acksOf(v.id).filter(function(a){ return a.employee_id === me; });
+    if(mine.some(function(a){ return a.acknowledgement_type === 'understood'; })) return false;
+    var rules = rulesOf(v.id);
+    if(rules.length === 0) return true;
+    return rules.some(function(r){
+      return r.target_type === 'all_users' || (r.target_type === 'user' && r.target_id === me);
+    });
+  }
+  function pendingOf(v){
+    var rules = rulesOf(v.id);
+    if(rules.length === 0) return [];
+    var ids = {};
+    rules.forEach(function(r){
+      if(r.target_type === 'user' && r.target_id) ids[r.target_id] = true;
+      if(r.target_type === 'all_users'){
+        cd.profiles.forEach(function(p){ if(p.status === 'Active') ids[p.id] = true; });
+      }
+    });
+    acksOf(v.id).forEach(function(a){ delete ids[a.employee_id]; });
+    return Object.keys(ids);
+  }
+
+  function btn(action, attrs, text, primary){
+    var d = '';
+    Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') +
+      '" style="font-size:11px;padding:4px 8px;" data-cd="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+
+  function versionBlock(f, v){
+    var me = myId(), role = myRole();
+    var isQmAdmin = role === 'admin' || role === 'quality manager';
+    var isAuthor = me && v.created_by === me;
+    var cyc = cycle(v);
+    var buttons = [];
+
+    if(v.state === 'draft' && isQmAdmin){
+      buttons.push(btn('act', { a:'submit_for_review', v:v.id }, 'Submit for review', true));
+    }
+    if(v.state === 'in_review'){
+      if(isQmAdmin && !isAuthor && !cyc.reviewer){
+        buttons.push(btn('act', { a:'review', v:v.id }, 'Review', true));
+      }
+      if((role === 'admin' || role === 'approver') && !isAuthor && cyc.reviewer &&
+         cyc.reviewer.approver_id !== me){
+        buttons.push(btn('act', { a:'approve', v:v.id }, 'Approve', true));
+      }
+      if((isQmAdmin || role === 'approver') && !isAuthor){
+        buttons.push(btn('act', { a:'reject', v:v.id }, 'Reject'));
+      }
+    }
+    if(v.state === 'approved' && isQmAdmin){
+      buttons.push(btn('act', { a:'publish', v:v.id }, 'Publish', true));
+    }
+    if(canAcknowledge(v, f)){
+      buttons.push(btn('act', { a:'acknowledge', v:v.id }, 'Acknowledge', true));
+    }
+    if(isQmAdmin && v.state !== 'obsolete'){
+      buttons.push(btn('act', { a:'set_distribution', v:v.id }, '+ Distribution'));
+    }
+
+    var tone = STATE_TONE[v.state] || 'neutral';
+    var signoff = '';
+    if(cyc.reviewer || cyc.approver){
+      signoff = '<div class="muted-italic" style="font-size:11px;margin-top:2px;">' +
+        (cyc.reviewer ? 'Reviewed by ' + e(nameOf(cyc.reviewer.approver_id)) + ' · ' + e(fmt(cyc.reviewer.decided_at)) : '') +
+        (cyc.reviewer && cyc.approver ? '<br>' : '') +
+        (cyc.approver ? 'Approved by ' + e(nameOf(cyc.approver.approver_id)) + ' · ' + e(fmt(cyc.approver.decided_at)) : '') +
+        '</div>';
+    }
+
+    var evs = eventsOf(v.id);
+    var trail = '<details style="margin-top:6px;"><summary style="font-size:11px;cursor:pointer;color:var(--muted);">Audit trail (' +
+      evs.length + ')</summary>' +
+      (evs.length ? evs.map(function(x){
+        return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line2);">' +
+          '<strong>' + e(x.event_type) + '</strong> · ' + e(nameOf(x.actor_id)) + ' · ' + e(fmt(x.created_at)) +
+          (x.notes ? '<div class="muted-italic">' + e(x.notes) + '</div>' : '') +
+          (x.record_hash ? '<div class="muted-italic" style="font-size:10px;">🔒 ' + e(String(x.record_hash).slice(0, 16)) + '…</div>' : '') +
+          '</div>';
+      }).join('') : '<p class="muted-italic" style="font-size:11.5px;">No events.</p>') +
+      '</details>';
+
+    var dist = '';
+    if(v.state !== 'draft'){
+      var rules = rulesOf(v.id);
+      var acks = acksOf(v.id);
+      var pend = pendingOf(v);
+      dist = '<details style="margin-top:4px;"><summary style="font-size:11px;cursor:pointer;color:var(--muted);">Distribution &amp; acknowledgements (' +
+        acks.length + ' recorded)</summary>' +
+        '<div style="font-size:11.5px;padding:4px 0;">' +
+        (rules.length ? 'Distribution: ' + rules.map(function(r){
+          return r.target_type === 'all_users' ? 'All users' : e(nameOf(r.target_id));
+        }).join(', ') : '<span class="muted-italic">No distribution list: any active user may acknowledge.</span>') +
+        '</div>' +
+        (acks.length ? acks.map(function(a){
+          return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line2);">✓ <strong>' +
+            e(nameOf(a.employee_id)) + '</strong> · ' + e(a.acknowledgement_type) + ' · ' + e(fmt(a.acknowledged_at)) + '</div>';
+        }).join('') : '<p class="muted-italic" style="font-size:11.5px;">No acknowledgements recorded yet.</p>') +
+        (pend.length ? '<div style="font-size:11.5px;margin-top:4px;color:var(--rust);">Pending: ' +
+          pend.slice(0, 12).map(function(id){ return e(nameOf(id)); }).join(', ') +
+          (pend.length > 12 ? ' +' + (pend.length - 12) + ' more' : '') + '</div>' : '') +
+        '</details>';
+    }
+
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--line2);">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">' +
+      '<div style="min-width:0;"><span class="tag tag-' + tone + '" style="font-size:10px;">' +
+      e(STATE_LABEL[v.state] || v.state) + '</span> <strong>' + e(label(v)) + '</strong>' +
+      (f.current_version_id === v.id ? ' <span class="muted-italic" style="font-size:11px;">(current)</span>' : '') +
+      '<div style="font-size:12.5px;margin-top:2px;">' + e(v.change_summary || '') + '</div>' +
+      '<div class="muted-italic" style="font-size:11px;">By ' + e(nameOf(v.created_by)) + ' · ' + e(fmt(v.created_at)) +
+      (v.effective_date ? ' · effective ' + e(v.effective_date) : '') + '</div>' +
+      signoff + '</div>' +
+      '<div class="flex-wrap" style="gap:6px;">' + buttons.join('') + '</div></div>' +
+      trail + dist + '</div>';
+  }
+
+  function familyCard(f){
+    var vs = versionsOf(f.id);
+    var open = cd.open === f.id;
+    var role = myRole();
+    var isQmAdmin = role === 'admin' || role === 'quality manager';
+    var cur = vs.filter(function(v){ return v.id === f.current_version_id; })[0] || null;
+    var working = vs.filter(function(v){ return ['draft', 'in_review', 'approved'].indexOf(v.state) >= 0; })[0] || null;
+    var sub = e(f.document_type || '—') + ' · ' + (cur ? 'current ' + e(label(cur)) : 'not yet published') +
+      (working ? ' · ' + e(label(working)) + ' ' + e(STATE_LABEL[working.state]) : '');
+    var body = '';
+    if(open){
+      body = '<div style="border-top:1px solid var(--line2);padding:12px 16px;">' +
+        (isQmAdmin && !working && f.status === 'active'
+          ? '<div style="margin-bottom:6px;">' + btn('newversion', { f:f.id }, '+ New version') + '</div>' : '') +
+        (vs.length ? vs.map(function(v){ return versionBlock(f, v); }).join('') :
+          '<p class="muted-italic" style="font-size:12px;">No versions.</p>') +
+        '</div>';
+    }
+    return '<div class="card" style="margin-bottom:10px;overflow:hidden;">' +
+      '<button class="audit-row" data-cd="toggle" data-f="' + e(f.id) + '">' +
+      '<div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' +
+      (open ? '▾' : '›') + '</span><div style="min-width:0;"><div class="audit-title">' + e(f.title) +
+      ' <span style="color:var(--muted);font-weight:400;font-size:11px;">· ' + e(f.document_number) + '</span></div>' +
+      '<div class="audit-sub">' + sub + '</div></div></div>' +
+      '<div class="flex-wrap"><span class="tag tag-' + (STATE_TONE[(cur || working || {}).state] || 'neutral') + '">' +
+      e(STATE_LABEL[(cur || working || {}).state] || f.status) + '</span></div></button>' + body + '</div>';
+  }
+
+  window.renderControlledDocuments = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '';
+      if(!cd.loaded && !cd.loading){ setTimeout(load, 0); }
+      var role = myRole();
+      var canCreate = role === 'admin' || role === 'quality manager';
+      return '<div class="card p4" style="margin-bottom:16px;border-color:var(--navy);">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;">' +
+        '<h3 class="serif" style="margin:0;font-size:16px;color:var(--navy);">Controlled Documents <span class="tag tag-green" style="font-size:10px;vertical-align:middle;">Signed workflow</span></h3>' +
+        '<div class="flex-wrap">' + btn('reload', {}, '↻ Refresh') +
+        (canCreate ? btn('newdoc', {}, '+ New controlled document', true) : '') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Every action asks for your password and is recorded in an immutable audit trail. ' +
+        'Author, reviewer and approver must be three different people.</p>' +
+        (cd.error ? '<p style="color:var(--rust);font-size:12px;">' + e(cd.error) + '</p>' : '') +
+        (cd.loading && !cd.loaded ? '<p class="muted-italic" style="font-size:12px;">Loading…</p>' : '') +
+        (cd.loaded && cd.families.length === 0 && !cd.error ? '<p class="muted-italic" style="font-size:12px;">No controlled documents yet.</p>' : '') +
+        cd.families.map(familyCard).join('') + '</div>';
+    }catch(err){
+      console.error('[controlled-docs] render failed', err);
+      return '';
+    }
+  };
+
+  /* ---------- modal ---------- */
+  function fieldHtml(f){
+    var id = 'cdm-' + f.id;
+    var lab = '<label class="field" style="margin-bottom:8px;display:block;">' + e(f.label);
+    if(f.type === 'textarea'){
+      return lab + '<textarea id="' + id + '" rows="3" style="width:100%;" placeholder="' + e(f.placeholder || '') + '"></textarea></label>';
+    }
+    if(f.type === 'select'){
+      return lab + '<select id="' + id + '">' + f.options.map(function(o){
+        return '<option value="' + e(o[0]) + '">' + e(o[1]) + '</option>';
+      }).join('') + '</select></label>';
+    }
+    if(f.type === 'checkbox'){
+      return '<label class="field" style="margin-bottom:8px;display:flex;gap:8px;align-items:center;"><input type="checkbox" id="' + id +
+        '"' + (f.value ? ' checked' : '') + ' /> ' + e(f.label) + '</label>';
+    }
+    return lab + '<input id="' + id + '" type="' + (f.type || 'text') + '" placeholder="' + e(f.placeholder || '') +
+      '" value="' + e(f.value || '') + '" /></label>';
+  }
+  function closeModal(){
+    var m = document.getElementById('cd-modal');
+    if(m) m.remove();
+    modal = null;
+  }
+  function openModal(cfg){
+    closeModal();
+    modal = cfg;
+    var div = document.createElement('div');
+    div.id = 'cd-modal';
+    div.className = 'modal-overlay';
+    div.innerHTML = '<div class="modal-card" style="max-width:440px;max-height:90vh;overflow:auto;">' +
+      '<h3 class="serif" style="margin:0 0 4px;font-size:17px;color:var(--navy);">' + e(cfg.title) + '</h3>' +
+      (cfg.help ? '<p class="muted-italic" style="font-size:12px;margin:0 0 10px;">' + e(cfg.help) + '</p>' : '') +
+      (cfg.fields || []).map(fieldHtml).join('') +
+      (cfg.reasonLabel ? fieldHtml({ id:'reason', label:cfg.reasonLabel, type:'textarea' }) : '') +
+      '<label class="field" style="margin-bottom:8px;display:block;">Confirm your password to sign' +
+      '<input type="password" id="cdm-password" autocomplete="current-password" /></label>' +
+      '<p id="cdm-error" style="color:var(--rust);font-size:12px;min-height:16px;margin:0 0 6px;"></p>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;">' +
+      '<button class="btn btn-ghost" data-cd-modal="cancel">Cancel</button>' +
+      '<button class="btn btn-primary" id="cdm-submit" data-cd-modal="submit">Confirm &amp; Sign</button></div></div>';
+    div.addEventListener('click', function(ev){ if(ev.target === div) closeModal(); });
+    document.body.appendChild(div);
+  }
+  function val(id){
+    var el = document.getElementById('cdm-' + id);
+    if(!el) return '';
+    return el.type === 'checkbox' ? el.checked : String(el.value || '').trim();
+  }
+  async function submitModal(){
+    if(!modal) return;
+    var cfg = modal;
+    var errEl = document.getElementById('cdm-error');
+    var btnEl = document.getElementById('cdm-submit');
+    var vals = {};
+    (cfg.fields || []).forEach(function(f){ vals[f.id] = val(f.id); });
+    vals.reason = cfg.reasonLabel ? val('reason') : '';
+    var password = document.getElementById('cdm-password').value || '';
+
+    var missing = (cfg.fields || []).filter(function(f){ return f.required && !vals[f.id]; })[0];
+    if(missing){ errEl.textContent = missing.label + ' is required.'; return; }
+    if(cfg.reasonLabel && vals.reason.length < (cfg.minReason || 0)){
+      errEl.textContent = 'The text must be at least ' + cfg.minReason + ' characters.'; return;
+    }
+    if(!password){ errEl.textContent = 'Password is required.'; return; }
+
+    btnEl.disabled = true; btnEl.textContent = 'Signing…'; errEl.textContent = '';
+    try{
+      var body = {
+        action: cfg.action,
+        reason: vals.reason,
+        password: password
+      };
+      if(cfg.versionId) body.document_version_id = cfg.versionId;
+      if(cfg.buildPayload) body.payload = cfg.buildPayload(vals);
+      if(cfg.action === 'acknowledge') body.acknowledgement_type = vals.ack_type;
+
+      var out = await supabaseClient.functions.invoke('document-sign-signed', { body: body });
+      if(out.error){
+        var msg = out.error.message || 'The action failed.';
+        if(out.error.context){
+          try{
+            var det = await out.error.context.json();
+            msg = det.error || det.message || msg;
+          }catch(_){}
+        }
+        throw new Error(msg);
+      }
+      if(out.data && out.data.error) throw new Error(out.data.error);
+      closeModal();
+      toast(cfg.successText || 'Done.');
+      cd.loaded = false;
+      await load();
+    }catch(err){
+      errEl.textContent = (err && err.message) ? err.message : String(err);
+      btnEl.disabled = false; btnEl.textContent = 'Confirm & Sign';
+    }
+  }
+
+  function openAction(a, versionId){
+    var v = cd.versions.filter(function(x){ return x.id === versionId; })[0] || {};
+    var lbl = v.version_label ? label(v) : '';
+    if(a === 'submit_for_review'){
+      return openModal({ action:a, versionId:versionId, title:'Submit ' + lbl + ' for review',
+        reasonLabel:'Reason (min 10 characters)', minReason:10, successText:'Submitted for review.' });
+    }
+    if(a === 'review'){
+      return openModal({ action:a, versionId:versionId, title:'Review ' + lbl,
+        help:'You confirm you have reviewed this version.',
+        reasonLabel:'Review comments (min 10 characters)', minReason:10, successText:'Review signed.' });
+    }
+    if(a === 'approve'){
+      return openModal({ action:a, versionId:versionId, title:'Approve ' + lbl,
+        help:'You must be different from the author and the reviewer.',
+        reasonLabel:'Approval comments (min 20 characters)', minReason:20, successText:'Version approved.' });
+    }
+    if(a === 'reject'){
+      return openModal({ action:a, versionId:versionId, title:'Reject ' + lbl,
+        help:'The version returns to draft.',
+        reasonLabel:'Reason for rejection (min 20 characters)', minReason:20, successText:'Version rejected.' });
+    }
+    if(a === 'publish'){
+      return openModal({ action:a, versionId:versionId, title:'Publish ' + lbl,
+        help:'The previous published version becomes obsolete.',
+        reasonLabel:'Release note (min 10 characters)', minReason:10, successText:'Version published.' });
+    }
+    if(a === 'acknowledge'){
+      return openModal({ action:a, versionId:versionId, title:'Acknowledge ' + lbl,
+        help:'This is recorded against your name, this version and the time.',
+        fields:[{ id:'ack_type', label:'I confirm that I have', type:'select',
+          options:[['understood','Read and understood this document'], ['read','Read this document'], ['received','Received this document']] }],
+        reasonLabel:'', minReason:0, successText:'Acknowledgement recorded.' });
+    }
+    if(a === 'set_distribution'){
+      var people = cd.profiles.filter(function(p){ return p.status === 'Active'; })
+        .map(function(p){ return [p.id, p.full_name || String(p.id).slice(0, 8)]; });
+      return openModal({ action:a, versionId:versionId, title:'Distribution for ' + lbl,
+        fields:[
+          { id:'target_type', label:'Distribute to', type:'select', options:[['all_users','All users']].concat(people.length ? [['user','A specific user']] : []) },
+          { id:'target_id', label:'User (only if specific)', type:'select', options:[['', '—']].concat(people) },
+          { id:'mandatory', label:'Acknowledgement is mandatory', type:'checkbox', value:true },
+          { id:'due_date', label:'Acknowledge by (optional)', type:'date' }
+        ],
+        reasonLabel:'', minReason:0,
+        buildPayload:function(x){
+          return { target_type:x.target_type, target_id:x.target_type === 'user' ? x.target_id : null,
+            mandatory:!!x.mandatory, due_date:x.due_date || null };
+        },
+        successText:'Distribution updated.' });
+    }
+  }
+  function openNewDoc(){
+    openModal({ action:'create_document', title:'New controlled document',
+      help:'Creates draft version 1.0. You become the author.',
+      fields:[
+        { id:'title', label:'Title', type:'text', required:true, placeholder:'e.g. Allergen Control Procedure' },
+        { id:'document_number', label:'Document number', type:'text', required:true, placeholder:'e.g. SOP-QA-014' },
+        { id:'document_type', label:'Type', type:'select', options:TYPES },
+        { id:'confidentiality_level', label:'Confidentiality', type:'select', options:CONF.map(function(c){ return [c, c]; }) },
+        { id:'review_interval_months', label:'Review interval in months (optional)', type:'number', placeholder:'e.g. 12' }
+      ],
+      reasonLabel:'Change summary (min 10 characters)', minReason:10,
+      buildPayload:function(x){
+        return { title:x.title, document_number:x.document_number, document_type:x.document_type,
+          confidentiality_level:x.confidentiality_level,
+          review_interval_months:x.review_interval_months ? Number(x.review_interval_months) : null };
+      },
+      successText:'Document created.' });
+  }
+  function openNewVersion(familyId){
+    openModal({ action:'new_version', title:'New version',
+      help:'Creates a new draft. Only one version may be in progress at a time.',
+      fields:[
+        { id:'change_summary', label:'What changed (min 10 characters)', type:'textarea', required:true },
+        { id:'major', label:'Major revision (otherwise minor)', type:'checkbox', value:false }
+      ],
+      reasonLabel:'Reason for the change (min 10 characters)', minReason:10,
+      buildPayload:function(x){
+        return { document_family_id:familyId, change_summary:x.change_summary, major:!!x.major };
+      },
+      successText:'New draft version created.' });
+  }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target;
+    if(!t || !t.closest) return;
+    var m = t.closest('[data-cd-modal]');
+    if(m){
+      ev.preventDefault();
+      if(m.getAttribute('data-cd-modal') === 'cancel') closeModal(); else submitModal();
+      return;
+    }
+    var el = t.closest('[data-cd]');
+    if(!el) return;
+    ev.preventDefault();
+    var act = el.getAttribute('data-cd');
+    if(act === 'toggle'){ var id = el.getAttribute('data-f'); cd.open = (cd.open === id) ? null : id; rerender(); }
+    else if(act === 'reload'){ cd.loaded = false; load(); }
+    else if(act === 'newdoc'){ openNewDoc(); }
+    else if(act === 'newversion'){ openNewVersion(el.getAttribute('data-f')); }
+    else if(act === 'act'){ openAction(el.getAttribute('data-a'), el.getAttribute('data-v')); }
+  });
+
+  window.controlledDocsReload = function(){ cd.loaded = false; return load(); };
+})();
+
 </script>
 </body>
 </html>
