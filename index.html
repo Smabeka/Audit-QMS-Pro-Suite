@@ -9187,8 +9187,9 @@ function renderDashboard(){
   const metricsWithData = state.metrics.map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
   const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
   const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
-  const totalDocs = state.documents.length;
-  const docsInGoodStanding = state.documents.filter(d=>(d.status==="Approved"||d.status==="Published") && documentReviewStatus(d)!=="Overdue").length;
+  const _cdStats = (typeof window.__cdStats === 'function') ? window.__cdStats() : null;
+  const totalDocs = _cdStats ? _cdStats.total : state.documents.length;
+  const docsInGoodStanding = _cdStats ? _cdStats.good : state.documents.filter(d=>(d.status==="Approved"||d.status==="Published") && documentReviewStatus(d)!=="Overdue").length;
   const documentScore = totalDocs>0 ? Math.round((docsInGoodStanding/totalDocs)*1000)/10 : null;
   const totalTraining = state.trainingRecords.length;
   const trainingInGoodStanding = state.trainingRecords.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
@@ -9216,7 +9217,7 @@ function renderDashboard(){
 
   /* Management summary counts */
   const openAudits = audits.filter(a=>a.status!=="Closed").length;
-  const pendingDocuments = state.documents.filter(d=>d.status==="Draft"||d.status==="Under Review").length;
+  const pendingDocuments = _cdStats ? _cdStats.pending : state.documents.filter(d=>d.status==="Draft"||d.status==="Under Review").length;
   const approvedSuppliers = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
   const employeeNames = new Set();
   state.trainingRecords.forEach(r=>{ if(r.employeeName) employeeNames.add(r.employeeName.trim().toLowerCase()); });
@@ -16652,7 +16653,7 @@ function showUpdateBanner(){
 
   var cd = {
     loaded:false, loading:false, error:'',
-    families:[], versions:[], approvals:[], events:[], acks:[], rules:[], profiles:[],
+    families:[], versions:[], approvals:[], events:[], acks:[], rules:[], profiles:[], reviews:[],
     open:null
   };
   var modal = null;
@@ -16718,6 +16719,10 @@ function showUpdateBanner(){
       cd.events = res[3].data || [];
       cd.acks = res[4].data || [];
       cd.rules = res[5].data || [];
+      try{
+        var rv = await supabaseClient.from('document_periodic_reviews').select('*').order('reviewed_at', { ascending:false });
+        cd.reviews = rv.error ? [] : (rv.data || []);
+      }catch(_){ cd.reviews = []; }
       cd.profiles = res[6].error ? [] : (res[6].data || []);
       if(res[6].error){
         try{
@@ -16745,8 +16750,33 @@ function showUpdateBanner(){
     var l = String(v.version_label || (v.version_major + '.' + v.version_minor));
     return /^v/i.test(l) ? l : 'v' + l;
   }
+  var OUTCOME_LABEL = {
+    no_change:'No change required', minor_revision:'Minor revision required', major_revision:'Major revision required',
+    retire_recommended:'Retirement recommended', extended:'Review date extended'
+  };
   function eventsOf(versionId){
-    return cd.events.filter(function(x){ return x.document_version_id === versionId; });
+    var base = cd.events.filter(function(x){ return x.document_version_id === versionId; });
+    var revs = cd.reviews.filter(function(r){ return r.document_version_id === versionId; }).map(function(r){
+      return { event_type:'periodic_review: ' + (OUTCOME_LABEL[r.outcome] || r.outcome), actor_id:r.reviewer_id,
+        created_at:r.reviewed_at, notes:r.justification, record_hash:r.record_hash };
+    });
+    return base.concat(revs).sort(function(a, b){ return String(b.created_at).localeCompare(String(a.created_at)); });
+  }
+  function nextReviewOf(v){
+    var best = null;
+    cd.reviews.forEach(function(r){
+      if(r.document_version_id === v.id && r.next_review_date && (!best || r.reviewed_at > best.reviewed_at)) best = r;
+    });
+    return best ? best.next_review_date : (v.next_review_date || null);
+  }
+  function reviewState(v){
+    var d = nextReviewOf(v);
+    if(!d) return { tone:'neutral', text:'No review date set' };
+    var days = Math.round((new Date(d + 'T00:00:00').getTime() - new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00').getTime()) / 86400000);
+    if(days < 0) return { tone:'rust', text:'Review overdue by ' + (-days) + ' day' + (days === -1 ? '' : 's') + ' (was ' + d + ')', overdue:true };
+    if(days <= 30) return { tone:'rust', text:'Review due in ' + days + ' days (' + d + ')', soon:true };
+    if(days <= 90) return { tone:'amber', text:'Review due in ' + days + ' days (' + d + ')', soon:true };
+    return { tone:'green', text:'Next review ' + d };
   }
   function cycle(v){
     var sub = eventsOf(v.id).filter(function(x){ return x.event_type === 'submitted_for_review'; })[0];
@@ -16876,6 +16906,9 @@ function showUpdateBanner(){
     if(isQmAdmin && v.state !== 'obsolete'){
       buttons.push(btn('act', { a:'set_distribution', v:v.id }, '+ Distribution'));
     }
+    if(isQmAdmin && v.state === 'published' && f.current_version_id === v.id){
+      buttons.push(btn('act', { a:'periodic_review', v:v.id }, 'Periodic review'));
+    }
 
     var tone = STATE_TONE[v.state] || 'neutral';
     var signoff = '';
@@ -16927,6 +16960,10 @@ function showUpdateBanner(){
       e(STATE_LABEL[v.state] || v.state) + '</span> <strong>' + e(label(v)) + '</strong>' +
       (f.current_version_id === v.id ? ' <span class="muted-italic" style="font-size:11px;">(current)</span>' : '') +
       '<div style="font-size:12.5px;margin-top:2px;">' + e(v.change_summary || '') + '</div>' +
+      (v.state === 'published' && f.current_version_id === v.id ? (function(){
+        var rs = reviewState(v);
+        return '<div style="margin-top:3px;"><span class="tag tag-' + rs.tone + '" style="font-size:10px;">' + e(rs.text) + '</span></div>';
+      })() : '') +
       '<div class="muted-italic" style="font-size:11px;">By ' + e(nameOf(v.created_by)) + ' · ' + e(fmt(v.created_at)) +
       (v.effective_date ? ' · effective ' + e(v.effective_date) : '') + '</div>' +
       signoff + '</div>' +
@@ -16961,6 +16998,30 @@ function showUpdateBanner(){
       '<div class="flex-wrap"><span class="tag tag-' + (STATE_TONE[(cur || working || {}).state] || 'neutral') + '">' +
       e(STATE_LABEL[(cur || working || {}).state] || f.status) + '</span></div></button>' + body + '</div>';
   }
+
+  window.__cdStats = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return null;
+      if(!cd.loaded){ if(!cd.loading) setTimeout(load, 0); return null; }
+      if(cd.error) return null;
+      var total = cd.families.length;
+      var good = 0, pending = 0, ackOut = 0, reviewDue = 0, reviewOver = 0;
+      cd.families.forEach(function(f){
+        var cur = cd.versions.filter(function(x){ return x.id === f.current_version_id && x.state === 'published'; })[0];
+        if(cur){
+          var rs = reviewState(cur);
+          if(!rs.overdue) good++;
+          if(rs.overdue) reviewOver++;
+          else if(rs.soon) reviewDue++;
+          ackOut += pendingOf(cur).length;
+        }
+      });
+      cd.versions.forEach(function(v){
+        if(v.state === 'draft' || v.state === 'in_review' || v.state === 'approved') pending++;
+      });
+      return { total:total, good:good, pending:pending, ackOutstanding:ackOut, reviewDue:reviewDue, reviewOverdue:reviewOver };
+    }catch(_){ return null; }
+  };
 
   function dueTag(v){
     var me = myId();
@@ -17073,6 +17134,9 @@ function showUpdateBanner(){
       errEl.textContent = 'The text must be at least ' + cfg.minReason + ' characters.'; return;
     }
     if(!password){ errEl.textContent = 'Password is required.'; return; }
+    if(cfg.reasonCategoryField && vals.reason && vals[cfg.reasonCategoryField]){
+      vals.reason = '[' + vals[cfg.reasonCategoryField] + '] ' + vals.reason;
+    }
 
     btnEl.disabled = true; btnEl.textContent = 'Signing…'; errEl.textContent = '';
     try{
@@ -17133,6 +17197,20 @@ function showUpdateBanner(){
       return openModal({ action:a, versionId:versionId, title:'Publish ' + lbl,
         help:'The previous published version becomes obsolete.',
         reasonLabel:'Release note (min 10 characters)', minReason:10, successText:'Version published.' });
+    }
+    if(a === 'periodic_review'){
+      return openModal({ action:a, versionId:versionId, title:'Periodic review of ' + lbl,
+        help:'Record the outcome of the scheduled review. This is signed and cannot be changed.',
+        fields:[
+          { id:'outcome', label:'Outcome', type:'select', options:[
+            ['no_change','No change required'], ['minor_revision','Minor revision required'],
+            ['major_revision','Major revision required'], ['retire_recommended','Retire this document'],
+            ['extended','Extend review date with justification'] ] },
+          { id:'next_review_date', label:'Next review date (required for “no change” and “extend”)', type:'date' }
+        ],
+        reasonLabel:'Justification (min 10 characters)', minReason:10,
+        buildPayload:function(x){ return { outcome:x.outcome, next_review_date:x.next_review_date || null }; },
+        successText:'Periodic review recorded.' });
     }
     if(a === 'acknowledge'){
       return openModal({ action:a, versionId:versionId, title:'Acknowledge ' + lbl,
@@ -17196,10 +17274,16 @@ function showUpdateBanner(){
     openModal({ action:'new_version', title:'New version',
       help:'Creates a new draft. Only one version may be in progress at a time.',
       fields:[
+        { id:'reason_category', label:'Reason for the change', type:'select', options:[
+          ['Routine review','Routine review'], ['Audit finding','Audit finding'], ['CAPA','CAPA'],
+          ['Legal/regulatory change','Legal/regulatory change'], ['Process change','Process change'],
+          ['Incident','Incident'], ['Customer complaint','Customer complaint'], ['New equipment','New equipment'],
+          ['Risk assessment','Risk assessment'], ['Management review','Management review'] ] },
         { id:'change_summary', label:'What changed (min 10 characters)', type:'textarea', required:true },
         { id:'major', label:'Major revision (otherwise minor)', type:'checkbox', value:false }
       ],
-      reasonLabel:'Reason for the change (min 10 characters)', minReason:10,
+      reasonCategoryField:'reason_category',
+      reasonLabel:'Details / reference, e.g. CAPA-0012 or finding number (min 10 characters)', minReason:10,
       buildPayload:function(x){
         return { document_family_id:familyId, change_summary:x.change_summary, major:!!x.major };
       },
