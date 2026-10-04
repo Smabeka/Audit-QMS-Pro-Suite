@@ -16965,6 +16965,16 @@ function showUpdateBanner(){
     if(isQmAdmin && v.state === 'published' && f.current_version_id === v.id){
       buttons.push(btn('act', { a:'periodic_review', v:v.id }, 'Periodic review'));
     }
+    if(isQmAdmin && v.state === 'draft'){
+      buttons.push(btn('act', { a:'attach_file', v:v.id }, v.file_path ? 'Replace file' : 'Attach file'));
+    }
+    var canGet = v.file_path && (
+      (v.state === 'published' && f.current_version_id === v.id) ||
+      ((v.state === 'draft' || v.state === 'in_review' || v.state === 'approved') && (isQmAdmin || role === 'approver')) ||
+      (v.state === 'obsolete' && isQmAdmin));
+    if(canGet){
+      buttons.push(btn('act', { a:'download', v:v.id }, v.state === 'obsolete' ? 'Archive copy (not for use)' : 'Download file', v.state === 'published'));
+    }
 
     var tone = STATE_TONE[v.state] || 'neutral';
     var signoff = '';
@@ -17016,6 +17026,11 @@ function showUpdateBanner(){
       e(STATE_LABEL[v.state] || v.state) + '</span> <strong>' + e(label(v)) + '</strong>' +
       (f.current_version_id === v.id ? ' <span class="muted-italic" style="font-size:11px;">(current)</span>' : '') +
       '<div style="font-size:12.5px;margin-top:2px;">' + e(v.change_summary || '') + '</div>' +
+      (v.file_path
+        ? '<div class="muted-italic" style="font-size:11px;margin-top:2px;">📎 ' + e(v.file_name || 'file') + ' · ' + e(sizeText(v.file_size)) +
+          (v.content_hash ? ' · SHA-256 ' + e(String(v.content_hash).slice(0, 12)) + '…' : '') + '</div>'
+        : '<div class="muted-italic" style="font-size:11px;margin-top:2px;">' +
+          (v.state === 'draft' ? '⚠ No file attached yet.' : 'No file attached (record created before file storage).') + '</div>') +
       (v.state === 'published' && f.current_version_id === v.id ? (function(){
         var rs = reviewState(v);
         return '<div style="margin-top:3px;"><span class="tag tag-' + rs.tone + '" style="font-size:10px;">' + e(rs.text) + '</span></div>';
@@ -17191,6 +17206,9 @@ function showUpdateBanner(){
   function fieldHtml(f){
     var id = 'cdm-' + f.id;
     var lab = '<label class="field" style="margin-bottom:8px;display:block;">' + e(f.label);
+    if(f.type === 'file'){
+      return lab + '<input type="file" id="' + id + '" accept="' + e(f.accept || '') + '" /></label>';
+    }
     if(f.type === 'textarea'){
       return lab + '<textarea id="' + id + '" rows="3" style="width:100%;" placeholder="' + e(f.placeholder || '') + '">' + e(f.value || '') + '</textarea></label>';
     }
@@ -17264,7 +17282,13 @@ function showUpdateBanner(){
         password: password
       };
       if(cfg.versionId) body.document_version_id = cfg.versionId;
-      if(cfg.buildPayload) body.payload = cfg.buildPayload(vals);
+      var extra = null;
+      if(cfg.prepare){
+        btnEl.textContent = 'Uploading…';
+        extra = await cfg.prepare(vals);
+        btnEl.textContent = 'Signing…';
+      }
+      if(cfg.buildPayload) body.payload = cfg.buildPayload(vals, extra);
       if(cfg.action === 'acknowledge') body.acknowledgement_type = vals.ack_type;
 
       var out = await supabaseClient.functions.invoke('document-sign-signed', { body: body });
@@ -17289,9 +17313,68 @@ function showUpdateBanner(){
     }
   }
 
+  var FILE_TYPES = {
+    pdf:'application/pdf', doc:'application/msword',
+    docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls:'application/vnd.ms-excel',
+    xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', txt:'text/plain'
+  };
+  var MAX_FILE = 25 * 1024 * 1024;
+  function sizeText(n){
+    n = Number(n) || 0;
+    return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
+  }
+  async function sha256Hex(buf){
+    var d = await crypto.subtle.digest('SHA-256', buf);
+    return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  async function doDownload(versionId){
+    try{
+      var v = cd.versions.filter(function(x){ return x.id === versionId; })[0];
+      if(!v || !v.file_path) throw new Error('No file is attached to this version.');
+      var lg = await supabaseClient.rpc('log_document_download', { p_document_version_id: versionId });
+      if(lg.error) throw new Error(lg.error.message);
+      var su = await supabaseClient.storage.from('controlled-documents').createSignedUrl(v.file_path, 60);
+      if(su.error || !su.data || !su.data.signedUrl) throw new Error((su.error && su.error.message) || 'Could not create a download link.');
+      window.open(su.data.signedUrl, '_blank');
+      toast('Download started. Printed copies are uncontrolled.');
+      cd.loaded = false; load();
+    }catch(err){
+      toast((err && err.message) ? err.message : String(err), 'error');
+    }
+  }
   function openAction(a, versionId, empId){
     var v = cd.versions.filter(function(x){ return x.id === versionId; })[0] || {};
     var lbl = v.version_label ? label(v) : '';
+    if(a === 'download'){ return doDownload(versionId); }
+    if(a === 'attach_file'){
+      var fam = cd.families.filter(function(f){ return f.id === v.document_family_id; })[0] || {};
+      return openModal({ action:a, versionId:versionId, title:'Attach file to ' + lbl,
+        help:'PDF, Word, Excel, PNG, JPG or text, up to 25 MB. A fingerprint (SHA-256) is recorded. The file can only be replaced while the version is a draft.',
+        fields:[ { id:'file', label:'Document file', type:'file', required:true,
+          accept:'.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt' } ],
+        reasonLabel:'', minReason:0,
+        prepare:async function(){
+          var input = document.getElementById('cdm-file');
+          var file = input && input.files && input.files[0];
+          if(!file) throw new Error('Choose a file first.');
+          if(file.size > MAX_FILE) throw new Error('The file is larger than 25 MB.');
+          if(file.size < 1) throw new Error('The file is empty.');
+          var ext = (file.name.split('.').pop() || '').toLowerCase();
+          var mime = FILE_TYPES[ext];
+          if(!mime) throw new Error('This file type is not allowed.');
+          var buf = await file.arrayBuffer();
+          var hash = await sha256Hex(buf);
+          var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+          var path = fam.organization_id + '/' + v.document_family_id + '/' + v.id + '/' + rand + '.' + ext;
+          var up = await supabaseClient.storage.from('controlled-documents').upload(path, file, { contentType:mime, upsert:false });
+          if(up.error) throw new Error('Upload failed: ' + up.error.message);
+          return { path:path, file_name:file.name, mime_type:mime, file_size:file.size, content_hash:hash };
+        },
+        buildPayload:function(x, extra){ return extra; },
+        successText:'File attached.' });
+    }
     if(a === 'submit_for_review'){
       return openModal({ action:a, versionId:versionId, title:'Submit ' + lbl + ' for review',
         reasonLabel:'Reason (min 10 characters)', minReason:10, successText:'Submitted for review.' });
