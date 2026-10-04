@@ -10661,6 +10661,9 @@ function renderDocuments(){
     (!q || (d.title||'').toLowerCase().includes(q) || (d.docNumber||'').toLowerCase().includes(q) || (d.category||'').toLowerCase().includes(q))
   );
   const overdueCount = all.filter(d=>documentReviewStatus(d)==="Overdue").length;
+  if(typeof renderControlledDocuments === 'function' && typeof currentProfile !== 'undefined' && currentProfile && typeof supabaseClient !== 'undefined' && supabaseClient){
+    return `<h2 class="serif" style="font-size:18px;margin:0 0 12px;">Document Control</h2>${renderControlledDocuments()}`;
+  }
   return `
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
       <h2 class="serif" style="font-size:18px;margin:0;">Document Control ${cloudReady() ? `<span class="tag tag-green" style="font-size:10px;vertical-align:middle;">🔄 Live — shared with your team</span>` : ''}</h2>
@@ -16696,7 +16699,7 @@ function showUpdateBanner(){
         sel('document_version_events').order('created_at', { ascending:false }).limit(1000),
         sel('document_acknowledgements').order('acknowledged_at', { ascending:false }),
         sel('document_distribution_rules'),
-        supabaseClient.from('profiles').select('id, full_name, role, status')
+        supabaseClient.rpc('get_org_directory')
       ]);
       for(var i = 0; i < 6; i++){ if(res[i].error) throw res[i].error; }
       cd.families = res[0].data || [];
@@ -16706,6 +16709,12 @@ function showUpdateBanner(){
       cd.acks = res[4].data || [];
       cd.rules = res[5].data || [];
       cd.profiles = res[6].error ? [] : (res[6].data || []);
+      if(res[6].error){
+        try{
+          var fb = await supabaseClient.from('profiles').select('id, full_name, role, status');
+          if(!fb.error) cd.profiles = fb.data || [];
+        }catch(_){}
+      }
       cd.error = '';
     }catch(err){
       cd.error = (err && err.message) ? err.message : String(err);
@@ -16896,6 +16905,22 @@ function showUpdateBanner(){
       e(STATE_LABEL[(cur || working || {}).state] || f.status) + '</span></div></button>' + body + '</div>';
   }
 
+  function pendingAckHtml(){
+    var items = [];
+    cd.families.forEach(function(f){
+      var v = cd.versions.filter(function(x){ return x.id === f.current_version_id; })[0];
+      if(v && canAcknowledge(v, f)) items.push({ f:f, v:v });
+    });
+    if(!items.length) return '';
+    return '<div class="card p4" style="margin-bottom:12px;background:#fff8e6;border-color:var(--amber, #c98a00);">' +
+      '<div style="font-weight:600;font-size:13px;margin-bottom:6px;">My pending acknowledgements (' + items.length + ')</div>' +
+      items.map(function(i){
+        return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:4px 0;font-size:12.5px;">' +
+          '<span>' + e(i.f.document_number) + ' — ' + e(i.f.title) + ' ' + e(label(i.v)) + '</span>' +
+          btn('act', { a:'acknowledge', v:i.v.id }, 'Acknowledge', true) + '</div>';
+      }).join('') + '</div>';
+  }
+
   window.renderControlledDocuments = function(){
     try{
       if(typeof currentProfile === 'undefined' || !currentProfile) return '';
@@ -16912,6 +16937,7 @@ function showUpdateBanner(){
         (cd.error ? '<p style="color:var(--rust);font-size:12px;">' + e(cd.error) + '</p>' : '') +
         (cd.loading && !cd.loaded ? '<p class="muted-italic" style="font-size:12px;">Loading…</p>' : '') +
         (cd.loaded && cd.families.length === 0 && !cd.error ? '<p class="muted-italic" style="font-size:12px;">No controlled documents yet.</p>' : '') +
+        pendingAckHtml() +
         cd.families.map(familyCard).join('') + '</div>';
     }catch(err){
       console.error('[controlled-docs] render failed', err);
