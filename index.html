@@ -495,7 +495,17 @@ function initWorkspaces(){
     }
   }
 }
+let __orgNameRequested = false;
 function currentWorkspaceName(){
+  try{
+    if(window.__orgName) return window.__orgName;
+    if(!__orgNameRequested && typeof currentProfile !== 'undefined' && currentProfile && typeof supabaseClient !== 'undefined' && supabaseClient){
+      __orgNameRequested = true;
+      supabaseClient.rpc('get_my_org_name').then(function(r){
+        if(r && !r.error && r.data){ window.__orgName = String(r.data); if(typeof render === 'function') render(); }
+      }).catch(function(){});
+    }
+  }catch(_){}
   const w = getWorkspaces().find(w=>w.id===currentWorkspaceId);
   return w ? w.name : "My Company";
 }
@@ -641,14 +651,14 @@ async function cloudSignIn(email, password){
       ? "Couldn't load your account profile (" + profileLoadError + "). Contact your Administrator."
       : "No profile found for this account yet. Contact your Administrator — the account setup may be incomplete.";
     await supabaseClient.auth.signOut();
-    currentCloudUser = null; currentProfile = null;
+    currentCloudUser = null; currentProfile = null; window.__orgName = null; __orgNameRequested = false;
     render();
     return;
   }
   if(currentProfile.status === "Disabled"){
     loginError = "This account is not yet activated. Ask an Administrator to activate it under Users & Roles.";
     await supabaseClient.auth.signOut();
-    currentCloudUser = null; currentProfile = null;
+    currentCloudUser = null; currentProfile = null; window.__orgName = null; __orgNameRequested = false;
     render();
     return;
   }
@@ -8821,7 +8831,7 @@ function render(){
   if(cloudReady() && currentCloudUser && currentProfile && currentProfile.status === "Disabled"){
     loginError = "This account has been disabled. Ask an Administrator to reactivate it under Users & Roles.";
     supabaseClient.auth.signOut();
-    currentCloudUser = null; currentProfile = null;
+    currentCloudUser = null; currentProfile = null; window.__orgName = null; __orgNameRequested = false;
     root.innerHTML = renderLoginScreen();
     attachLoginHandlers();
     return;
