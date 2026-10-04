@@ -16721,7 +16721,7 @@ function showUpdateBanner(){
       cd.profiles = res[6].error ? [] : (res[6].data || []);
       if(res[6].error){
         try{
-          var fb = await supabaseClient.from('profiles').select('id, full_name, role, status');
+          var fb = await supabaseClient.from('profiles').select('id, full_name, role, status, department');
           if(!fb.error) cd.profiles = fb.data || [];
         }catch(_){}
       }
@@ -16766,29 +16766,61 @@ function showUpdateBanner(){
   function acksOf(versionId){
     return cd.acks.filter(function(a){ return a.document_version_id === versionId; });
   }
+  function profileOf(id){
+    for(var i = 0; i < cd.profiles.length; i++){ if(cd.profiles[i].id === id) return cd.profiles[i]; }
+    return null;
+  }
+  function norm(x){ return String(x == null ? '' : x).trim().toLowerCase(); }
+  function covers(r, p){
+    if(!p) return false;
+    if(r.target_type === 'all_users') return true;
+    if(r.target_type === 'user') return r.target_id === p.id;
+    if(r.target_type === 'role') return norm(r.target_value) === norm(p.role);
+    if(r.target_type === 'department') return norm(r.target_value) === norm(p.department);
+    return false;
+  }
+  function ruleLabel(r){
+    if(r.target_type === 'all_users') return 'All users';
+    if(r.target_type === 'user') return nameOf(r.target_id);
+    if(r.target_type === 'role') return 'Role: ' + (r.target_value || '?');
+    if(r.target_type === 'department') return 'Department: ' + (r.target_value || '?');
+    return r.target_type;
+  }
+  function today(){ return new Date().toISOString().slice(0, 10); }
+  function dueFor(versionId, p){
+    var best = null;
+    rulesOf(versionId).forEach(function(r){
+      if(covers(r, p) && r.due_date && (!best || r.due_date < best)) best = r.due_date;
+    });
+    return best;
+  }
+  function doneBy(versionId, id){
+    return acksOf(versionId).some(function(a){ return a.employee_id === id && a.acknowledgement_type === 'understood'; });
+  }
   function canAcknowledge(v, f){
     var me = myId();
     if(!me || v.state !== 'published' || f.current_version_id !== v.id) return false;
-    var mine = acksOf(v.id).filter(function(a){ return a.employee_id === me; });
-    if(mine.some(function(a){ return a.acknowledgement_type === 'understood'; })) return false;
+    if(doneBy(v.id, me)) return false;
     var rules = rulesOf(v.id);
     if(rules.length === 0) return true;
-    return rules.some(function(r){
-      return r.target_type === 'all_users' || (r.target_type === 'user' && r.target_id === me);
+    var mine = profileOf(me) || { id: me, role: myRole(), department: (typeof currentProfile !== 'undefined' && currentProfile && currentProfile.department) || '' };
+    return rules.some(function(r){ return covers(r, mine); });
+  }
+  /* active people the distribution list covers, with completion status */
+  function coverageOf(v){
+    var rules = rulesOf(v.id);
+    if(rules.length === 0) return [];
+    var t = today();
+    return cd.profiles.filter(function(p){
+      return p.status === 'Active' && rules.some(function(r){ return covers(r, p); });
+    }).map(function(p){
+      var done = doneBy(v.id, p.id);
+      var due = dueFor(v.id, p);
+      return { id:p.id, name:p.full_name || String(p.id).slice(0, 8), done:done, due:due, overdue:!done && !!due && due < t };
     });
   }
   function pendingOf(v){
-    var rules = rulesOf(v.id);
-    if(rules.length === 0) return [];
-    var ids = {};
-    rules.forEach(function(r){
-      if(r.target_type === 'user' && r.target_id) ids[r.target_id] = true;
-      if(r.target_type === 'all_users'){
-        cd.profiles.forEach(function(p){ if(p.status === 'Active') ids[p.id] = true; });
-      }
-    });
-    acksOf(v.id).forEach(function(a){ delete ids[a.employee_id]; });
-    return Object.keys(ids);
+    return coverageOf(v).filter(function(x){ return !x.done; }).map(function(x){ return x.id; });
   }
 
   function btn(action, attrs, text, primary){
@@ -16796,6 +16828,21 @@ function showUpdateBanner(){
     Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
     return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') +
       '" style="font-size:11px;padding:4px 8px;" data-cd="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+
+  function trackerHtml(v){
+    var cov = coverageOf(v);
+    if(!cov.length) return '';
+    var done = cov.filter(function(x){ return x.done; }).length;
+    var late = cov.filter(function(x){ return x.overdue; });
+    var pct = Math.round(done * 100 / cov.length);
+    var open = cov.filter(function(x){ return !x.done; });
+    return '<div style="font-size:12px;margin:4px 0;"><strong>' + done + ' of ' + cov.length + ' acknowledged</strong> (' + pct + '%)' +
+      (late.length ? ' · <span style="color:var(--rust);">' + late.length + ' overdue</span>' : '') + '</div>' +
+      '<div style="height:6px;background:var(--line2);border-radius:3px;overflow:hidden;margin-bottom:4px;"><div style="height:6px;width:' + pct + '%;background:var(--navy);"></div></div>' +
+      (open.length ? '<div style="font-size:11.5px;color:var(--rust);margin-bottom:4px;">Outstanding: ' +
+        open.slice(0, 15).map(function(x){ return e(x.name) + (x.overdue ? ' (overdue ' + e(x.due) + ')' : (x.due ? ' (due ' + e(x.due) + ')' : '')); }).join(', ') +
+        (open.length > 15 ? ' +' + (open.length - 15) + ' more' : '') + '</div>' : '');
   }
 
   function versionBlock(f, v){
@@ -16856,14 +16903,14 @@ function showUpdateBanner(){
     if(v.state !== 'draft'){
       var rules = rulesOf(v.id);
       var acks = acksOf(v.id);
-      var pend = pendingOf(v);
+      var pend = [];
       dist = '<details style="margin-top:4px;"><summary style="font-size:11px;cursor:pointer;color:var(--muted);">Distribution &amp; acknowledgements (' +
         acks.length + ' recorded)</summary>' +
         '<div style="font-size:11.5px;padding:4px 0;">' +
         (rules.length ? 'Distribution: ' + rules.map(function(r){
-          return r.target_type === 'all_users' ? 'All users' : e(nameOf(r.target_id));
+          return e(ruleLabel(r)) + (r.due_date ? ' (by ' + e(r.due_date) + ')' : '');
         }).join(', ') : '<span class="muted-italic">No distribution list: any active user may acknowledge.</span>') +
-        '</div>' +
+        '</div>' + trackerHtml(v) +
         (acks.length ? acks.map(function(a){
           return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line2);">✓ <strong>' +
             e(nameOf(a.employee_id)) + '</strong> · ' + e(a.acknowledgement_type) + ' · ' + e(fmt(a.acknowledged_at)) + '</div>';
@@ -16915,6 +16962,12 @@ function showUpdateBanner(){
       e(STATE_LABEL[(cur || working || {}).state] || f.status) + '</span></div></button>' + body + '</div>';
   }
 
+  function dueTag(v){
+    var me = myId();
+    var d = dueFor(v.id, profileOf(me) || { id: me, role: myRole(), department: '' });
+    if(!d) return '';
+    return d < today() ? ' <span style="color:var(--rust);font-weight:600;">· overdue (was due ' + e(d) + ')</span>' : ' <span class="muted-italic">· due ' + e(d) + '</span>';
+  }
   function pendingAckHtml(){
     var items = [];
     cd.families.forEach(function(f){
@@ -16926,7 +16979,7 @@ function showUpdateBanner(){
       '<div style="font-weight:600;font-size:13px;margin-bottom:6px;">My pending acknowledgements (' + items.length + ')</div>' +
       items.map(function(i){
         return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:4px 0;font-size:12.5px;">' +
-          '<span>' + e(i.f.document_number) + ' — ' + e(i.f.title) + ' ' + e(label(i.v)) + '</span>' +
+          '<span>' + e(i.f.document_number) + ' — ' + e(i.f.title) + ' ' + e(label(i.v)) + dueTag(i.v) + '</span>' +
           btn('act', { a:'acknowledge', v:i.v.id }, 'Acknowledge', true) + '</div>';
       }).join('') + '</div>';
   }
@@ -17089,18 +17142,33 @@ function showUpdateBanner(){
         reasonLabel:'', minReason:0, successText:'Acknowledgement recorded.' });
     }
     if(a === 'set_distribution'){
-      var people = cd.profiles.filter(function(p){ return p.status === 'Active'; })
-        .map(function(p){ return [p.id, p.full_name || String(p.id).slice(0, 8)]; });
+      var active = cd.profiles.filter(function(p){ return p.status === 'Active'; });
+      var people = active.map(function(p){ return [p.id, p.full_name || String(p.id).slice(0, 8)]; });
+      var uniq = function(key){
+        var seen = {}, out = [];
+        active.forEach(function(p){
+          var val = String(p[key] == null ? '' : p[key]).trim();
+          if(val && !seen[val.toLowerCase()]){ seen[val.toLowerCase()] = true; out.push([val, val]); }
+        });
+        return out;
+      };
+      var roleOpts = uniq('role'), deptOpts = uniq('department');
       return openModal({ action:a, versionId:versionId, title:'Distribution for ' + lbl,
         fields:[
-          { id:'target_type', label:'Distribute to', type:'select', options:[['all_users','All users']].concat(people.length ? [['user','A specific user']] : []) },
-          { id:'target_id', label:'User (only if specific)', type:'select', options:[['', '—']].concat(people) },
+          { id:'target_type', label:'Distribute to', type:'select', options:[['all_users','All users']]
+            .concat(people.length ? [['user','A specific user']] : [])
+            .concat(roleOpts.length ? [['role','Everyone with a role']] : [])
+            .concat(deptOpts.length ? [['department','A department']] : []) },
+          { id:'target_id', label:'User (only if specific user)', type:'select', options:[['', '—']].concat(people) },
+          { id:'target_role', label:'Role (only if role)', type:'select', options:[['', '—']].concat(roleOpts) },
+          { id:'target_department', label:'Department (only if department)', type:'select', options:[['', '—']].concat(deptOpts) },
           { id:'mandatory', label:'Acknowledgement is mandatory', type:'checkbox', value:true },
           { id:'due_date', label:'Acknowledge by (optional)', type:'date' }
         ],
         reasonLabel:'', minReason:0,
         buildPayload:function(x){
           return { target_type:x.target_type, target_id:x.target_type === 'user' ? x.target_id : null,
+            target_value:x.target_type === 'role' ? x.target_role : (x.target_type === 'department' ? x.target_department : null),
             mandatory:!!x.mandatory, due_date:x.due_date || null };
         },
         successText:'Distribution updated.' });
