@@ -463,6 +463,10 @@ const STORE_KEY = "audit-qms-standalone-v1";
    (STORE_KEY + "::" + workspaceId). A small registry ("aqms-workspaces") tracks the
    list of workspaces, and "aqms-current-workspace" tracks which one is active.
    loadStore/saveStore always read/write whichever workspace is currently active. */
+/* Client workspaces only partition this device's local (browser) data. Documents, CAPA, risks and the
+   cloud-synced modules belong to the signed-in ORGANISATION and ignore the workspace, so a switcher
+   implied isolation that did not exist (test CP-7). Off until real multi-organisation support is built. */
+const CLIENT_WORKSPACES_ENABLED = false;
 const WORKSPACES_KEY = "aqms-workspaces";
 const CURRENT_WORKSPACE_KEY = "aqms-current-workspace";
 function workspaceStoreKey(id){ return STORE_KEY + "::" + id; }
@@ -493,6 +497,11 @@ function initWorkspaces(){
       currentWorkspaceId = workspaces[0].id;
       localStorage.setItem(CURRENT_WORKSPACE_KEY, currentWorkspaceId);
     }
+    // Switcher is off: always land on the original (first) workspace so nobody is stranded on a test one.
+    if(!CLIENT_WORKSPACES_ENABLED && workspaces[0] && currentWorkspaceId !== workspaces[0].id){
+      currentWorkspaceId = workspaces[0].id;
+      localStorage.setItem(CURRENT_WORKSPACE_KEY, currentWorkspaceId);
+    }
   }
 }
 let __orgNameRequested = false;
@@ -510,6 +519,7 @@ function currentWorkspaceName(){
   return w ? w.name : "My Company";
 }
 function switchWorkspace(id){
+  if(!CLIENT_WORKSPACES_ENABLED) return;
   if(id === currentWorkspaceId) return;
   saveStore(state); // flush current workspace before leaving it
   currentWorkspaceId = id;
@@ -522,6 +532,7 @@ function switchWorkspace(id){
   render();
 }
 function createWorkspace(name){
+  if(!CLIENT_WORKSPACES_ENABLED) return;
   const trimmed = (name||"").trim();
   if(!trimmed) return;
   const id = uid();
@@ -3848,7 +3859,7 @@ function renderCapaApprovalTab(){
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
         <h2 class="serif" style="margin:0;font-size:18px;">🗂️ CAPA Approval Workflow</h2>
-        <button class="btn btn-primary" data-action="open-new-capa-approval">+ New CAPA Record</button>
+        ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-primary" data-action="open-new-capa-approval">+ New CAPA Record</button>' : ''}
       </div>
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Formal approval of the corrective action itself — Draft → Under Review → Approved/Rejected → Appeal → Closed. Separate from the Dispute Tracking (v2) on individual findings.</p>
       ${records.length===0 ? `<p class="muted-italic">No CAPA records yet.</p>` : records.map(r => {
@@ -4574,6 +4585,17 @@ async function createFormalFollowupCapa(capaId){
 /* ---------- 11. FORMAL PANEL ---------- */
 
 
+/* Role gate for CAPA buttons. The database enforces the same rules (capa_lockdown + capa_rpc_lockdown);
+   this only hides buttons a role can't use so people don't hit refusal messages. */
+function capaRoleKey(){
+  return String((typeof currentProfile!=='undefined' && currentProfile && currentProfile.role) || '')
+    .trim().toLowerCase().replace(/[\s-]+/g,'_');
+}
+function capaRoleIn(list){ return list.indexOf(capaRoleKey()) !== -1; }
+const CAPA_ROLES_CREATE = ['admin','quality_manager','auditor','department_manager'];
+const CAPA_ROLES_REVIEW = ['admin','quality_manager','auditor'];
+const CAPA_ROLES_CLOSE  = ['admin','quality_manager','approver'];
+
 function renderFormalCapaPanel(r){
   const isClosed = formalCapaIsClosed(r);
   const blockers = formalCapaClosureBlockers(r);
@@ -4636,7 +4658,8 @@ const canResolveAppeal =
               \u00b7 evidence ${esc(String((a.completion_evidence || []).length))}
             </div>
           </div>
-          ${(!isClosed && String(a.status || '').toUpperCase() !== 'COMPLETED')
+          ${(!isClosed && String(a.status || '').toUpperCase() !== 'COMPLETED'
+              && (capaRoleIn(CAPA_ROLES_CREATE) || (a.responsible_person && a.responsible_person === (currentCloudUser?.id || currentProfile?.id))))
             ? `<button class="btn btn-ghost" style="font-size:11px;" data-action="complete-formal-action" data-action-id="${esc(a.id)}">Complete</button>`
             : ''}
         </div>
@@ -4692,14 +4715,14 @@ const canResolveAppeal =
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 4px;">Actions</div>
       ${actionRows}
-      ${isClosed ? '' : `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="add-formal-action" data-id="${esc(r.id)}">+ Add Action</button>`}
+      ${(isClosed || !capaRoleIn(CAPA_ROLES_CREATE)) ? '' : `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="add-formal-action" data-id="${esc(r.id)}">+ Add Action</button>`}
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
       ${reviewRows}
-      ${(!isClosed && canStartEffectiveness && !blockers.some(b => b.indexOf('action') === 0))
+      ${(!isClosed && capaRoleIn(CAPA_ROLES_REVIEW) && canStartEffectiveness && !blockers.some(b => b.indexOf('action') === 0))
         ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="submit-formal-effectiveness" data-id="${esc(r.id)}">Submit Effectiveness Review</button>`
         : ''}
-      ${(!isClosed && hasEffective)
+      ${(!isClosed && hasEffective && capaRoleIn(CAPA_ROLES_CREATE))
         ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="create-formal-followup" data-id="${esc(r.id)}">Create Follow-up CAPA</button>`
         : ''}
 
@@ -4710,7 +4733,7 @@ const canResolveAppeal =
           ${closure && closure.comment ? `<p class="muted-italic" style="font-size:11.5px;margin-top:4px;">${esc(closure.comment)}</p>` : ''}
           <p class="muted-italic" style="font-size:11px;margin-top:4px;">This CAPA is closed and immutable.</p>
         </div>
-        <button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="reopen-formal-capa" data-id="${esc(r.id)}">Reopen CAPA</button>
+        ${capaRoleIn(CAPA_ROLES_CLOSE) ? `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="reopen-formal-capa" data-id="${esc(r.id)}">Reopen CAPA</button>` : ''}
       ` : `
         ${blockers.length
   ? `<p style="font-size:11.5px;color:var(--rust);margin:0 0 6px;">
@@ -4724,14 +4747,14 @@ const canResolveAppeal =
            All closure conditions met.
          </p>`)}
 
-<button
+${capaRoleIn(CAPA_ROLES_CLOSE) ? `<button
   class="btn btn-primary"
   style="font-size:12px;"
   data-action="close-formal-capa"
   data-id="${esc(r.id)}"
   ${(blockers.length || !canClose) ? 'disabled' : ''}>
   Approve Closure
-</button>
+</button>` : '<p class="muted-italic" style="font-size:11.5px;margin:0;">Closure is approved by a Quality Manager, Admin or Approver.</p>'}
       `}
     </div>
   `;
@@ -8854,7 +8877,9 @@ function render(){
             <div><h1>AuditQMS Pro Suite</h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-ghost no-print" data-action="open-workspace-modal" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Switch client workspace">🏢 ${esc(currentWorkspaceName())}</button>
+            ${CLIENT_WORKSPACES_ENABLED
+  ? `<button class="btn btn-ghost no-print" data-action="open-workspace-modal" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Switch client workspace">🏢 ${esc(currentWorkspaceName())}</button>`
+  : `<span class="tag tag-neutral no-print" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🏢 ${esc(currentWorkspaceName())}</span>`}
             ${CLOUD_ENABLED ? `<button class="btn btn-ghost no-print" data-action="open-cloud-modal" style="font-size:12px;padding:6px 10px;" title="Cloud backup">☁️ ${currentCloudUser ? 'Synced' : 'Sign In'}</button>` : ''}
             <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
             ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
@@ -9418,11 +9443,11 @@ function renderDashboard(){
     ` : dashboardStandardFilter!=="All" ? `<p class="muted-italic" style="margin-top:10px;font-size:12px;">No open findings for ${esc(dashboardStandardFilter)}.</p>` : ''}
   </div>
   <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
-      <button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;">+ New Audit</button>
-      <button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;">+ Raise CAPA</button>
-      <button class="btn btn-ghost" data-quick-action="upload-document" style="justify-content:center;">+ Upload Doc</button>
+      ${can('createAudit') ? '<button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;">+ New Audit</button>' : ''}
+      ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;">+ Raise CAPA</button>' : ''}
+      ${capaRoleIn(['admin','quality_manager']) ? '<button class="btn btn-ghost" data-quick-action="upload-document" style="justify-content:center;">+ Upload Doc</button>' : ''}
       <button class="btn btn-ghost" data-quick-action="report-incident" style="justify-content:center;">+ Report Incident</button>
-      <button class="btn btn-ghost" data-quick-action="add-risk" style="justify-content:center;">+ Add Risk</button>
+      ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-ghost" data-quick-action="add-risk" style="justify-content:center;">+ Add Risk</button>' : ''}
     </div>
     ${topPriorities.length ? `
     <div class="card p4" style="margin-bottom:16px;">
@@ -9435,7 +9460,7 @@ function renderDashboard(){
         </button>
       `;}).join('')}
     </div>` : ''}
-    <div class="card p4" style="margin-bottom:16px;">
+    ${!capaRoleIn(['admin','quality_manager','auditor']) ? '' : `<div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Recent Activity</h3>
       ${recentActivity.length===0 ? `<p class="muted-italic" style="font-size:13px;">No activity logged yet — actions like creating audits, CAPAs, risks, documents, and supplier approvals will appear here.</p>` : (() => {
         let lastDay = null;
@@ -9447,7 +9472,7 @@ function renderDashboard(){
           return `${dayHeader}<div style="font-size:13px;padding:4px 0;"><span style="color:var(--muted);">${day==="Today"?time:''}</span> ${esc(a.text)}</div>`;
         }).join('');
       })()}
-    </div>
+    </div>`}
     <div class="stats" style="margin-bottom:16px;">
       ${statCard("📋", "Open Audits", openAudits, "nav-audit-register")}
       ${statCard("⏳", "Overdue CAPAs", overdue.length, "nav-capa")}
