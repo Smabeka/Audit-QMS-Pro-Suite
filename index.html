@@ -17590,10 +17590,19 @@ function showUpdateBanner(){
   var SEV_TONE = { Minor:'amber', Major:'rust', Critical:'rust' };
   var STATUS_TONE = { open:'rust', contained:'amber', investigating:'amber', closed:'green', cancelled:'neutral' };
   var STATUS_LABEL = { open:'Open', contained:'Contained', investigating:'Investigating', closed:'Closed', cancelled:'Cancelled' };
+  var LINK_TYPES = [['audit','Audit / audit finding'], ['document','Controlled document'], ['risk','Risk register entry'],
+    ['supplier','Supplier'], ['recall','Product recall / mock recall'], ['lab_micro','Microbiology result'],
+    ['lab_chem','Chemistry / analytical result'], ['food_safety','Food safety (HACCP, allergen, CIP, temperature)'],
+    ['sensory','Sensory evaluation'], ['complaint','Customer complaint'], ['standard','Standard / clause'], ['other','Other']];
+  var STANDARDS = ['BRCGS Food Safety','FSSC 22000','ISO 22000','ISO 9001','HACCP / Codex','ISO/IEC 17025','ISO 45001 / OHS Act','Other standard'];
+  var LINK_HINT = { audit:'e.g. Internal audit Aug 2026, finding 4', document:'e.g. SOP-QA-PR-01 v2.0', risk:'e.g. FR-QAD-001',
+    supplier:'e.g. Acme Packaging (approved supplier)', recall:'e.g. Mock recall MR-2026-02', lab_micro:'e.g. Salmonella, sample S-1042',
+    lab_chem:'e.g. Aflatoxin, COA 5521', food_safety:'e.g. CCP 3 cooking temperature deviation', sensory:'e.g. Panel 14 Oct, off-flavour',
+    complaint:'e.g. Complaint C-0087', standard:'e.g. clause 3.7 Corrective and preventive actions', other:'' };
   var MANAGE = ['admin','quality manager','auditor','department manager'];
   var CLOSERS = ['admin','quality manager'];
 
-  var nc = { loaded:false, loading:false, error:'', rows:[], events:[], profiles:[], capas:[], open:null, filter:'active' };
+  var nc = { loaded:false, loading:false, error:'', rows:[], events:[], links:[], profiles:[], capas:[], open:null, filter:'active' };
   var modal = null;
 
   function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -17617,6 +17626,7 @@ function showUpdateBanner(){
   }
   function lbl(list, v){ for(var i = 0; i < list.length; i++){ if(list[i][0] === v) return list[i][1]; } return v || '—'; }
   function capaOf(id){ for(var i = 0; i < nc.capas.length; i++){ if(nc.capas[i].id === id) return nc.capas[i]; } return null; }
+  function linksOf(id){ return nc.links.filter(function(x){ return x.ncr_id === id; }); }
   function eventsOf(id){ return nc.events.filter(function(x){ return x.ncr_id === id; }); }
 
   async function load(){
@@ -17627,13 +17637,15 @@ function showUpdateBanner(){
       var res = await Promise.all([
         supabaseClient.from('ncrs').select('*').order('created_at', { ascending:false }),
         supabaseClient.from('ncr_events').select('*').order('created_at', { ascending:false }).limit(2000),
-        supabaseClient.rpc('get_org_directory')
+        supabaseClient.rpc('get_org_directory'),
+        supabaseClient.from('ncr_links').select('*').order('created_at', { ascending:true })
       ]);
       if(res[0].error) throw res[0].error;
       if(res[1].error) throw res[1].error;
       nc.rows = res[0].data || [];
       nc.events = res[1].data || [];
       nc.profiles = res[2].error ? [] : (res[2].data || []);
+      nc.links = res[3].error ? [] : (res[3].data || []);
       try{
         var cp = await supabaseClient.from('capas').select('id, reference_number, title, status').order('reference_number');
         nc.capas = cp.error ? [] : (cp.data || []);
@@ -17671,6 +17683,7 @@ function showUpdateBanner(){
         b.push(btn('linkcapa', { id:n.id }, 'Link existing CAPA'));
       }
     }
+    if(live && (canManage || n.raised_by === myId())) b.push(btn('addlink', { id:n.id }, '+ Link record or standard'));
     if(live && canClose){
       b.push(btn('close', { id:n.id }, 'Close NCR', n.status !== 'open'));
       b.push(btn('cancel', { id:n.id }, 'Cancel (raised in error)'));
@@ -17694,7 +17707,7 @@ function showUpdateBanner(){
     var trail = '<details style="margin-top:8px;"><summary style="font-size:11px;cursor:pointer;color:var(--muted);">Audit trail (' + evs.length + ')</summary>' +
       evs.map(function(x){
         var d = x.detail || {};
-        var extra = d.reason ? ' — ' + e(d.reason) : (d.capa_reference ? ' — ' + e(d.capa_reference) : (d.disposition ? ' — ' + e(lbl(DISPOSITIONS, d.disposition)) : ''));
+        var extra = d.reason ? ' — ' + e(d.reason) : (d.reference ? ' — ' + e(lbl(LINK_TYPES, d.link_type)) + ': ' + e(d.reference) : (d.capa_reference ? ' — ' + e(d.capa_reference) : (d.disposition ? ' — ' + e(lbl(DISPOSITIONS, d.disposition)) : '')));
         return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line2);"><strong>' + e(x.event_type.replace(/_/g, ' ')) +
           '</strong> · ' + e(nameOf(x.actor_id)) + ' · ' + e(fmt(x.created_at)) + extra + '</div>';
       }).join('') + '</details>';
@@ -17711,6 +17724,15 @@ function showUpdateBanner(){
       row('Containment', n.containment_action ? e(n.containment_action) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.containment_by)) + ' · ' + e(fmt(n.containment_at)) + '</div>' : '') +
       row('Disposition', n.disposition ? e(lbl(DISPOSITIONS, n.disposition)) : '') +
       row('Root cause', n.root_cause ? e(n.root_cause) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.root_cause_by)) + ' · ' + e(fmt(n.root_cause_at)) + '</div>' : '') +
+      row('Linked to', (function(){
+        var ls = linksOf(n.id); if(!ls.length) return '';
+        var mine = MANAGE.indexOf(role) !== -1;
+        return ls.map(function(l){
+          var canRm = live && (mine || (n.raised_by === myId() && l.created_by === myId()));
+          return '<div style="display:flex;gap:6px;align-items:center;margin-bottom:3px;"><span class="tag tag-neutral" style="font-size:10px;">' + e(lbl(LINK_TYPES, l.link_type)) + '</span><span>' + e(l.reference) + '</span>' +
+            (canRm ? '<button class="x-btn" data-nc="rmlink" data-lid="' + e(l.id) + '" title="Remove link">✕</button>' : '') + '</div>';
+        }).join('');
+      })()) +
       row('Linked CAPA', n.capa_id ? (cap ? e(cap.reference_number || '(no ref)') + ' — ' + e(cap.title || '') + ' · <span class="tag tag-neutral" style="font-size:10px;">' + e(cap.status || '') + '</span>' : 'A CAPA is linked (not visible to your role)') : '') +
       (n.status === 'closed' ? row('Closure', e(n.closure_comment) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.closed_by)) + ' · ' + e(fmt(n.closed_at)) + '</div>') : '') +
       (n.status === 'cancelled' ? row('Cancelled because', e(n.cancel_reason)) : '') +
@@ -17830,6 +17852,20 @@ function showUpdateBanner(){
       fields:[ { id:'capa', label:'CAPA', type:'select', options:opts, blank:'Choose…', required:true } ],
       call:function(v){ return { fn:'link_ncr_capa', args:{ p_ncr_id:id, p_capa_id:v.capa } }; } });
   }
+  function actAddLink(id){
+    openModal({ title:'Link to a record or standard',
+      help:'Say where this NCR connects: the audit, supplier, recall, lab result, document, risk, complaint or the standard clause it relates to.',
+      successText:'Link added.',
+      fields:[
+        { id:'type', label:'What are you linking to', type:'select', options:LINK_TYPES, blank:'Choose…', required:true },
+        { id:'std', label:'Standard (only if you chose Standard / clause)', type:'select', options:STANDARDS.map(function(x){ return [x, x]; }), blank:'—' },
+        { id:'ref', label:'Reference (record name or number, or the clause)', required:true, placeholder:'e.g. Mock recall MR-2026-02, SOP-QA-PR-01, clause 3.7' }
+      ],
+      call:function(v){
+        var ref = (v.type === 'standard' && v.std) ? v.std + ' — ' + v.ref : v.ref;
+        return { fn:'add_ncr_link', args:{ p_ncr_id:id, p_type:v.type, p_reference:ref } };
+      } });
+  }
   function actClose(id){
     openModal({ title:'Close NCR', help:'Say why this NCR can be closed and what was verified.', successText:'NCR closed.',
       fields:[ { id:'c', label:'Closure comment (at least 15 characters)', type:'textarea', required:true } ],
@@ -17894,13 +17930,20 @@ function showUpdateBanner(){
     else if(a === 'rootcause') actRoot(id);
     else if(a === 'newcapa') actNewCapa(id);
     else if(a === 'linkcapa') actLink(id);
+    else if(a === 'addlink') actAddLink(id);
+    else if(a === 'rmlink'){
+      if(confirm('Remove this link? The removal is recorded in the audit trail.')){
+        supabaseClient.rpc('remove_ncr_link', { p_link_id: el.getAttribute('data-lid') }).then(function(r){
+          if(r.error){ toast(r.error.message, 'error'); return; } toast('Link removed.'); nc.loaded = false; load(); });
+      }
+    }
     else if(a === 'close') actClose(id);
     else if(a === 'cancel') actCancel(id);
     else if(a === 'reopen') actReopen(id);
   });
 
   window.ncrReset = function(){
-    nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.profiles = []; nc.capas = [];
+    nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = [];
     nc.open = null; nc.filter = 'active'; modal = null;
   };
 })();
