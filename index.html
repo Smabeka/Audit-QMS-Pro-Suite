@@ -654,6 +654,7 @@ async function cloudSignIn(email, password){
   }
   currentCloudUser = data.user;
   cloudStatus = "";
+  if(window.controlledDocsReset) window.controlledDocsReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -709,6 +710,7 @@ async function cloudSignOut(){
   capaApprovalLoaded = false; capaApprovalRecords = {};
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
+  if(window.controlledDocsReset) window.controlledDocsReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -17558,6 +17560,14 @@ function showUpdateBanner(){
   });
 
   window.controlledDocsReload = function(){ cd.loaded = false; return load(); };
+  /* Called on sign-in and sign-out: drop everything the previous user was allowed to see, so the next
+     user on the same page session never sees it (test: Employee saw Admin's drafts after a user switch). */
+  window.controlledDocsReset = function(){
+    cd.loaded = false; cd.loading = false; cd.error = '';
+    cd.families = []; cd.versions = []; cd.approvals = []; cd.events = []; cd.acks = [];
+    cd.rules = []; cd.profiles = []; cd.reviews = []; cd.signoffs = []; cd.externals = [];
+    cd.open = null; modal = null;
+  };
 })();
 
 </script>
