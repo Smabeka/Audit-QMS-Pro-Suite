@@ -17672,7 +17672,7 @@ function showUpdateBanner(){
   var MANAGE = ['admin','quality manager','auditor','department manager'];
   var CLOSERS = ['admin','quality manager'];
 
-  var nc = { loaded:false, loading:false, error:'', rows:[], events:[], links:[], profiles:[], capas:[], reviews:[], open:null, filter:'active' };
+  var nc = { loaded:false, loading:false, error:'', rows:[], events:[], links:[], profiles:[], capas:[], reviews:[], evidence:[], open:null, filter:'active' };
   var modal = null;
 
   function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -17730,6 +17730,8 @@ function showUpdateBanner(){
         nc.capas = cp.error ? [] : (cp.data || []);
         var rv = await supabaseClient.from('capa_effectiveness_reviews').select('capa_id, result, review_date, created_at').order('created_at', { ascending:false });
         nc.reviews = rv.error ? [] : (rv.data || []);
+        var ev = await supabaseClient.from('ncr_evidence').select('*').order('uploaded_at', { ascending:true });
+        nc.evidence = ev.error ? [] : (ev.data || []);
       }catch(_){ nc.capas = []; }
       nc.error = '';
     }catch(err){
@@ -17766,6 +17768,7 @@ function showUpdateBanner(){
       }
     }
     if(live && (canManage || n.raised_by === myId())) b.push(btn('addlink', { id:n.id }, '+ Link record or standard'));
+    if(live && (canManage || n.raised_by === myId())) b.push(btn('evidence', { id:n.id }, '📎 Attach evidence'));
     if(live && canClose){
       b.push(btn('close', { id:n.id }, 'Close NCR', n.status !== 'open'));
       b.push(btn('cancel', { id:n.id }, 'Cancel (raised in error)'));
@@ -17791,7 +17794,7 @@ function showUpdateBanner(){
     var trail = '<details style="margin-top:8px;"><summary style="font-size:11px;cursor:pointer;color:var(--muted);">Audit trail (' + evs.length + ')</summary>' +
       evs.map(function(x){
         var d = x.detail || {};
-        var extra = d.owner ? ' — owner ' + e(d.owner) + ', due ' + e(fmtDay(d.due_date)) : d.reason ? ' — ' + e(d.reason) : (d.reference ? ' — ' + e(lbl(LINK_TYPES, d.link_type)) + ': ' + e(d.reference) : (d.capa_reference ? ' — ' + e(d.capa_reference) : (d.disposition ? ' — ' + e(lbl(DISPOSITIONS, d.disposition)) : '')));
+        var extra = d.file_name ? ' — ' + e(d.file_name) + (d.stage ? ' (' + e(lbl(STAGES, d.stage)) + ')' : '') : d.owner ? ' — owner ' + e(d.owner) + ', due ' + e(fmtDay(d.due_date)) : d.reason ? ' — ' + e(d.reason) : (d.reference ? ' — ' + e(lbl(LINK_TYPES, d.link_type)) + ': ' + e(d.reference) : (d.capa_reference ? ' — ' + e(d.capa_reference) : (d.disposition ? ' — ' + e(lbl(DISPOSITIONS, d.disposition)) : '')));
         return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line2);"><strong>' + e(x.event_type.replace(/_/g, ' ')) +
           '</strong> · ' + e(nameOf(x.actor_id)) + ' · ' + e(fmt(x.created_at)) + extra + '</div>';
       }).join('') + '</details>';
@@ -17823,6 +17826,15 @@ function showUpdateBanner(){
         '<div style="font-size:11.5px;margin-top:2px;color:' + (effOf(cap.id) && effOf(cap.id).result === 'EFFECTIVE' ? 'var(--green,#2f6b3f)' : 'var(--muted)') + ';">' + e(effLabel(effOf(cap.id))) + '</div>' +
         (function(){ var sh = nc.rows.filter(function(o){ return o.id !== n.id && o.capa_id === n.capa_id; }).map(function(o){ return o.reference_number; });
           return sh.length ? '<div class="muted-italic" style="font-size:11px;">Also linked to ' + e(sh.join(', ')) + '</div>' : ''; })() : 'A CAPA is linked (not visible to your role)') : '') +
+      row('Evidence', (function(){
+        var xs = evOf(n.id); if(!xs.length) return '';
+        return xs.map(function(x){
+          return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;"><span class="tag tag-neutral" style="font-size:10px;">' + e(lbl(STAGES, x.stage)) + '</span>' +
+            '<button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" data-nc="dlevidence" data-eid="' + e(x.id) + '">⬇ ' + e(x.file_name) + '</button>' +
+            '<span class="muted-italic" style="font-size:11px;">' + e(fmtSize(x.file_size)) + ' · ' + e(nameOf(x.uploaded_by)) + ' · ' + e(fmt(x.uploaded_at)) + ' · SHA-256 ' + e(String(x.content_hash).slice(0, 10)) + '…</span></div>' +
+            (x.note ? '<div class="muted-italic" style="font-size:11px;margin:-2px 0 4px;">' + e(x.note) + '</div>' : '');
+        }).join('');
+      })()) +
       (n.status === 'closed' ? row('Closure', e(n.closure_comment) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.closed_by)) + ' · ' + e(fmt(n.closed_at)) + '</div>') : '') +
       (n.status === 'cancelled' ? row('Cancelled because', e(n.cancel_reason)) : '') +
       need +
@@ -17881,6 +17893,7 @@ function showUpdateBanner(){
       if(x.type === 'textarea') ctl = '<textarea id="ncf-' + x.id + '" rows="4" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
       else if(x.type === 'select') ctl = '<select id="ncf-' + x.id + '">' + optionsHtml(x.options, x.blank, x.value) + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="ncf-' + x.id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'file') ctl = '<input type="file" id="ncf-' + x.id + '" accept="' + e(x.accept || '') + '" />';
       else ctl = '<input id="ncf-' + x.id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
       return field(x.label, ctl, x.full !== false);
     }).join('');
@@ -17900,10 +17913,13 @@ function showUpdateBanner(){
       var x = modal.fields[i];
       if(x.required && !vals[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; }
     }
+    modal.files = {};
+    modal.fields.forEach(function(x){ if(x.type === 'file'){ var fe = document.getElementById('ncf-' + x.id); modal.files[x.id] = fe && fe.files && fe.files[0]; } });
     modal.busy = true; mount();
     var cfg = modal;
     try{
-      var call = cfg.call(vals);
+      var extra = cfg.prepare ? await cfg.prepare(vals) : null;
+      var call = cfg.call(vals, extra);
       var r = await supabaseClient.rpc(call.fn, call.args);
       if(r.error){ modal.busy = false; mount(); toast(r.error.message, 'error'); return; }
       modal = null; mount();
@@ -17952,6 +17968,59 @@ function showUpdateBanner(){
     if(prior) return '<span style="font-size:10px;color:var(--muted);margin-right:4px;">Previous: ' + e(prior.reference_number) + ' (closed)</span><button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise new NCR</button>';
     return '<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise NCR</button>';
   };
+  var FILE_TYPES = { pdf:'application/pdf', doc:'application/msword', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls:'application/vnd.ms-excel', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', txt:'text/plain' };
+  var STAGES = [['containment','Containment'], ['root_cause','Root cause'], ['capa','CAPA'], ['closure','Closure / verification'], ['raised','Original finding'], ['other','Other']];
+  function evOf(id){ return nc.evidence.filter(function(x){ return x.ncr_id === id; }); }
+  function fmtSize(b){ return b > 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+  async function sha256Hex(buf){
+    var d = await crypto.subtle.digest('SHA-256', buf);
+    return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join('');
+  }
+  function actEvidence(id){
+    var n = row(id); if(!n) return;
+    openModal({ title:'Attach evidence to ' + n.reference_number,
+      help:'Photo, PDF, Word, Excel or text, up to 25 MB. A fingerprint (SHA-256) is recorded and checked on download. Evidence cannot be replaced or deleted once attached.',
+      submitText:'Attach', successText:'Evidence attached.',
+      fields:[
+        { id:'file', label:'File', type:'file', required:true, accept:'.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt' },
+        { id:'stage', label:'What does it support?', type:'select', options:STAGES, value:n.status === 'open' ? 'containment' : 'root_cause' },
+        { id:'note', label:'Note (optional)', type:'text' }
+      ],
+      prepare:async function(){
+        var file = modal && modal.files && modal.files.file;
+        if(!file) throw new Error('Choose a file first.');
+        if(file.size < 1) throw new Error('The file is empty.');
+        if(file.size > 26214400) throw new Error('The file is larger than 25 MB.');
+        var ext = (file.name.split('.').pop() || '').toLowerCase();
+        var mime = FILE_TYPES[ext]; if(!mime) throw new Error('This file type is not allowed.');
+        var hash = await sha256Hex(await file.arrayBuffer());
+        var rand = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+        var path = n.organization_id + '/' + n.id + '/' + rand + '.' + ext;
+        var up = await supabaseClient.storage.from('ncr-evidence').upload(path, file, { contentType:mime, upsert:false });
+        if(up.error) throw new Error('Upload failed: ' + up.error.message);
+        return { path:path, name:file.name, mime:mime, size:file.size, hash:hash };
+      },
+      call:function(v, x){ return { fn:'attach_ncr_evidence', args:{ p_ncr_id:id, p_stage:v.stage, p_path:x.path, p_file_name:x.name,
+        p_mime_type:x.mime, p_file_size:x.size, p_content_hash:x.hash, p_note:v.note || null } }; } });
+  }
+  async function downloadEvidence(evId){
+    try{
+      var x = nc.evidence.filter(function(r){ return r.id === evId; })[0]; if(!x) throw new Error('Evidence not found.');
+      var lg = await supabaseClient.rpc('log_ncr_evidence_download', { p_evidence_id:evId });
+      if(lg.error) throw new Error(lg.error.message);
+      var dl = await supabaseClient.storage.from('ncr-evidence').download(x.storage_path);
+      if(dl.error || !dl.data) throw new Error((dl.error && dl.error.message) || 'Could not download the file.');
+      var hash = await sha256Hex(await dl.data.arrayBuffer());
+      if(hash !== x.content_hash){ toast('Warning: this file does not match its recorded fingerprint. Do not rely on it.', 'error'); }
+      var url = URL.createObjectURL(dl.data); var a = document.createElement('a');
+      a.href = url; a.download = x.file_name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+      if(hash === x.content_hash) toast('Downloaded. Fingerprint verified.');
+      nc.loaded = false; load();
+    }catch(err){ toast((err && err.message) || String(err), 'error'); }
+  }
   function actAssign(id){
     var n = row(id); if(!n) return;
     var people = nc.profiles.filter(function(p){ return String(p.status || '') === 'Active'; })
@@ -18076,6 +18145,8 @@ function showUpdateBanner(){
     else if(a === 'filter'){ nc.filter = el.getAttribute('data-f'); rerender(); }
     else if(a === 'raise') actRaise({});
     else if(a === 'assign') actAssign(id);
+    else if(a === 'evidence') actEvidence(id);
+    else if(a === 'dlevidence') downloadEvidence(el.getAttribute('data-eid'));
     else if(a === 'contain') actContain(id);
     else if(a === 'rootcause') actRoot(id);
     else if(a === 'newcapa') actNewCapa(id);
@@ -18093,7 +18164,7 @@ function showUpdateBanner(){
   });
 
   window.ncrReset = function(){
-    nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = []; nc.reviews = [];
+    nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = []; nc.reviews = []; nc.evidence = [];
     nc.open = null; nc.filter = 'active'; modal = null; mount();
   };
 })();
