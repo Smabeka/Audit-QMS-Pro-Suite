@@ -4596,6 +4596,11 @@ function capaRoleKey(){
     .trim().toLowerCase().replace(/[\s-]+/g,'_');
 }
 function capaRoleIn(list){ return list.indexOf(capaRoleKey()) !== -1; }
+function ncrSevFrom(sev){
+  const x = String(sev||'').toUpperCase();
+  return (x==='CRITICAL' || x==='STATUTORY_NON_COMPLIANCE') ? 'Critical' : (x==='MAJOR' ? 'Major' : 'Minor');
+}
+function ncrBtn(pf){ try{ return window.ncrButton ? window.ncrButton(pf) : ''; }catch(_){ return ''; } }
 const CAPA_ROLES_CREATE = ['admin','quality_manager','auditor','department_manager'];
 const CAPA_ROLES_REVIEW = ['admin','quality_manager','auditor'];
 const CAPA_ROLES_CLOSE  = ['admin','quality_manager','approver'];
@@ -10348,6 +10353,7 @@ function renderAuditDetail(a){
             ${findingSlaBadge(f) ? `<span class="tag tag-${findingSlaBadge(f).tone}" style="font-size:10px;">${findingSlaBadge(f).label}</span>` : ''}
           </div>
           ${f.actionText?`<div class="muted-italic" style="font-size:12px;">CAPA: ${esc(f.actionText)}</div>`:''}
+          <div style="margin-top:6px;">${ncrBtn({ title:('Audit finding '+(f.refNo||'')+': '+String(f.desc||'')).slice(0,120), description:String(f.desc||'')+(f.clause?('\n\nClause: '+f.clause+(f.clauseRef?(' ('+f.clauseRef+')'):'')):''), source:'internal_audit', severity:ncrSevFrom(f.severity), area:(a.title||''), link_type:'audit', link_reference:((a.title||'Audit')+' — '+(f.refNo||'finding')), record_id:String(f.id) })}</div>
           ${f.photo ? `<div style="margin-top:8px;"><img src="${f.photo}" style="max-width:140px;border-radius:6px;display:block;border:1px solid var(--line2);" /><button class="x-btn" data-action="remove-finding-photo" data-audit="${a.id}" data-finding="${f.id}" style="margin-top:4px;">✕ Remove Photo</button></div>` : ''}
           ${photoAttachControl('data-finding-photo', `${a.id}:${f.id}`, !!f.photo)}
           <div class="flex-wrap" style="margin-top:8px;">
@@ -11198,7 +11204,7 @@ function renderHaccpRow(p){
           <span class="tag tag-${haccpStatusTone[status]||'neutral'}">${status}</span>
         </div>
       </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderHaccpDetail(p)}</div>` : ''}
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${status==='Deviation' ? `<div style="margin-bottom:10px;">${ncrBtn({ title:'CCP deviation: '+(p.ccpNumber||'CCP')+' '+(p.processStep||''), description:'Critical limit not met at '+(p.ccpNumber||'CCP')+' ('+(p.processStep||'process step')+'). Critical limit: '+(p.criticalLimit||'not recorded')+'.', source:'process_deviation', severity:'Major', area:(p.processStep||''), link_type:'food_safety', link_reference:'HACCP '+(p.ccpNumber||'CCP')+' — '+(p.processStep||''), record_id:String(p.id) })}</div>` : ''}${renderHaccpDetail(p)}</div>` : ''}
     </div>
   `;
 }
@@ -11357,7 +11363,7 @@ function renderRecallRow(r){
           ${recallExceededTarget(r) ? `<span class="tag tag-rust">⚠ Exceeded Target</span>` : ''}
         </div>
       </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderRecallDetail(r)}</div>` : ''}
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;"><div style="margin-bottom:10px;">${ncrBtn({ title:((r.recallType||'Recall')+' finding: '+(r.productName||'')), description:'Gap found during '+(r.recallType||'recall')+' '+(r.recallNumber||'')+' for '+(r.productName||'product')+'. Describe the gap here.', source:'process_deviation', severity:(String(r.recallType||'').toLowerCase().indexOf('mock')>-1?'Major':'Critical'), area:'Product recall', product_ref:((r.productCode||'')+' '+(r.batchLot||'')).trim(), link_type:'recall', link_reference:((r.recallNumber||'Recall')+' — '+(r.recallType||'')+' '+(r.productName||'')).trim(), record_id:String(r.id) })}</div>${renderRecallDetail(r)}</div>` : ''}
     </div>
   `;
 }
@@ -11559,7 +11565,7 @@ function renderSupplierRow(s){
           <span class="tag tag-${supplierApprovalTone[s.approvalStatus]||'neutral'}">${s.approvalStatus}</span>
         </div>
       </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderSupplierDetail(s)}</div>` : ''}
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;"><div style="margin-bottom:10px;">${ncrBtn({ title:'Supplier non-conformance: '+(s.name||''), description:'Non-conformance relating to supplier '+(s.name||'')+'. Describe what was found (material, delivery, certificate, audit result).', source:'supplier', severity:'Minor', area:'Supplier management', link_type:'supplier', link_reference:(s.name||'Supplier'), record_id:String(s.id) })}</div>${renderSupplierDetail(s)}</div>` : ''}
     </div>
   `;
 }
@@ -11684,6 +11690,7 @@ function renderAllergens(){
               <strong>${esc(i.product)}</strong> — ${esc(i.allergen)} <span class="muted-italic">(${i.date})</span>
               ${i.rootCause?`<div>Root cause: ${esc(i.rootCause)}</div>`:''}
               ${i.correctiveAction?`<div>Action: ${esc(i.correctiveAction)}</div>`:''}
+              <div style="margin-top:4px;">${ncrBtn({ title:'Allergen incident: '+(i.product||'')+' ('+(i.allergen||'')+')', description:'Allergen incident involving '+(i.allergen||'an allergen')+' in '+(i.product||'product')+' on '+(i.date||'')+'.'+(i.rootCause?(' Root cause noted: '+i.rootCause):''), source:'incident', severity:'Critical', area:'Allergen control', product_ref:(i.product||''), link_type:'food_safety', link_reference:'Allergen incident — '+(i.product||'')+' ('+(i.allergen||'')+') '+(i.date||''), record_id:String(i.id) })}</div>
             </div>
             <span class="tag tag-${i.capaStatus==='Open'?'rust':'green'}">${i.capaStatus}</span>
             <button class="x-btn" data-action="delete-allergen-incident" data-incident="${i.id}">✕</button>
@@ -11808,6 +11815,7 @@ function renderCip(){
             <div style="flex:1;min-width:0;">
               <strong>${esc(d.equipment)}</strong> — ${esc(d.type)} <span class="muted-italic">(${d.date})</span>
               ${d.action?`<div>Action: ${esc(d.action)}</div>`:''}
+              <div style="margin-top:4px;">${ncrBtn({ title:'CIP deviation: '+(d.equipment||''), description:(d.type||'CIP deviation')+' on '+(d.date||'')+' for '+(d.equipment||'equipment')+'.'+(d.action?(' Action taken: '+d.action):''), source:'process_deviation', severity:'Major', area:(d.equipment||''), link_type:'food_safety', link_reference:'CIP deviation — '+(d.equipment||'')+' '+(d.date||''), record_id:String(d.id) })}</div>
             </div>
             <span class="tag tag-${d.status==='Open'?'rust':'green'}">${d.status}</span>
             <button class="x-btn" data-action="delete-cip-deviation" data-deviation="${d.id}">✕</button>
@@ -11972,7 +11980,7 @@ function renderSensoryRow(e){
           <span class="tag tag-${sensoryResultTone[result]||'neutral'}">${result}</span>
         </div>
       </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderSensoryDetail(e)}</div>` : ''}
+      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;"><div style="margin-bottom:10px;">${ncrBtn({ title:'Sensory evaluation failure: '+(e.productName||''), description:'Sensory evaluation of '+(e.productName||'product')+(e.batchLot?(' batch '+e.batchLot):'')+' on '+(e.evaluationDate||'')+' did not meet the standard. Describe what the panel found.', source:'product_inspection', severity:'Minor', area:'Sensory evaluation', product_ref:((e.productName||'')+' '+(e.batchLot||'')).trim(), link_type:'sensory', link_reference:'Sensory — '+(e.productName||'')+' '+(e.batchLot||'')+' '+(e.evaluationDate||''), record_id:String(e.id) })}</div>${renderSensoryDetail(e)}</div>` : ''}
     </div>
   `;
 }
@@ -17564,6 +17572,10 @@ function showUpdateBanner(){
   });
 
   window.controlledDocsReload = function(){ cd.loaded = false; return load(); };
+  window.controlledDocsList = async function(){
+    if(!cd.loaded){ await load(); }
+    return cd.families.map(function(f){ return { id:f.id, label:(f.document_number || '') + (f.title ? ' — ' + f.title : '') }; });
+  };
   /* Called on sign-in and sign-out: drop everything the previous user was allowed to see, so the next
      user on the same page session never sees it (test: Employee saw Admin's drafts after a user switch). */
   window.controlledDocsReset = function(){
@@ -17753,20 +17765,25 @@ function showUpdateBanner(){
   }
 
   /* ----- modal ----- */
-  function optionsHtml(list, blank){
+  function optionsHtml(list, blank, sel){
     return (blank ? '<option value="">' + e(blank) + '</option>' : '') +
-      list.map(function(o){ return '<option value="' + e(o[0]) + '">' + e(o[1]) + '</option>'; }).join('');
+      list.map(function(o){ return '<option value="' + e(o[0]) + '"' + (sel && sel === o[0] ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('');
   }
-  function openModal(cfg){ modal = cfg; rerender(); }
-  function closeModal(){ modal = null; rerender(); }
+  function mount(){
+    var host = document.getElementById('ncr-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'ncr-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(cfg){ modal = cfg; mount(); }
+  function closeModal(){ modal = null; mount(); }
   function modalHtml(){
     if(!modal) return '';
     var f = modal.fields.map(function(x){
       var ctl;
-      if(x.type === 'textarea') ctl = '<textarea id="ncf-' + x.id + '" rows="3" placeholder="' + e(x.placeholder || '') + '"></textarea>';
-      else if(x.type === 'select') ctl = '<select id="ncf-' + x.id + '">' + optionsHtml(x.options, x.blank) + '</select>';
+      if(x.type === 'textarea') ctl = '<textarea id="ncf-' + x.id + '" rows="4" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="ncf-' + x.id + '">' + optionsHtml(x.options, x.blank, x.value) + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="ncf-' + x.id + '" value="' + e(x.value || '') + '" />';
-      else ctl = '<input id="ncf-' + x.id + '" placeholder="' + e(x.placeholder || '') + '" />';
+      else ctl = '<input id="ncf-' + x.id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
       return field(x.label, ctl, x.full !== false);
     }).join('');
     return '<div class="modal-overlay" data-nc-modal="cancel"><div class="modal-card" style="max-width:480px;" onclick="event.stopPropagation()">' +
@@ -17785,41 +17802,57 @@ function showUpdateBanner(){
       var x = modal.fields[i];
       if(x.required && !vals[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; }
     }
-    modal.busy = true;
+    modal.busy = true; mount();
     var cfg = modal;
     try{
       var call = cfg.call(vals);
       var r = await supabaseClient.rpc(call.fn, call.args);
-      if(r.error){ modal.busy = false; toast(r.error.message, 'error'); return; }
-      modal = null;
+      if(r.error){ modal.busy = false; mount(); toast(r.error.message, 'error'); return; }
+      modal = null; mount();
       if(cfg.after) cfg.after(r.data);
       toast(cfg.successText || 'Saved.');
       nc.loaded = false; await load();
     }catch(err){
-      if(modal) modal.busy = false;
+      if(modal){ modal.busy = false; mount(); }
       toast((err && err.message) || String(err), 'error');
     }
   }
 
   function row(id){ for(var i = 0; i < nc.rows.length; i++){ if(nc.rows[i].id === id) return nc.rows[i]; } return null; }
 
-  function actRaise(){
+  function actRaise(pf){
+    pf = pf || {};
+    var linked = pf.link_type ? ('This NCR will be linked to: ' + lbl(LINK_TYPES, pf.link_type) + ' — ' + (pf.link_reference || '') + '. ') : '';
     openModal({ title:'Raise an NCR',
-      help:'Describe what was found. A Quality Manager will contain it and decide the next steps.',
-      submitText:'Raise NCR', successText:'NCR raised.',
+      help:linked + 'Check the details and add what was found. A Quality Manager will contain it and decide the next steps.',
+      submitText:'Raise NCR', successText:'NCR raised. Find it under Audits, Risk & CAPA → NCR Register.',
       fields:[
-        { id:'title', label:'Short title', required:true, placeholder:'e.g. Metal fragment found in line 2 hopper' },
-        { id:'description', label:'What was found (at least 15 characters)', type:'textarea', required:true },
-        { id:'source', label:'Where did it come from', type:'select', options:SOURCES, full:false },
-        { id:'severity', label:'Severity', type:'select', options:[['Minor','Minor'], ['Major','Major'], ['Critical','Critical (food safety / legal risk)']], full:false },
-        { id:'area', label:'Area / line / site', full:false },
-        { id:'product_ref', label:'Product / batch / lot', full:false },
+        { id:'title', label:'Short title', required:true, placeholder:'e.g. Metal fragment found in line 2 hopper', value:pf.title || '' },
+        { id:'description', label:'What was found (at least 15 characters)', type:'textarea', required:true, value:pf.description || '' },
+        { id:'source', label:'Where did it come from', type:'select', options:SOURCES, full:false, value:pf.source || 'internal_audit' },
+        { id:'severity', label:'Severity', type:'select', options:[['Minor','Minor'], ['Major','Major'], ['Critical','Critical (food safety / legal risk)']], full:false, value:pf.severity || 'Minor' },
+        { id:'area', label:'Area / line / site', full:false, value:pf.area || '' },
+        { id:'product_ref', label:'Product / batch / lot', full:false, value:pf.product_ref || '' },
         { id:'detected_on', label:'Detected on', type:'date', value:new Date().toISOString().slice(0, 10), full:false }
       ],
       call:function(v){ return { fn:'raise_ncr', args:{ p_title:v.title, p_description:v.description, p_source:v.source, p_severity:v.severity,
-        p_area:v.area || null, p_product_ref:v.product_ref || null, p_detected_on:v.detected_on || null } }; },
+        p_area:v.area || null, p_product_ref:v.product_ref || null, p_detected_on:v.detected_on || null,
+        p_link_type:pf.link_type || null, p_link_reference:pf.link_reference || null, p_record_id:pf.record_id || null } }; },
       after:function(id){ nc.open = id; } });
   }
+  window.ncrButton = function(pf){
+    if(typeof currentProfile === 'undefined' || !currentProfile) return '';
+    if(!nc.loaded && !nc.loading){ setTimeout(load, 0); }
+    var existing = null;
+    for(var i = 0; i < nc.links.length; i++){
+      if(nc.links[i].link_type === pf.link_type && nc.links[i].record_id === pf.record_id){ existing = nc.links[i]; break; }
+    }
+    if(existing){
+      var n = row(existing.ncr_id);
+      if(n && n.status !== 'cancelled') return '<span class="tag tag-navy" style="font-size:10px;" title="An NCR already exists for this record">🚩 ' + e(n.reference_number) + ' · ' + e(STATUS_LABEL[n.status] || n.status) + '</span>';
+    }
+    return '<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise NCR</button>';
+  };
   function actContain(id){
     openModal({ title:'Containment', help:'What was done right now to stop the problem spreading (isolate, hold, recall, stop line).',
       successText:'Containment recorded.',
@@ -17909,7 +17942,7 @@ function showUpdateBanner(){
         (nc.loading && !nc.loaded ? '<p class="muted-italic" style="font-size:12px;">Loading…</p>' : '') +
         '<div class="flex-wrap" style="margin-bottom:12px;gap:6px;">' + chips + '</div>' +
         (nc.loaded && !rows.length && !nc.error ? '<p class="muted-italic">' + (nc.filter === 'active' ? 'No active NCRs. ✅' : 'Nothing here.') + '</p>' : '') +
-        rows.map(cardHtml).join('') + '</div>' + modalHtml();
+        rows.map(cardHtml).join('') + '</div>';
     }catch(err){
       return '<div class="card p4"><p style="color:var(--rust);">NCR register error: ' + e(err && err.message || err) + '</p></div>';
     }
@@ -17919,13 +17952,15 @@ function showUpdateBanner(){
     var t = ev.target; if(!t || !t.closest) return;
     var m = t.closest('[data-nc-modal]');
     if(m){ ev.preventDefault(); if(m.getAttribute('data-nc-modal') === 'cancel') closeModal(); else submitModal(); return; }
+    var rb = t.closest('[data-ncr-raise]');
+    if(rb){ ev.preventDefault(); ev.stopPropagation(); var pf = {}; try{ pf = JSON.parse(rb.getAttribute('data-ncr-raise')); }catch(_){} actRaise(pf); return; }
     var el = t.closest('[data-nc]'); if(!el) return;
     ev.preventDefault();
     var a = el.getAttribute('data-nc'), id = el.getAttribute('data-id');
     if(a === 'toggle'){ nc.open = (nc.open === id) ? null : id; rerender(); }
     else if(a === 'reload'){ nc.loaded = false; load(); }
     else if(a === 'filter'){ nc.filter = el.getAttribute('data-f'); rerender(); }
-    else if(a === 'raise') actRaise();
+    else if(a === 'raise') actRaise({});
     else if(a === 'contain') actContain(id);
     else if(a === 'rootcause') actRoot(id);
     else if(a === 'newcapa') actNewCapa(id);
@@ -17944,7 +17979,7 @@ function showUpdateBanner(){
 
   window.ncrReset = function(){
     nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = [];
-    nc.open = null; nc.filter = 'active'; modal = null;
+    nc.open = null; nc.filter = 'active'; modal = null; mount();
   };
 })();
 </script>
