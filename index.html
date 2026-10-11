@@ -17746,6 +17746,7 @@ function showUpdateBanner(){
     var cap = n.capa_id ? capaOf(n.capa_id) : null;
     var b = [];
     if(live && canManage){
+      b.push(btn('assign', { id:n.id }, n.owner_id ? 'Change owner / due date' : 'Assign owner & due date'));
       b.push(btn('contain', { id:n.id }, n.containment_action ? 'Update containment' : 'Record containment', n.status === 'open'));
       if(n.containment_action) b.push(btn('rootcause', { id:n.id }, n.root_cause ? 'Update root cause' : 'Record root cause'));
       if(!n.capa_id){
@@ -17777,7 +17778,7 @@ function showUpdateBanner(){
     var trail = '<details style="margin-top:8px;"><summary style="font-size:11px;cursor:pointer;color:var(--muted);">Audit trail (' + evs.length + ')</summary>' +
       evs.map(function(x){
         var d = x.detail || {};
-        var extra = d.reason ? ' — ' + e(d.reason) : (d.reference ? ' — ' + e(lbl(LINK_TYPES, d.link_type)) + ': ' + e(d.reference) : (d.capa_reference ? ' — ' + e(d.capa_reference) : (d.disposition ? ' — ' + e(lbl(DISPOSITIONS, d.disposition)) : '')));
+        var extra = d.owner ? ' — owner ' + e(d.owner) + ', due ' + e(fmtDay(d.due_date)) : d.reason ? ' — ' + e(d.reason) : (d.reference ? ' — ' + e(lbl(LINK_TYPES, d.link_type)) + ': ' + e(d.reference) : (d.capa_reference ? ' — ' + e(d.capa_reference) : (d.disposition ? ' — ' + e(lbl(DISPOSITIONS, d.disposition)) : '')));
         return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line2);"><strong>' + e(x.event_type.replace(/_/g, ' ')) +
           '</strong> · ' + e(nameOf(x.actor_id)) + ' · ' + e(fmt(x.created_at)) + extra + '</div>';
       }).join('') + '</details>';
@@ -17789,6 +17790,8 @@ function showUpdateBanner(){
         row('Raised by', e(nameOf(n.raised_by)) + ' · ' + e(fmt(n.created_at))) +
         row('Detected on', e(fmtDay(n.detected_on))) +
         row('Source', e(lbl(SOURCES, n.source))) +
+        row('Owner', n.owner_id ? e(nameOf(n.owner_id)) : '') +
+        row('Due date', n.due_date ? e(fmtDay(n.due_date)) + (overdueDays(n) ? ' <span class="tag tag-rust" style="font-size:10px;">overdue ' + overdueDays(n) + ' days</span>' : '') : '') +
         row('Area / product / batch', e([n.area, n.product_ref].filter(Boolean).join(' · ') || '') ) +
       '</div>' +
       row('Containment', n.containment_action ? e(n.containment_action) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.containment_by)) + ' · ' + e(fmt(n.containment_at)) + '</div>' : '') +
@@ -17811,14 +17814,35 @@ function showUpdateBanner(){
       trail + '</div>';
   }
 
+  function overdueDays(n){
+    if(!n.due_date || n.status === 'closed' || n.status === 'cancelled') return 0;
+    var due = new Date(n.due_date + 'T23:59:59'); var d = Math.floor((new Date() - due) / 86400000) + 1;
+    return d > 0 ? d : 0;
+  }
+  function ageDays(n){
+    var end = (n.status === 'closed' || n.status === 'cancelled') && n.closed_at ? new Date(n.closed_at) : new Date();
+    return Math.max(0, Math.floor((end - new Date(n.created_at)) / 86400000));
+  }
+  function nextStep(n){
+    if(n.status === 'closed' || n.status === 'cancelled') return '';
+    var strict = n.severity === 'Major' || n.severity === 'Critical';
+    if(!n.containment_action) return 'Next: record containment';
+    if(strict && !n.root_cause) return 'Next: record root cause';
+    if(strict && !n.capa_id) return 'Next: raise or link a CAPA';
+    if(!n.root_cause) return 'Next: record root cause (recommended), then close';
+    return 'Next: verify and close';
+  }
   function cardHtml(n){
     var isOpen = nc.open === n.id;
+    var live = n.status !== 'closed' && n.status !== 'cancelled';
+    var meta = 'Age ' + ageDays(n) + (ageDays(n) === 1 ? ' day' : ' days') + (live ? ' · ' + nextStep(n) : '') + (live && n.due_date ? ' · Due ' + fmtDay(n.due_date) : '');
     return '<div class="card" style="margin-bottom:10px;overflow:hidden;">' +
       '<button class="audit-row" data-nc="toggle" data-id="' + e(n.id) + '">' +
       '<div style="min-width:0;"><div class="audit-title">' + e(n.reference_number) + ' — ' + e(n.title) + '</div>' +
-      '<div class="audit-sub">' + e(fmtDay(n.detected_on)) + ' · ' + e(lbl(SOURCES, n.source)) + (n.area ? ' · ' + e(n.area) : '') + '</div></div>' +
+      '<div class="audit-sub">' + e(fmtDay(n.detected_on)) + ' · ' + e(lbl(SOURCES, n.source)) + (n.area ? ' · ' + e(n.area) : '') + '</div><div class="audit-sub">' + e(meta) + '</div></div>' +
       '<div class="flex-wrap"><span class="tag tag-' + (SEV_TONE[n.severity] || 'neutral') + '">' + e(n.severity) + '</span>' +
-      '<span class="tag tag-' + (STATUS_TONE[n.status] || 'neutral') + '">' + e(STATUS_LABEL[n.status] || n.status) + '</span></div></button>' +
+      '<span class="tag tag-' + (STATUS_TONE[n.status] || 'neutral') + '">' + e(STATUS_LABEL[n.status] || n.status) + '</span>' +
+      (overdueDays(n) ? '<span class="tag tag-rust">Overdue ' + overdueDays(n) + 'd</span>' : '') + '</div></button>' +
       (isOpen ? detailHtml(n) : '') + '</div>';
   }
 
@@ -17912,6 +17936,19 @@ function showUpdateBanner(){
     if(prior) return '<span style="font-size:10px;color:var(--muted);margin-right:4px;">Previous: ' + e(prior.reference_number) + ' (closed)</span><button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise new NCR</button>';
     return '<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise NCR</button>';
   };
+  function actAssign(id){
+    var n = row(id); if(!n) return;
+    var people = nc.profiles.filter(function(p){ return String(p.status || '') === 'Active'; })
+      .map(function(p){ return [p.id, (p.full_name || String(p.id).slice(0, 8)) + (p.role ? ' (' + p.role + ')' : '')]; });
+    if(!people.length){ toast('No active users found in your organisation.', 'error'); return; }
+    openModal({ title:'Owner and due date', help:'Who is responsible for taking this NCR to closure, and by when. The change is recorded in the audit trail.',
+      successText:'Owner and due date saved.',
+      fields:[
+        { id:'owner', label:'Owner', type:'select', options:people, blank:'Choose…', required:true, value:n.owner_id || '' },
+        { id:'due', label:'Due date', type:'date', required:true, value:n.due_date || '' }
+      ],
+      call:function(v){ return { fn:'assign_ncr', args:{ p_ncr_id:id, p_owner:v.owner, p_due:v.due } }; } });
+  }
   function actContain(id){
     openModal({ title:'Containment', help:'What was done right now to stop the problem spreading (isolate, hold, recall, stop line).',
       successText:'Containment recorded.',
@@ -18022,6 +18059,7 @@ function showUpdateBanner(){
     else if(a === 'reload'){ nc.loaded = false; load(); }
     else if(a === 'filter'){ nc.filter = el.getAttribute('data-f'); rerender(); }
     else if(a === 'raise') actRaise({});
+    else if(a === 'assign') actAssign(id);
     else if(a === 'contain') actContain(id);
     else if(a === 'rootcause') actRoot(id);
     else if(a === 'newcapa') actNewCapa(id);
