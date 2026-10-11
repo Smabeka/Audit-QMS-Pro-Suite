@@ -17672,7 +17672,7 @@ function showUpdateBanner(){
   var MANAGE = ['admin','quality manager','auditor','department manager'];
   var CLOSERS = ['admin','quality manager'];
 
-  var nc = { loaded:false, loading:false, error:'', rows:[], events:[], links:[], profiles:[], capas:[], open:null, filter:'active' };
+  var nc = { loaded:false, loading:false, error:'', rows:[], events:[], links:[], profiles:[], capas:[], reviews:[], open:null, filter:'active' };
   var modal = null;
 
   function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -17695,6 +17695,15 @@ function showUpdateBanner(){
     return String(id).slice(0, 8);
   }
   function lbl(list, v){ for(var i = 0; i < list.length; i++){ if(list[i][0] === v) return list[i][1]; } return v || '—'; }
+  function effOf(capaId){
+    for(var i = 0; i < nc.reviews.length; i++){ if(nc.reviews[i].capa_id === capaId) return nc.reviews[i]; }
+    return null;
+  }
+  function effLabel(r){
+    if(!r) return 'No effectiveness review recorded yet';
+    var t = String(r.result || '').toLowerCase().replace(/_/g, ' ');
+    return 'Effectiveness: ' + t.charAt(0).toUpperCase() + t.slice(1) + (r.review_date ? ' (reviewed ' + fmtDay(r.review_date) + ')' : '');
+  }
   function capaOf(id){ for(var i = 0; i < nc.capas.length; i++){ if(nc.capas[i].id === id) return nc.capas[i]; } return null; }
   function linksOf(id){ return nc.links.filter(function(x){ return x.ncr_id === id; }); }
   function eventsOf(id){ return nc.events.filter(function(x){ return x.ncr_id === id; }); }
@@ -17719,6 +17728,8 @@ function showUpdateBanner(){
       try{
         var cp = await supabaseClient.from('capas').select('id, reference_number, title, status').order('reference_number');
         nc.capas = cp.error ? [] : (cp.data || []);
+        var rv = await supabaseClient.from('capa_effectiveness_reviews').select('capa_id, result, review_date, created_at').order('created_at', { ascending:false });
+        nc.reviews = rv.error ? [] : (rv.data || []);
       }catch(_){ nc.capas = []; }
       nc.error = '';
     }catch(err){
@@ -17768,6 +17779,7 @@ function showUpdateBanner(){
       if(!n.root_cause) miss.push('root cause');
       if(!n.capa_id) miss.push('linked CAPA');
       if(n.severity === 'Major' && cap && String(cap.status || '').toLowerCase() === 'draft') miss.push('CAPA submitted for approval (it is still a draft)');
+      if(n.severity === 'Critical' && cap && (!effOf(cap.id) || effOf(cap.id).result !== 'EFFECTIVE')) miss.push('CAPA effectiveness review marked Effective');
       if(n.severity === 'Critical' && cap && ['approved','effectiveness_review','closed'].indexOf(String(cap.status || '').toLowerCase()) === -1) miss.push('approved CAPA');
       need = miss.length ? '<p style="font-size:11.5px;color:var(--rust);margin:8px 0 0;">Before this ' + e(n.severity) + ' NCR can close: ' + e(miss.join(', ')) + '.</p>'
         : '<p class="muted-italic" style="font-size:11.5px;margin:8px 0 0;">All closure conditions met.</p>';
@@ -17808,6 +17820,7 @@ function showUpdateBanner(){
         }).join('');
       })()) +
       row('Linked CAPA', n.capa_id ? (cap ? e(cap.reference_number || '(no ref)') + ' — ' + e(cap.title || '') + ' · <span class="tag tag-neutral" style="font-size:10px;">' + e(cap.status || '') + '</span>' +
+        '<div style="font-size:11.5px;margin-top:2px;color:' + (effOf(cap.id) && effOf(cap.id).result === 'EFFECTIVE' ? 'var(--green,#2f6b3f)' : 'var(--muted)') + ';">' + e(effLabel(effOf(cap.id))) + '</div>' +
         (function(){ var sh = nc.rows.filter(function(o){ return o.id !== n.id && o.capa_id === n.capa_id; }).map(function(o){ return o.reference_number; });
           return sh.length ? '<div class="muted-italic" style="font-size:11px;">Also linked to ' + e(sh.join(', ')) + '</div>' : ''; })() : 'A CAPA is linked (not visible to your role)') : '') +
       (n.status === 'closed' ? row('Closure', e(n.closure_comment) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.closed_by)) + ' · ' + e(fmt(n.closed_at)) + '</div>') : '') +
@@ -18080,7 +18093,7 @@ function showUpdateBanner(){
   });
 
   window.ncrReset = function(){
-    nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = [];
+    nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = []; nc.reviews = [];
     nc.open = null; nc.filter = 'active'; modal = null; mount();
   };
 })();
