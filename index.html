@@ -2892,7 +2892,7 @@ function renderFindingRequiresDocUpdateToggle(a, f){
   </div>`;
 }
 function renderFindingDispute(a, f){
-  const events = f.disputeEvents || [];
+  const events = (f.disputeEvents || []).filter(ev => !(ev.event_type||'').startsWith('CORRECTION_'));
   const canChallenge = can("respondFindings") || can("addFindings");
   const canDecide = can("manageCapa") || can("closeOthersCapa");
   return `
@@ -17767,6 +17767,7 @@ function showUpdateBanner(){
       if(!n.containment_action) miss.push('containment');
       if(!n.root_cause) miss.push('root cause');
       if(!n.capa_id) miss.push('linked CAPA');
+      if(n.severity === 'Major' && cap && String(cap.status || '').toLowerCase() === 'draft') miss.push('CAPA submitted for approval (it is still a draft)');
       if(n.severity === 'Critical' && cap && ['approved','effectiveness_review','closed'].indexOf(String(cap.status || '').toLowerCase()) === -1) miss.push('approved CAPA');
       need = miss.length ? '<p style="font-size:11.5px;color:var(--rust);margin:8px 0 0;">Before this ' + e(n.severity) + ' NCR can close: ' + e(miss.join(', ')) + '.</p>'
         : '<p class="muted-italic" style="font-size:11.5px;margin:8px 0 0;">All closure conditions met.</p>';
@@ -17806,7 +17807,9 @@ function showUpdateBanner(){
             (canRm ? '<button class="x-btn" data-nc="rmlink" data-lid="' + e(l.id) + '" title="Remove link">✕</button>' : '') + '</div>';
         }).join('');
       })()) +
-      row('Linked CAPA', n.capa_id ? (cap ? e(cap.reference_number || '(no ref)') + ' — ' + e(cap.title || '') + ' · <span class="tag tag-neutral" style="font-size:10px;">' + e(cap.status || '') + '</span>' : 'A CAPA is linked (not visible to your role)') : '') +
+      row('Linked CAPA', n.capa_id ? (cap ? e(cap.reference_number || '(no ref)') + ' — ' + e(cap.title || '') + ' · <span class="tag tag-neutral" style="font-size:10px;">' + e(cap.status || '') + '</span>' +
+        (function(){ var sh = nc.rows.filter(function(o){ return o.id !== n.id && o.capa_id === n.capa_id; }).map(function(o){ return o.reference_number; });
+          return sh.length ? '<div class="muted-italic" style="font-size:11px;">Also linked to ' + e(sh.join(', ')) + '</div>' : ''; })() : 'A CAPA is linked (not visible to your role)') : '') +
       (n.status === 'closed' ? row('Closure', e(n.closure_comment) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.closed_by)) + ' · ' + e(fmt(n.closed_at)) + '</div>') : '') +
       (n.status === 'cancelled' ? row('Cancelled because', e(n.cancel_reason)) : '') +
       need +
