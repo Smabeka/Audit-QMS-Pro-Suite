@@ -17786,7 +17786,7 @@ function showUpdateBanner(){
       else ctl = '<input id="ncf-' + x.id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
       return field(x.label, ctl, x.full !== false);
     }).join('');
-    return '<div class="modal-overlay" data-nc-modal="cancel"><div class="modal-card" style="max-width:480px;" onclick="event.stopPropagation()">' +
+    return '<div class="modal-overlay" data-nc-modal="overlay"><div class="modal-card" style="max-width:480px;">' +
       '<h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
       (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') +
       '<div class="grid2">' + f + '</div>' +
@@ -17951,7 +17951,9 @@ function showUpdateBanner(){
   document.addEventListener('click', function(ev){
     var t = ev.target; if(!t || !t.closest) return;
     var m = t.closest('[data-nc-modal]');
-    if(m){ ev.preventDefault(); if(m.getAttribute('data-nc-modal') === 'cancel') closeModal(); else submitModal(); return; }
+    if(m){ var mk = m.getAttribute('data-nc-modal');
+      if(mk === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(mk === 'cancel') closeModal(); else submitModal(); return; }
     var rb = t.closest('[data-ncr-raise]');
     if(rb){ ev.preventDefault(); ev.stopPropagation(); var pf = {}; try{ pf = JSON.parse(rb.getAttribute('data-ncr-raise')); }catch(_){} actRaise(pf); return; }
     var el = t.closest('[data-nc]'); if(!el) return;
