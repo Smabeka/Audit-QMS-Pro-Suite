@@ -3391,8 +3391,9 @@ CAPA_TRANSITIONS.push(
     to: "under_review",
     rpc: "log_capa_event",
     eventType: "submitted",
-    roles: ["Employee", "Department Manager", "Admin"],
+    roles: ["Employee", "Department Manager", "Quality Manager", "Admin"],
     creatorOnly: true,
+    creatorOverride: ["Quality Manager", "Admin"],
     independentReview: false,
     minChars: 10,
     label: "Submit for Review"
@@ -3522,7 +3523,7 @@ function eligibleCapaTransitions(record){
       return false;
     }
 
-    if(edge.creatorOnly && record.created_by !== uid){
+    if(edge.creatorOnly && record.created_by !== uid && !(edge.creatorOverride || []).includes(normalizedRole)){
       return false;
     }
 
@@ -4059,8 +4060,9 @@ CAPA_TRANSITIONS.push(
     to: "under_review",
     rpc: "log_capa_event",
     eventType: "submitted",
-    roles: ["Employee", "Department Manager", "Admin"],
+    roles: ["Employee", "Department Manager", "Quality Manager", "Admin"],
     creatorOnly: true,
+    creatorOverride: ["Quality Manager", "Admin"],
     independentReview: false,
     minChars: 10,
     label: "Submit for Review"
