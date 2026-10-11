@@ -2958,6 +2958,64 @@ function parseCorrectionJustification(text){
   const fieldDef = CORRECTION_FIELDS.find(fd=>fd.label===fieldLabel);
   return { fieldLabel, oldValue: m[2], newValue: m[3], fieldId: fieldDef ? fieldDef.id : null };
 }
+function renderFindingCorrection(a, f){
+  const events = (f.disputeEvents||[]).filter(e=>(e.event_type||'').startsWith("CORRECTION_"));
+  const pending = lastPendingCorrection(f);
+  const canRequest = can("respondFindings") || can("addFindings");
+  const canDecide = can("manageCapa") || can("closeOthersCapa");
+  const me = (typeof currentUser === 'function' && currentUser()) ? currentUser().fullName : '';
+  const own = pending && pending.actor_name === me;
+  return `
+    <div class="top-border" style="margin-top:10px;padding-top:10px;">
+      <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px;">Correction Trail</div>
+      ${events.length===0
+        ? `<p class="muted-italic" style="font-size:12px;">No corrections. Use this if a detail of the finding was recorded wrongly; the change is reviewed by someone other than the requester.</p>`
+        : events.map(ev => `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--line2);gap:8px;">
+              <div style="flex:1;">
+                <span class="tag tag-${disputeEventTone(ev.event_type)}" style="font-size:10px;">${esc((ev.event_type||'').replace(/_/g,' '))}</span>
+                <span style="font-size:12px;margin-left:6px;">${esc(ev.justification)}</span>
+                <div class="muted-italic" style="font-size:11px;margin-top:2px;">${esc(ev.actor_name)} — ${esc(ev.actor_role)}</div>
+              </div>
+              <span class="muted-italic" style="font-size:10px;white-space:nowrap;">${ev.created_at ? new Date(ev.created_at).toLocaleDateString() : ''}</span>
+            </div>`).join('')}
+      ${pending && own ? `<p class="muted-italic" style="font-size:11px;margin-top:6px;">You requested this correction, so someone else must approve or reject it.</p>` : ''}
+      <div class="flex-wrap" style="margin-top:8px;">
+        ${canRequest && !pending ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="open-correction-modal" data-audit="${a.id}" data-finding="${f.id}">Request Correction</button>` : ''}
+        ${pending && canDecide ? `
+          <button class="btn btn-primary" style="font-size:12px;" ${own?'disabled':''} data-action="approve-correction" data-audit="${a.id}" data-finding="${f.id}">Approve Correction</button>
+          <button class="btn btn-ghost" style="font-size:12px;" ${own?'disabled':''} data-action="reject-correction" data-audit="${a.id}" data-finding="${f.id}">Reject</button>` : ''}
+      </div>
+    </div>`;
+}
+function renderCorrectionModal(){
+  const t = correctionModalTarget; if(!t) return '';
+  const a = state.audits.find(x=>x.id===t.auditId);
+  const f = a && a.findings.find(x=>x.id===t.findingId);
+  if(!f) return '';
+  const def = CORRECTION_FIELDS.find(fd=>fd.id===correctionField) || CORRECTION_FIELDS[0];
+  const current = f[def.id] || '';
+  let input;
+  if(def.type === 'select') input = `<select id="corr-new-value">${(def.options||[]).map(o=>`<option ${o===current?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+  else if(def.type === 'date') input = `<input type="date" id="corr-new-value" value="${esc(current)}" />`;
+  else input = `<input id="corr-new-value" value="${esc(current)}" />`;
+  return `
+    <div class="modal-overlay" data-action="close-correction-modal">
+      <div class="modal-card" style="max-width:480px;" onclick="event.stopPropagation()">
+        <h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">Request a correction</h3>
+        <p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">The current value stays on record until an independent reviewer approves the change.</p>
+        <label class="field">Field to correct<select id="corr-field">${CORRECTION_FIELDS.map(fd=>`<option value="${fd.id}" ${fd.id===def.id?'selected':''}>${esc(fd.label)}</option>`).join('')}</select></label>
+        <p class="muted-italic" style="font-size:12px;">Current value: ${esc(current)||'—'}</p>
+        <label class="field">Corrected value${input}</label>
+        <label class="field">Reason (at least 15 characters)<textarea id="corr-reason" rows="3"></textarea></label>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
+          <button class="btn btn-ghost" data-action="close-correction-modal">Cancel</button>
+          <button class="btn btn-primary" data-action="submit-correction-request">Submit request</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 /* ---------------- Finding Dispute Engine v2 ----------------
    Wires the CAPA finding-dispute redesign (typed state machine,
    optimistic concurrency, atomic transition+signature, RCA gate) into
