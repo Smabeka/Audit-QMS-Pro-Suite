@@ -17843,14 +17843,15 @@ function showUpdateBanner(){
   window.ncrButton = function(pf){
     if(typeof currentProfile === 'undefined' || !currentProfile) return '';
     if(!nc.loaded && !nc.loading){ setTimeout(load, 0); }
-    var existing = null;
+    var live = null, prior = null;
     for(var i = 0; i < nc.links.length; i++){
-      if(nc.links[i].link_type === pf.link_type && nc.links[i].record_id === pf.record_id){ existing = nc.links[i]; break; }
+      var lk = nc.links[i];
+      if(lk.link_type !== pf.link_type || lk.record_id !== pf.record_id) continue;
+      var n = row(lk.ncr_id); if(!n || n.status === 'cancelled') continue;
+      if(n.status === 'closed'){ if(!prior) prior = n; } else { live = n; break; }
     }
-    if(existing){
-      var n = row(existing.ncr_id);
-      if(n && n.status !== 'cancelled') return '<span class="tag tag-navy" style="font-size:10px;" title="An NCR already exists for this record">🚩 ' + e(n.reference_number) + ' · ' + e(STATUS_LABEL[n.status] || n.status) + '</span>';
-    }
+    if(live) return '<span class="tag tag-navy" style="font-size:10px;" title="An NCR is already open for this record">🚩 ' + e(live.reference_number) + ' · ' + e(STATUS_LABEL[live.status] || live.status) + '</span>';
+    if(prior) return '<span style="font-size:10px;color:var(--muted);margin-right:4px;">Previous: ' + e(prior.reference_number) + ' (closed)</span><button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise new NCR</button>';
     return '<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-ncr-raise="' + e(JSON.stringify(pf)) + '">🚩 Raise NCR</button>';
   };
   function actContain(id){
