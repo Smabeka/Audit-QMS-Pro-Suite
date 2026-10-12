@@ -9329,7 +9329,10 @@ function renderDashboard(){
   });
   const haccpVerificationOverdue = state.verificationLogs.filter(v=>v.activityType==="HACCP Plan Review" && v.nextDueDate && daysUntil(v.nextDueDate)<0);
   const trainingExpiring = state.trainingRecords.filter(t=>trainingStatus(t)==="Expiring Soon");
+  const _ncr = (typeof window.__ncrStats === 'function') ? window.__ncrStats() : null;
   const alerts = [];
+  if(_ncr && _ncr.critical) alerts.push(`🚩 ${_ncr.critical} Critical NCR${_ncr.critical===1?'':'s'} still active`);
+  if(_ncr && _ncr.overdue.length) alerts.push(`⚠️ ${_ncr.overdue.length} NCR${_ncr.overdue.length===1?'':'s'} past due date`);
   if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
   if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
   if(haccpVerificationOverdue.length) alerts.push(`⚠️ HACCP verification overdue (${haccpVerificationOverdue.length})`);
@@ -9350,7 +9353,9 @@ function renderDashboard(){
     {label:"Sensory Evaluation Pass Rate", score:sensoryScore}
   ];
   const availableScores = moduleScores.filter(x=>x.score!==null);
-  const overallScore = availableScores.length ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
+  const MIN_MODULES_FOR_OVERALL = 3;
+  const overallScore = availableScores.length >= MIN_MODULES_FOR_OVERALL ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
+  const overallCoverage = `${availableScores.length} of ${moduleScores.length} modules have data`;
   const overallGrade = complianceGrade(overallScore);
   const metricSnapshot = {
     overall:overallScore, audit:avgScore, capa:capaScore, risk:riskScore,
@@ -9374,7 +9379,7 @@ function renderDashboard(){
     const navId = KPI_NAV_TARGETS[key];
     const inner = `
       <span>${GRADE_EMOJI[g.tone]} ${label}</span>
-      <span>${score===null?'<span class="muted-italic">no data yet</span>':`<strong>${score}%</strong>`}${trendHtml}</span>
+      <span>${score===null?(key==='overall'?`<span class="muted-italic">not enough data (${overallCoverage}; needs ${MIN_MODULES_FOR_OVERALL})</span>`:'<span class="muted-italic">no data yet</span>'):`<strong>${score}%</strong>`}${key==='overall'&&score!==null?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${overallCoverage})</span>`:''}${trendHtml}</span>
     `;
     if(navId){
       return `<button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button>`;
@@ -9411,6 +9416,7 @@ function renderDashboard(){
   const priorities = [];
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
   highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk", urgency:r.riskLevel==="Critical"?1000:500}));
+  if(_ncr) _ncr.overdue.forEach(n=>priorities.push({dot:"🔴", text:`Resolve overdue NCR: ${n.reference_number} — ${n.title}`, navId:"nav-ncr", urgency:1}));
   haccpVerificationOverdue.forEach(v=>priorities.push({dot:"🔴", text:`Verify HACCP: ${v.activityType||'Verification overdue'}`, navId:"nav-fs-verification", urgency:v.nextDueDate?-daysUntil(v.nextDueDate):0}));
   audits.filter(a=>a.status==="In Progress").forEach(a=>priorities.push({dot:"🟡", text:`Complete audit: ${a.title}`, jumpAudit:a.id, urgency:a.dueDate?-daysUntil(a.dueDate):0}));
   state.documents.filter(d=>d.status==="Under Review").forEach(d=>priorities.push({dot:"🟡", text:`Approve document: ${d.title}`, navId:"nav-documents", urgency:0}));
@@ -9589,13 +9595,14 @@ function renderDashboard(){
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
         <h3 class="serif" style="font-size:16px;margin:0;">Compliance Trend</h3>
-        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'No data yet':overallScore+'% — '+overallGrade.label}${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}</span>
+        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'Not enough data':overallScore+'% — '+overallGrade.label+' · '+overallCoverage}${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}</span>
       </div>
       ${state.complianceScoreHistory.filter(h=>h.score!=null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas>` : `<p class="muted-italic" style="font-size:12px;">Come back next month to start seeing your compliance trend over time.</p>`}
     </div>
     <div class="stats">
       ${statCard("📋", "Total Audits", audits.length, "nav-audit-register")}
       ${statCard("⚠", "Open Findings", openFindings.length, "nav-capa")}
+      ${_ncr ? statCard("🚩", "Active NCRs", _ncr.active, "nav-ncr") : ''}
       ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length, "nav-documents")}
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length, "nav-people-training")}
       ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length, "nav-trace-recall")}
@@ -18165,6 +18172,14 @@ function showUpdateBanner(){
     else if(a === 'reopen') actReopen(id);
   });
 
+  window.__ncrStats = function(){
+    if(!nc.loaded && !nc.loading){ setTimeout(load, 0); }
+    if(!nc.loaded || nc.error) return null;
+    var live = nc.rows.filter(function(n){ return n.status === 'open' || n.status === 'contained' || n.status === 'investigating'; });
+    return { active: live.length,
+      critical: live.filter(function(n){ return n.severity === 'Critical'; }).length,
+      overdue: live.filter(function(n){ return overdueDays(n) > 0; }) };
+  };
   window.ncrReset = function(){
     nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = []; nc.reviews = []; nc.evidence = [];
     nc.open = null; nc.filter = 'active'; modal = null; mount();
