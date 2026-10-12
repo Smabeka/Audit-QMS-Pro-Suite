@@ -17045,7 +17045,7 @@ function showUpdateBanner(){
     var buttons = [];
 
     if(v.state === 'draft' && isQmAdmin){
-      buttons.push(btn('act', { a:'submit_for_review', v:v.id }, 'Submit for review', true));
+      if(v.file_path) buttons.push(btn('act', { a:'submit_for_review', v:v.id }, 'Submit for review', true));
     }
     if(v.state === 'in_review'){
       if(isQmAdmin && !isAuthor && !cyc.reviewer){
@@ -17136,7 +17136,7 @@ function showUpdateBanner(){
         ? '<div class="muted-italic" style="font-size:11px;margin-top:2px;">📎 ' + e(v.file_name || 'file') + ' · ' + e(sizeText(v.file_size)) +
           (v.content_hash ? ' · SHA-256 ' + e(String(v.content_hash).slice(0, 12)) + '…' : '') + '</div>'
         : '<div class="muted-italic" style="font-size:11px;margin-top:2px;">' +
-          (v.state === 'draft' ? '⚠ No file attached yet.' : 'No file attached (record created before file storage).') + '</div>') +
+          (v.state === 'draft' ? '⚠ No file attached yet. Attach the document file before it can be submitted for review.' : 'Legacy record: no file attached (created before file storage was added).') + '</div>') +
       (v.state === 'published' && f.current_version_id === v.id ? (function(){
         var rs = reviewState(v);
         return '<div style="margin-top:3px;"><span class="tag tag-' + rs.tone + '" style="font-size:10px;">' + e(rs.text) + '</span></div>';
@@ -17482,6 +17482,7 @@ function showUpdateBanner(){
         successText:'File attached.' });
     }
     if(a === 'submit_for_review'){
+      if(!v.file_path){ toast('Attach the document file before submitting for review.', 'error'); return; }
       return openModal({ action:a, versionId:versionId, title:'Submit ' + lbl + ' for review',
         reasonLabel:'Reason (min 10 characters)', minReason:10, successText:'Submitted for review.' });
     }
