@@ -2911,10 +2911,7 @@ function renderFindingDispute(a, f){
             </div>
           `).join('')
       }
-      <div class="flex-wrap" style="margin-top:8px;">
-        ${canChallenge ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="challenge-finding" data-audit="${a.id}" data-finding="${f.id}">Challenge Classification</button>` : ''}
-        ${canDecide ? `<button class="btn btn-primary" style="font-size:12px;" data-action="decide-finding-dispute" data-audit="${a.id}" data-finding="${f.id}">Review & Decide</button>` : ''}
-      </div>
+      <p class="muted-italic" style="font-size:11.5px;margin-top:8px;">Read-only history. To challenge or decide a classification, use Dispute Tracking (v2) below: every step there is signed and independently reviewed.</p>
     </div>
   `;
 }
@@ -14827,6 +14824,9 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="challenge-finding"]').forEach(el=>el.onclick=()=>{
+    alert("Challenges are now raised in Dispute Tracking (v2) on the finding.");
+    return;
+    // eslint-disable-next-line no-unreachable
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const f = a.findings.find(x=>x.id===el.dataset.finding);
     const justification = prompt(`Challenge the ${f.severity} classification of "${(f.desc||'').slice(0,60)}"\n\nEnter your reasoning (min 15 characters):`);
@@ -14840,6 +14840,9 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-action="decide-finding-dispute"]').forEach(el=>el.onclick=()=>{
+    alert("Dispute decisions are now made in Dispute Tracking (v2) on the finding.");
+    return;
+    // eslint-disable-next-line no-unreachable
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const f = a.findings.find(x=>x.id===el.dataset.finding);
     const approve = confirm(`Reviewing dispute for "${(f.desc||'').slice(0,60)}".\n\nOK = Approve reclassification to Minor\nCancel = Uphold original severity`);
