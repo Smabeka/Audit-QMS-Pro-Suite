@@ -10707,7 +10707,18 @@ function renderAuditDetail(a){
       </div>
       <div style="font-size:11px;color:var(--muted);margin-top:10px;">${cloud ? 'Signing locks the checklist, and what was found, in the database. Two different people must sign. Revoking a signature needs an admin or quality manager and a written reason, and is recorded.' : 'Signing locks the checklist and findings against further edits. Unsign to make corrections.'}</div>
     </div>
+    ${cloud && (st==='signed' || st==='follow_up_required') ? renderAuditNextStep(a) : ''}
   `;
+}
+function renderAuditNextStep(a){
+  const open = (a.findings||[]).filter(f => String(f.status||'').toLowerCase()!=='closed');
+  const major = open.filter(f => f.severity==='Major' || f.severity==='Critical');
+  let why = '';
+  if(major.length) why = `${major.length} Major/Critical finding(s) are still open. The audit cannot be closed until they are closed in CAPA.`;
+  else if(open.length && a.serverStatus==='signed') why = `${open.length} finding(s) are still open. Choose "Follow-up required" now, or close the findings first, then close the audit.`;
+  else if(open.length) why = `${open.length} minor finding(s) are still open. They do not block closing and stay visible in the CAPA register.`;
+  else why = 'All findings are closed. You can close the audit.';
+  return `<div id="audit-next-step" style="margin-top:12px;">${renderAuditLifecycle(a)}<div style="font-size:12px;color:var(--muted);margin:-4px 2px 8px;">${esc(why)}</div></div>`;
 }
 
 function renderCapa(){
@@ -18512,7 +18523,7 @@ function showUpdateBanner(){
       if(bad){ P.error = bad.error.message; }
       else {
         P.programmes = res[0].data; P.items = res[1].data; P.changes = res[2].data; P.events = res[3].data;
-        var pr = await supabaseClient.from('profiles').select('id, full_name');
+        var pr = await supabaseClient.rpc('prog_people');
         if(!pr.error) P.profiles = pr.data || [];
         var yrs = P.programmes.map(function(x){ return x.year; });
         if(yrs.length && yrs.indexOf(P.year) === -1 && !P.yearChosen) P.year = Math.max.apply(null, yrs);
@@ -18615,7 +18626,7 @@ function showUpdateBanner(){
       help:'Another quality manager or admin must approve it. Approved date moves count as postponements against the original date.',
       fields:[
         { id:'kind', label:'What do you need', type:'select', options:[['reschedule','Move to a new date'],['cancel','Cancel this audit']], value:'reschedule' },
-        { id:'date', label:'New date (only for a move)', type:'date', value:it.planned_date },
+        { id:'date', label:'New date (only for a move)', type:'date', value:'' },
         { id:'reason', label:'Reason (at least 10 characters)', type:'textarea', required:true } ],
       fn:'request_programme_change', args:function(v){ return { p_id:newId(), p_item:it.id, p_kind:v.kind, p_new_date:v.kind === 'reschedule' ? v.date : null, p_reason:v.reason }; } });
   }
