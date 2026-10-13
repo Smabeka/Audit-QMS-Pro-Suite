@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -8562,6 +8562,7 @@ const NAV_MODULES = [
   { id:"nav-audit", icon:"🔍", label:"Audit Management", children:[
       { id:"nav-audit-register", label:"Audit Register", isActive(){ return tab==="audits"; }, action(){ tab="audits"; } },
       { id:"nav-audit-programme", label:"Audit Programme", isActive(){ return tab==="audit-programme"; }, action(){ tab="audit-programme"; } },
+      { id:"nav-audit-competence", label:"Auditor Competence", isActive(){ return tab==="audit-competence"; }, action(){ tab="audit-competence"; } },
       { id:"nav-audit-planning", label:"Audit Planning", isActive(){ return tab==="audit-planning"; }, action(){ tab="audit-planning"; } },
       { id:"nav-audit-checklists", label:"Checklists", isActive(){ return tab==="checklists"; }, action(){ tab="checklists"; } }
     ]
@@ -9112,7 +9113,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
@@ -10466,6 +10467,7 @@ function renderAuditDetail(a){
   return `
     ${a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">🔄 This audit's CAPA findings are shared and live — but the full audit record (checklist, plan, sign-off) was created on a teammate's device and hasn't been migrated to shared storage yet. That's next on the roadmap.</p></div>` : ''}
     ${cloud ? renderAuditLifecycle(a) : (cloudReady() && !a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">⚠ This audit is stored only on this device (created before audits moved to the database). It has no enforced lifecycle or sign-off lock. Create new audits for real work.</p></div>` : '')}
+    ${cloud && typeof renderAuditTeamCard === 'function' ? renderAuditTeamCard(a) : ''}
     <div class="card p4" style="margin-bottom:12px;">
       <div class="grid2" style="${lockStyle}">
         <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
@@ -18796,6 +18798,253 @@ function showUpdateBanner(){
   window.auditProgrammeReset = function(){
     P.loaded = false; P.loading = false; P.error = ''; P.programmes = []; P.items = []; P.changes = []; P.events = []; P.profiles = []; P.showEvents = false; modal = null; mount();
   };
+})();
+</script>
+
+<script>
+/* ===== Audit team, independence and competence (stage 3) ===== */
+(function(){
+  var ROLES = [['lead','Lead auditor'],['auditor','Auditor'],['technical_expert','Technical expert'],['trainee','Trainee']];
+  var T = { loaded:false, loading:false, error:'', people:[], comp:[], team:[], ready:{}, readyLoading:{}, showAll:false };
+  var modal = null;
+
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function day(d){ if(!d) return '—'; var x = new Date(String(d).length === 10 ? d + 'T00:00:00' : d); return isNaN(x.getTime()) ? String(d) : x.toLocaleDateString(); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function myId(){ try{ return (currentCloudUser && currentCloudUser.id) || (currentProfile && currentProfile.id) || null; }catch(_){ return null; } }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function canTeam(){ return ['admin','quality manager','auditor'].indexOf(myRole()) !== -1; }
+  function newId(){ return (typeof uid === 'function') ? uid() : crypto.randomUUID(); }
+  function lbl(list, v){ for(var i = 0; i < list.length; i++){ if(list[i][0] === v) return list[i][1]; } return v || '—'; }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function person(id){ for(var i = 0; i < T.people.length; i++){ if(T.people[i].id === id) return T.people[i]; } return null; }
+  function nameOf(id){ var p = person(id); return p ? (p.full_name || 'Unnamed') : String(id || '').slice(0, 8); }
+
+  async function load(){
+    if(T.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()){ T.error = 'Sign in to the cloud first.'; return; }
+    T.loading = true; T.error = '';
+    try{
+      var res = await Promise.all([ supabaseClient.rpc('audit_people'), fetchAllRows('auditor_competence', function(q){ return q.order('recorded_at', { ascending:false }); }),
+        fetchAllRows('audit_team', function(q){ return q.order('assigned_at', { ascending:true }); }) ]);
+      var bad = (res[0].error && res[0]) || res[1].error && res[1] || res[2].error && res[2];
+      if(bad) T.error = bad.error.message; else { T.people = res[0].data || []; T.comp = res[1].data; T.team = res[2].data; T.loaded = true; }
+    }catch(err){ T.error = (err && err.message) || String(err); }
+    T.loading = false; rerender();
+  }
+  async function loadReady(auditId){
+    if(T.readyLoading[auditId]) return; T.readyLoading[auditId] = true;
+    var r = await supabaseClient.rpc('audit_readiness', { p_audit: auditId });
+    T.readyLoading[auditId] = false;
+    if(!r.error){ T.ready[auditId] = r.data; rerender(); }
+  }
+  async function refreshAll(auditId){
+    T.loading = false; await load();
+    if(auditId) await loadReady(auditId);
+  }
+
+  /* ----- competence status helpers ----- */
+  function compStatus(c){
+    if(c.status === 'revoked') return ['Revoked', 'neutral'];
+    if(c.expires_on && String(c.expires_on) < today()) return ['Expired', 'rust'];
+    if(c.valid_from && String(c.valid_from) > today()) return ['Not yet valid', 'amber'];
+    if(c.expires_on){ var d = Math.ceil((new Date(c.expires_on + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000); if(d <= 60) return ['Expires in ' + d + 'd', 'amber']; }
+    return ['Valid', 'green'];
+  }
+  function validFor(userId, standard){
+    return T.comp.filter(function(c){
+      return c.user_id === userId && c.status === 'active' && (!c.expires_on || String(c.expires_on) >= today()) && (!c.valid_from || String(c.valid_from) <= today()) &&
+        (!standard || c.standard === standard || c.standard === 'Any standard');
+    });
+  }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('team-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'team-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(cfg){ modal = cfg; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function opts(list, blank, sel){
+    return (blank ? '<option value="">' + e(blank) + '</option>' : '') + list.map(function(o){ return '<option value="' + e(o[0]) + '"' + (sel != null && String(sel) === String(o[0]) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('');
+  }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'tmf-' + x.id, ctl;
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="3" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + opts(x.options, x.blank, x.value) + '</select>';
+      else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div' + (x.full === false ? '' : ' style="grid-column:1/-1;"') + '><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-tm-modal="overlay"><div class="modal-card" style="max-width:520px;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-tm-modal="cancel">Cancel</button><button class="btn btn-primary" data-tm-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){ var el = document.getElementById('tmf-' + x.id); v[x.id] = el ? String(el.value || '').trim() : ''; });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount();
+    var cfg = modal, call = cfg.call(v);
+    var r = await supabaseClient.rpc(call.fn, call.args);
+    if(r.error){ modal.busy = false; mount(); toast(r.error.message, 'error'); return; }
+    modal = null; mount(); toast(cfg.successText || 'Saved.');
+    await refreshAll(cfg.auditId);
+    if(cfg.auditId && typeof fetchAuditsFromCloud === 'function') fetchAuditsFromCloud(cfg.auditId);
+  }
+  async function direct(fn, args, ok, auditId){
+    var r = await supabaseClient.rpc(fn, args);
+    if(r.error){ toast(r.error.message, 'error'); return; }
+    toast(ok); await refreshAll(auditId);
+    if(auditId && typeof fetchAuditsFromCloud === 'function') fetchAuditsFromCloud(auditId);
+  }
+
+  /* ----- actions ----- */
+  function stdOptions(){ var l = (typeof STANDARDS !== 'undefined' ? STANDARDS : []).map(function(s){ return [s, s]; }); return [['Any standard','Any standard']].concat(l); }
+  function actRecord(userId){
+    openModal({ title:'Record auditor competence', submitText:'Record', successText:'Competence recorded.',
+      help:'Say what qualifies this person to audit this standard. It cannot be edited later; to change it, revoke it and record a new one. You cannot record your own.',
+      fields:[
+        { id:'user', label:'Person', type:'select', options:T.people.map(function(p){ return [p.id, (p.full_name || 'Unnamed') + ' (' + p.role + ')']; }), blank:'Choose…', value:userId || '', required:true },
+        { id:'std', label:'Standard', type:'select', options:stdOptions(), blank:'Choose…', required:true },
+        { id:'qual', label:'Qualification / training (at least 5 characters)', required:true, placeholder:'e.g. IRCA ISO 9001 Lead Auditor course, 5 days' },
+        { id:'ev', label:'Evidence reference (certificate number, file name)', placeholder:'e.g. Certificate IRCA-123456' },
+        { id:'from', label:'Valid from', type:'date', full:false }, { id:'to', label:'Expires on (leave empty if it does not expire)', type:'date', full:false } ],
+      call:function(v){ return { fn:'record_competence', args:{ p_id:newId(), p_user:v.user, p_standard:v.std, p_qualification:v.qual, p_evidence:v.ev || null, p_valid_from:v.from || null, p_expires_on:v.to || null } }; } });
+  }
+  function actRevoke(id){
+    openModal({ title:'Revoke competence record', submitText:'Revoke', successText:'Revoked.',
+      fields:[ { id:'r', label:'Reason (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'revoke_competence', args:{ p_id:id, p_reason:v.r } }; } });
+  }
+  function actAssign(a){
+    var taken = {}; T.team.forEach(function(m){ if(m.audit_id === a.id && !m.removed) taken[m.user_id] = 1; });
+    var hasLead = T.team.some(function(m){ return m.audit_id === a.id && !m.removed && m.role === 'lead'; });
+    var list = T.people.filter(function(p){ return !taken[p.id]; }).map(function(p){ return [p.id, (p.full_name || 'Unnamed') + ' (' + p.role + (p.department ? ', ' + p.department : '') + ')']; });
+    openModal({ title:'Add to the audit team', submitText:'Add', successText:'Added. They now need to declare independence.', auditId:a.id,
+      help:'Each member must declare independence themselves. A lead or auditor needs valid competence for ' + (a.standard || 'this audit') + '.',
+      fields:[ { id:'u', label:'Person', type:'select', options:list, blank:'Choose…', required:true },
+        { id:'r', label:'Role on this audit', type:'select', options:ROLES, value:hasLead ? 'auditor' : 'lead' } ],
+      call:function(v){ return { fn:'assign_audit_member', args:{ p_audit:a.id, p_user:v.u, p_role:v.r } }; } });
+  }
+  function actDeclare(m){
+    openModal({ title:'Independence declaration', submitText:'Submit declaration', successText:'Declaration recorded.', auditId:m.audit_id,
+      help:'Declare whether you have any conflict of interest with the area, the people or the work being audited (for example you audited or managed this process, or have a personal tie to the auditee).',
+      fields:[ { id:'c', label:'Do you have a conflict of interest?', type:'select', options:[['no','No conflict'],['yes','Yes, I have a conflict']], value:'no' },
+        { id:'d', label:'If yes, describe it (at least 10 characters)', type:'textarea' } ],
+      call:function(v){ return { fn:'declare_independence', args:{ p_member:m.id, p_conflict:v.c === 'yes', p_details:v.d || null } }; } });
+  }
+  function actException(m, approve){
+    openModal({ title: approve ? 'Approve an exception' : 'Reject the exception', submitText: approve ? 'Approve exception' : 'Reject', successText: approve ? 'Exception approved and recorded.' : 'Rejected.', auditId:m.audit_id,
+      help: approve ? 'You are accepting the risk of this person on this audit. Your name and reason are recorded in the audit history. You cannot approve one for yourself.' : 'Rejecting keeps the audit blocked. Remove the member or fix the cause.',
+      fields:[ { id:'r', label:'Written reason (at least 15 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'decide_team_exception', args:{ p_member:m.id, p_approve:approve, p_reason:v.r } }; } });
+  }
+  function actRemove(m){
+    openModal({ title:'Remove from the audit team', submitText:'Remove', successText:'Removed.', auditId:m.audit_id,
+      fields:[ { id:'r', label:'Reason (optional)', type:'textarea' } ],
+      call:function(v){ return { fn:'remove_audit_member', args:{ p_member:m.id, p_reason:v.r || null } }; } });
+  }
+
+  /* ----- audit card ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11px;padding:4px 8px;" data-tm="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  window.renderAuditTeamCard = function(a){
+    try{
+      if(!a || !a.cloud) return '';
+      if(!T.loaded && !T.loading) setTimeout(load, 0);
+      var st = a.serverStatus, editable = st === 'draft' || st === 'planned';
+      var members = T.team.filter(function(m){ return m.audit_id === a.id && !m.removed; });
+      var rd = T.ready[a.id];
+      if(T.loaded && !rd && !T.readyLoading[a.id] && editable) setTimeout(function(){ loadReady(a.id); }, 0);
+      var byMember = {}; if(rd && rd.members) rd.members.forEach(function(x){ byMember[x.id] = x.issues || []; });
+      var teamIssues = rd && rd.team_issues ? rd.team_issues : [];
+      var head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><h3 class="serif" style="margin:0;font-size:16px;color:var(--navy);">Audit team and independence</h3>' +
+        (editable && rd ? (rd.ready ? '<span class="tag tag-green">Cleared to start</span>' : '<span class="tag tag-rust">Not cleared to start</span>') : '') + '</div>';
+      var rows = members.map(function(m){
+        var issues = byMember[m.id] || [], mine = m.user_id === myId();
+        var needsComp = m.role === 'lead' || m.role === 'auditor';
+        var comps = needsComp ? validFor(m.user_id, a.standard) : [];
+        var decl = m.declared_at ? (m.has_conflict ? '<span class="tag tag-amber">Declared a conflict</span>' : '<span class="tag tag-green">No conflict declared</span>') : '<span class="tag tag-amber">Not declared yet</span>';
+        var compTag = needsComp ? (comps.length ? '<span class="tag tag-green">Competent' + (comps[0].expires_on ? ' until ' + e(day(comps[0].expires_on)) : '') + '</span>' : '<span class="tag tag-rust">No valid competence</span>') : '';
+        var exc = m.exception_status === 'approved' ? '<div style="font-size:11.5px;margin-top:4px;">✔ Exception approved by ' + e(nameOf(m.exception_by)) + ' on ' + e(day(m.exception_at)) + ': ' + e(m.exception_reason) + '</div>' :
+                  m.exception_status === 'rejected' ? '<div style="font-size:11.5px;margin-top:4px;color:var(--rust);">✖ Exception rejected by ' + e(nameOf(m.exception_by)) + ': ' + e(m.exception_reason) + '</div>' : '';
+        var b = [];
+        if(editable && mine) b.push(bt('declare', { id:m.id }, m.declared_at ? 'Change my declaration' : 'Declare independence', !m.declared_at));
+        if(editable && isQm() && !mine && (issues.length || m.exception_status !== 'none')){ b.push(bt('exc-yes', { id:m.id }, 'Approve exception')); b.push(bt('exc-no', { id:m.id }, 'Reject')); }
+        if(editable && canTeam()) b.push(bt('remove', { id:m.id }, 'Remove'));
+        return '<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;margin-top:8px;">' +
+          '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;"><div><b>' + e(m.member_name) + '</b> <span class="muted-italic" style="font-size:12px;">' + e(lbl(ROLES, m.role)) + (m.member_department ? ' · ' + e(m.member_department) : '') + '</span></div>' +
+          '<div class="flex-wrap" style="gap:4px;">' + decl + compTag + '</div></div>' +
+          (m.has_conflict && m.conflict_details ? '<div style="font-size:11.5px;margin-top:4px;">Conflict: ' + e(m.conflict_details) + '</div>' : '') +
+          (editable ? issues.map(function(i){ return '<div style="font-size:12px;color:var(--rust);margin-top:4px;">⚠ ' + e(i) + '</div>'; }).join('') : '') + exc +
+          (b.length ? '<div class="flex-wrap" style="margin-top:6px;gap:6px;">' + b.join('') + '</div>' : '') +
+          '<div class="muted-italic" style="font-size:10.5px;margin-top:4px;">Assigned by ' + e(nameOf(m.assigned_by)) + ' on ' + e(day(m.assigned_at)) + '</div></div>';
+      }).join('');
+      return '<div class="card p4" style="margin-bottom:12px;">' + head +
+        (T.error ? '<p style="color:var(--rust);font-size:12px;">' + e(T.error) + '</p>' : '') +
+        (editable ? '<p class="muted-italic" style="font-size:11.5px;margin:4px 0 0;">The audit cannot start until there is one lead auditor, every member has declared independence, and each lead or auditor has valid competence for ' + e(a.standard || 'this audit') + ' (or an approved exception).</p>' : '') +
+        (editable ? teamIssues.map(function(i){ return '<div style="font-size:12px;color:var(--rust);margin-top:6px;">⚠ ' + e(i) + '</div>'; }).join('') : '') +
+        (members.length ? rows : '<p class="muted-italic" style="margin:8px 0 0;">No team assigned yet.' + (st !== 'draft' && st !== 'planned' ? ' (This audit started before team control existed.)' : '') + '</p>') +
+        (editable && canTeam() ? '<div style="margin-top:10px;">' + bt('assign', { id:a.id }, '+ Add team member', true) + '</div>' : '') + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Team card error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  /* ----- competence register page ----- */
+  window.renderAuditCompetence = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use the competence register.</p></div>';
+      if(!T.loaded && !T.loading) setTimeout(load, 0);
+      var byUser = {}; T.comp.forEach(function(c){ (byUser[c.user_id] = byUser[c.user_id] || []).push(c); });
+      var ids = Object.keys(byUser);
+      var ppl = T.people.filter(function(p){ return byUser[p.id] || (T.showAll) ; });
+      var body = ppl.map(function(p){
+        var list = (byUser[p.id] || []);
+        return '<div class="card" style="margin-bottom:8px;padding:10px 12px;"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;"><div><b>' + e(p.full_name || 'Unnamed') + '</b> <span class="muted-italic" style="font-size:12px;">' + e(p.role) + (p.department ? ' · ' + e(p.department) : '') + '</span></div>' +
+          (isQm() && p.id !== myId() ? bt('rec', { id:p.id }, '+ Record competence') : '') + '</div>' +
+          (list.length ? list.map(function(c){ var s = compStatus(c);
+            return '<div style="border-top:1px solid var(--line,#eee);margin-top:6px;padding-top:6px;font-size:12px;"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;"><div><b>' + e(c.standard) + '</b> — ' + e(c.qualification) + '</div><span class="tag tag-' + s[1] + '">' + e(s[0]) + '</span></div>' +
+              '<div class="muted-italic" style="font-size:11px;">' + (c.evidence_note ? 'Evidence: ' + e(c.evidence_note) + ' · ' : '') + 'Valid ' + e(day(c.valid_from)) + ' to ' + (c.expires_on ? e(day(c.expires_on)) : 'no expiry') + ' · recorded by ' + e(nameOf(c.recorded_by)) + ' on ' + e(day(c.recorded_at)) +
+              (c.status === 'revoked' ? ' · revoked by ' + e(nameOf(c.revoked_by)) + ': ' + e(c.revoke_reason) : '') + '</div>' +
+              (isQm() && c.status === 'active' ? '<div style="margin-top:4px;">' + bt('revoke', { id:c.id }, 'Revoke') + '</div>' : '') + '</div>'; }).join('') : '<p class="muted-italic" style="font-size:12px;margin:6px 0 0;">No competence recorded.</p>') + '</div>';
+      }).join('');
+      return '<div class="card p4" style="border-color:var(--navy);"><div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;">' +
+        '<h2 class="serif" style="margin:0;font-size:18px;color:var(--navy);">Auditor Competence</h2><div class="flex-wrap" style="gap:6px;">' + bt('showall', {}, T.showAll ? 'Only people with records' : 'Show everyone') + bt('reload', {}, '↻ Refresh') + (isQm() ? bt('rec', {}, '+ Record competence', true) : '') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Who is qualified to audit which standard, with evidence and expiry. Records cannot be edited or deleted, only revoked with a reason. You cannot record your own, and an audit cannot start with a lead or auditor who has no valid record for its standard unless an exception is approved.</p>' +
+        (T.error ? '<p style="color:var(--rust);font-size:12px;">' + e(T.error) + '</p>' : '') + (T.loading && !T.loaded ? '<p class="muted-italic">Loading…</p>' : '') +
+        (T.loaded && !ppl.length ? '<p class="muted-italic">No competence records yet.' + (isQm() ? ' Use “Record competence”.' : '') + '</p>' : '') + body + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Competence register error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  function member(id){ for(var i = 0; i < T.team.length; i++){ if(T.team[i].id === id) return T.team[i]; } return null; }
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-tm-modal]');
+    if(m){ var k = m.getAttribute('data-tm-modal');
+      if(k === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-tm]'); if(!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var a = el.getAttribute('data-tm'), id = el.getAttribute('data-id');
+    if(a === 'reload'){ T.loading = false; load(); }
+    else if(a === 'showall'){ T.showAll = !T.showAll; rerender(); }
+    else if(a === 'rec') actRecord(id);
+    else if(a === 'revoke') actRevoke(id);
+    else if(a === 'assign'){ var au = (state.audits || []).filter(function(x){ return x.id === id; })[0]; if(au) actAssign(au); }
+    else { var mm = member(id); if(!mm) return;
+      if(a === 'declare') actDeclare(mm); else if(a === 'exc-yes') actException(mm, true); else if(a === 'exc-no') actException(mm, false);
+      else if(a === 'remove') actRemove(mm); }
+  }, true);
+  window.auditTeamReset = function(){ T.loaded = false; T.loading = false; T.error = ''; T.people = []; T.comp = []; T.team = []; T.ready = {}; T.readyLoading = {}; modal = null; mount(); };
+  window.auditTeamRefresh = function(auditId){ T.loading = false; return refreshAll(auditId); };
 })();
 </script>
 
