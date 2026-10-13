@@ -610,6 +610,7 @@ async function initCloudSession(){
         loadDocumentControlCloud();
         fetchDocumentsFromCloud();
         subscribeDocumentsRealtime();
+        fetchAuditsFromCloud();
         fetchCapaFindingsFromCloud();
         subscribeCapaRealtime();
         fetchFindingEventsFromCloud();
@@ -680,6 +681,7 @@ async function cloudSignIn(email, password){
   loadDocumentControlCloud();
   fetchDocumentsFromCloud();
   subscribeDocumentsRealtime();
+  fetchAuditsFromCloud();
   fetchCapaFindingsFromCloud();
   subscribeCapaRealtime();
   fetchFindingEventsFromCloud();
@@ -718,7 +720,7 @@ async function cloudSignOut(){
   currentProfile = null;
   allProfiles = [];
   state.documents = [];
-  state.audits = state.audits.filter(a=>!a.isCloudShellAudit); // drop placeholder audits that only existed to hold synced CAPA data
+  state.audits = state.audits.filter(a=>!a.isCloudShellAudit && !a.cloud); // placeholders and database audits are not kept on a shared device // drop placeholder audits that only existed to hold synced CAPA data
   Object.keys(CUSTOM_MODULE_TABLES).forEach(arr => { state[arr] = []; });
   render();
 }
@@ -2119,11 +2121,16 @@ function nextSeqCode(list, field, prefix){
   return `${prefix}-${year}-${String(max+1).padStart(3,'0')}`;
 }
 
+// Audit criteria = recognised standards, schemes and the company's own GMP rules.
 const STANDARDS = [
   "ISO 9001:2015","ISO 22000","FSSC 22000","BRCGS","HACCP","Internal GMP",
   "Pharma GMP","ISO 45001 (OHS)","ISO 14001 (Environmental)",
   "ISO 50001 (Energy)","WIPHA (Wine)","TPN (Tobacco)","Cosmetics GMP",
-  "SMETA/AQL (Clothing)","ISO/ESD (Tech)",
+  "SMETA/AQL (Clothing)","ISO/ESD (Tech)"
+];
+// Topic / process checklists are NOT audit standards. They stay available in the
+// Checklists module (and on audits already saved with one of these values).
+const TOPIC_CHECKLISTS = [
   "Risk Management (HIRA)","Incident & Near-Miss Management","PPE & Permit to Work",
   "Contractor & Visitor Management","Chemical & Waste Management",
   "Emergency Preparedness & Business Continuity","Equipment, Calibration & Maintenance",
@@ -2131,6 +2138,10 @@ const STANDARDS = [
   "Customer Complaints & Change Management","Planned Job Observation (PJO)",
   "Security","Material Safety Data (MSDS)","Microbiological Analysis","Transport & Fleet Management"
 ];
+const ALL_CHECKLIST_TEMPLATES = STANDARDS.concat(TOPIC_CHECKLISTS);
+function standardOptionsFor(current){
+  return (current && !STANDARDS.includes(current)) ? STANDARDS.concat([current]) : STANDARDS;
+}
 const AUDIT_TYPES = ["Internal","External"];
 const COPQ_CATEGORIES = ["Scrap & Rework","Customer Returns","Complaint Handling","Downtime & Delays","Recall Costs","Product Disposal","Product Recall","Microbiological Failure","Other"];
 const CLAUSE_OPTIONS = ["4. Context of the Organization","5. Leadership","6. Planning","7. Support","8. Operation","9. Performance Evaluation","10. Improvement"];
@@ -2292,7 +2303,7 @@ const DEPARTMENTS = [
 ];
 const FINDING_CATEGORIES = ["Hygiene","Documentation","Equipment","Pest Control","Storage","Personnel","Cleaning","Traceability","Monthly Management Review","Operation Review Meetings","Weekly Operation Review","Daily Operation Review","Training Matrix","Other"];
 const sevTone = {Minor:"amber",Major:"rust",Critical:"rust"};
-const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy"};
+const statusTone = {Open:"rust","In Progress":"amber",Closed:"green",Planned:"navy",Draft:"neutral","Awaiting Sign-Off":"amber",Signed:"green","Follow-Up Required":"rust",Cancelled:"neutral"};
 function findingSlaBadge(f){
   // On Track / Due Soon / Overdue — Due Soon threshold is 7 days.
   // Returns null for closed findings or ones with no due date at all
@@ -2752,6 +2763,7 @@ function mergeCloudFindingsIntoLocalAudits(rows){
     const cloudIds = new Set(cloudFindings.map(f=>f.id));
     const localOnly = (a.findings||[]).filter(f=>!cloudIds.has(f.id)); // keep anything not yet pushed (e.g. offline edit)
     a.findings = [...cloudFindings, ...localOnly];
+    if(typeof relinkAuditFindingItems === 'function') relinkAuditFindingItems(a);
   });
 }
 async function fetchCapaFindingsFromCloud(){
@@ -2837,6 +2849,134 @@ function unsubscribeFindingEventsRealtime(){
   if(findingEventsRealtimeChannel){ supabaseClient.removeChannel(findingEventsRealtimeChannel); findingEventsRealtimeChannel = null; }
 }
 
+
+/* ---------------- Audit record in the database (stage 1) ----------------
+   Audits created from now on live in Supabase (tables audits, audit_sections, audit_items,
+   audit_signatures, audit_events). The app keeps a copy in state.audits for display, but every
+   change goes through a database function that enforces the lifecycle, the sign-off lock and the
+   separation of duties. Audits created before this change are "local only" (a.cloud is false). */
+const AUDIT_STATUS_LABEL = { draft:"Draft", planned:"Planned", in_progress:"In Progress", awaiting_signoff:"Awaiting Sign-Off",
+  signed:"Signed", follow_up_required:"Follow-Up Required", closed:"Closed", cancelled:"Cancelled" };
+function auditIsOpen(a){ return a.status !== "Closed" && a.status !== "Cancelled"; }
+function auditRoleLower(){ return ((typeof currentUser === 'function' && currentUser() && currentUser().role) || "").toLowerCase(); }
+const AUDIT_NEXT_STEPS = {
+  draft: [{ to:"planned", label:"Confirm plan", cls:"btn-primary" }],
+  planned: [{ to:"in_progress", label:"Start audit", cls:"btn-primary" }],
+  in_progress: [{ to:"awaiting_signoff", label:"Submit for sign-off", cls:"btn-primary" }],
+  awaiting_signoff: [{ to:"in_progress", label:"Return for rework", cls:"btn-ghost", qm:true, reason:"Why is this audit being returned for rework? (at least 10 characters)" }],
+  signed: [{ to:"follow_up_required", label:"Follow-up required", cls:"btn-ghost", qm:true },
+           { to:"closed", label:"Close audit", cls:"btn-primary", qm:true }],
+  follow_up_required: [{ to:"closed", label:"Close audit", cls:"btn-primary", qm:true }]
+};
+function auditCanCancel(a){ return a.cloud && ["draft","planned","in_progress","awaiting_signoff"].includes(a.serverStatus) && ["admin","quality manager"].includes(auditRoleLower()); }
+function auditPlanPayload(a){
+  return { auditPlan: a.auditPlan || {}, conclusion: a.conclusion || {}, approvals: a.approvals || {} };
+}
+function auditEventText(ev){
+  const d = ev.detail || {};
+  switch(ev.event_type){
+    case "created": return `Audit created (${d.items||0} checklist lines)`;
+    case "status_changed": return `Status: ${AUDIT_STATUS_LABEL[d.from]||d.from} → ${AUDIT_STATUS_LABEL[d.to]||d.to}${d.reason?` — ${d.reason}`:''}`;
+    case "header_updated": return `Details changed: ${Object.keys(d.changes||{}).map(k=>k.replace(/_/g,' ')).join(', ')}${d.reason?` — ${d.reason}`:''}`;
+    case "item_result": return `Checklist: "${d.text||''}" ${d.from||'unanswered'} → ${d.to||'unanswered'}`;
+    case "item_note": return `Checklist note changed: "${d.text||''}"`;
+    case "item_added": return `Checklist line added${d.after_start?' after the audit started':''}: "${d.text||''}"`;
+    case "item_removed": return `Checklist line removed: "${d.text||''}"${d.reason?` — ${d.reason}`:''}`;
+    case "section_added": return `Section added${d.after_start?' after the audit started':''}: ${d.name||''}`;
+    case "section_removed": return `Section removed: ${d.name||''} (${d.items_removed||0} lines)${d.reason?` — ${d.reason}`:''}`;
+    case "signed": return `Signed as ${d.role}: ${d.signer||''} (checklist fingerprint ${String(d.content_hash||'').slice(0,12)}…)`;
+    case "unsigned": return `Signature revoked (${d.role}) — ${d.reason||''}`;
+    default: return ev.event_type;
+  }
+}
+function buildAuditFromCloud(row, secs, items, sigs, evs, old){
+  const oldItems = {};
+  if(old) (old.sections||[]).forEach(s => (s.items||[]).forEach(i => { oldItems[i.id] = i; }));
+  const sections = secs.filter(s=>!s.removed).sort((x,y)=>x.position-y.position).map(s => ({
+    id: s.id, name: s.name, addedAfterStart: !!s.added_after_start,
+    items: items.filter(i=>i.section_id===s.id && !i.removed).sort((x,y)=>x.position-y.position).map(i => {
+      const o = oldItems[i.id] || {};
+      return { id:i.id, text:i.text, result:i.result||null, note:i.note||"", photo:o.photo||null,
+               linkedFindingId:o.linkedFindingId||null, addedAfterStart:!!i.added_after_start };
+    })
+  }));
+  const signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
+  sigs.filter(g=>!g.revoked_at).forEach(g => {
+    if(g.role === "auditor"){ signOff.auditorName = g.signer_name; signOff.auditorSignedAt = g.signed_at; signOff.auditorSignature = g.signature_image; signOff.auditorHash = g.content_hash; }
+    else { signOff.approverName = g.signer_name; signOff.approverSignedAt = g.signed_at; signOff.approverSignature = g.signature_image; signOff.approverHash = g.content_hash; }
+  });
+  const plan = row.plan || {};
+  const a = Object.assign({}, old || {}, {
+    id: row.id, auditNumber: row.reference_number, title: row.title, standard: row.standard || "", area: row.area || "",
+    auditor: row.auditor_name || "", auditee: row.auditee || "", date: row.audit_date || "",
+    status: AUDIT_STATUS_LABEL[row.status] || row.status, serverStatus: row.status,
+    riskLevel: row.risk_level, auditType: row.audit_type, sections, signOff, cancelReason: row.cancel_reason || "",
+    auditPlan: Object.assign({ organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: row.standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary:[] }, plan.auditPlan || {}),
+    history: evs.map(e => ({ id:e.id, date:e.created_at, text:auditEventText(e) })),
+    findings: (old && old.findings) || [], cloud: true, isCloudShellAudit: false, createdBy: row.created_by
+  });
+  if(plan.conclusion && Object.keys(plan.conclusion).length) a.conclusion = plan.conclusion;
+  if(plan.approvals && Object.keys(plan.approvals).length) a.approvals = plan.approvals;
+  relinkAuditFindingItems(a);
+  return a;
+}
+function relinkAuditFindingItems(a){
+  (a.findings||[]).forEach(f => {
+    if(!f.sourceItemId) return;
+    (a.sections||[]).forEach(s => (s.items||[]).forEach(i => { if(i.id === f.sourceItemId) i.linkedFindingId = f.id; }));
+  });
+}
+async function fetchAllRows(table, build){
+  const out = []; const size = 1000;
+  for(let from = 0; ; from += size){
+    let q = supabaseClient.from(table).select("*");
+    q = build ? build(q) : q;
+    const { data, error } = await q.range(from, from + size - 1);
+    if(error) return { error };
+    out.push(...(data||[]));
+    if(!data || data.length < size) break;
+  }
+  return { data: out };
+}
+async function fetchAuditsFromCloud(onlyId){
+  if(!cloudReady()) return;
+  const byAudit = onlyId ? (q => q.eq("audit_id", onlyId)) : null;
+  const [a, s, i, g, e] = await Promise.all([
+    fetchAllRows("audits", onlyId ? (q => q.eq("id", onlyId)) : null),
+    fetchAllRows("audit_sections", byAudit),
+    fetchAllRows("audit_items", byAudit),
+    fetchAllRows("audit_signatures", q => (onlyId ? q.eq("audit_id", onlyId) : q).is("revoked_at", null)),
+    fetchAllRows("audit_events", q => (onlyId ? q.eq("audit_id", onlyId) : q).order("created_at", { ascending:true }))
+  ]);
+  const bad = [a, s, i, g, e].find(r => r.error);
+  if(bad){ console.error("Audit load failed:", bad.error.message); return; }
+  const group = (rows) => { const m = {}; rows.forEach(r => { (m[r.audit_id] = m[r.audit_id] || []).push(r); }); return m; };
+  const secs = group(s.data), its = group(i.data), sigs = group(g.data), evs = group(e.data);
+  a.data.forEach(row => {
+    const idx = state.audits.findIndex(x => x.id === row.id);
+    const built = buildAuditFromCloud(row, secs[row.id]||[], its[row.id]||[], sigs[row.id]||[], evs[row.id]||[], idx >= 0 ? state.audits[idx] : null);
+    if(idx >= 0) state.audits[idx] = built; else state.audits.unshift(built);
+  });
+  scoreCache.clear();
+  persist(); render();
+}
+async function auditRpc(name, args){
+  if(!cloudReady()){ alert("Please sign in to the cloud first."); return { ok:false }; }
+  const { data, error } = await supabaseClient.rpc(name, args);
+  if(error){ alert(error.message); return { ok:false }; }
+  return { ok:true, data };
+}
+// run a database change for a cloud audit, then reload that audit so the screen shows exactly what the database holds
+async function auditChange(a, name, args){
+  const r = await auditRpc(name, args);
+  await fetchAuditsFromCloud(a.id);
+  return r.ok;
+}
+async function pushAuditPlan(a){
+  if(!a.cloud) return;
+  await auditChange(a, "update_audit_header", { p_id: a.id, p_changes: { plan: auditPlanPayload(a) }, p_reason: null });
+}
+function auditNeedsReasonForDate(a){ return a.cloud && a.serverStatus !== "draft"; }
 
 function disputeEventTone(type){
   return { PROPOSED_RECLASSIFICATION:"amber", CHALLENGED:"rust", APPROVED:"green", REJECTED:"rust", CLOSED:"navy",
@@ -7054,7 +7194,7 @@ function riskOptionsList(){
 }
 function renderCheckboxGroup(name, options, currentCsv){
   const selected = (currentCsv||'').split(',').map(s=>s.trim()).filter(Boolean);
-  return `<div style="display:flex;flex-direction:column;gap:3px;padding:6px 0;">${options.map(o=>`<label style="display:flex;align-items:center;gap:6px;font-size:13px;"><input type="checkbox" name="${esc(name)}" value="${esc(o)}" ${selected.includes(o)?'checked':''}/> ${esc(o)}</label>`).join('')}</div>`;
+  return `<div style="display:flex;flex-direction:column;gap:3px;padding:6px 0;">${options.map(o=>`<label style="display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:8px;font-size:13px;text-transform:none;letter-spacing:0;color:var(--ink,inherit);text-align:left;"><input type="checkbox" name="${esc(name)}" value="${esc(o)}" ${selected.includes(o)?'checked':''} style="width:auto;flex:none;margin:0;"/> <span>${esc(o)}</span></label>`).join('')}</div>`;
 }
 function genericInputEl(field, value, attrString){
   if(field.type==='select'){
@@ -8847,6 +8987,10 @@ function applySignature(target, name, imageDataUrl){
   if(target.kind === "audit"){
     const a = state.audits.find(x=>x.id===target.auditId);
     if(!a) return;
+    if(a.cloud){
+      auditChange(a, "sign_audit", { p_id: a.id, p_role: target.role, p_signature: imageDataUrl });
+      return;
+    }
     if(!a.signOff) a.signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
     if(target.role === "auditor"){
       a.signOff.auditorName = name; a.signOff.auditorSignedAt = signedAt; a.signOff.auditorSignature = imageDataUrl;
@@ -9309,7 +9453,7 @@ function renderDashboard(){
   const labScore = labTests.length ? Math.round((labTests.filter(r=>r.status==="Pass").length/labTests.length)*1000)/10 : null;
 
   /* Management summary counts */
-  const openAudits = audits.filter(a=>a.status!=="Closed").length;
+  const openAudits = audits.filter(a=>auditIsOpen(a)).length;
   const pendingDocuments = _cdStats ? _cdStats.pending : state.documents.filter(d=>d.status==="Draft"||d.status==="Under Review").length;
   const approvedSuppliers = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
   const employeeNames = new Set();
@@ -10203,7 +10347,7 @@ function filteredAudits(){
     const haystack = (a.title+" "+a.area+" "+a.auditor+" "+(a.auditNumber||"")+" "+findingsText).toLowerCase();
     const matchesSearch = !auditSearch || haystack.includes(auditSearch.toLowerCase());
     const matchesStandard = auditStandardFilter==="All" || a.standard===auditStandardFilter;
-    const matchesStatus = auditStatusFilter==="All" || a.status===auditStatusFilter || (auditStatusFilter==="Open" && a.status!=="Closed");
+    const matchesStatus = auditStatusFilter==="All" || a.status===auditStatusFilter || (auditStatusFilter==="Open" && auditIsOpen(a));
     const matchesRisk = auditRiskFilter==="All" || a.riskLevel===auditRiskFilter;
     return matchesSearch && matchesStandard && matchesStatus && matchesRisk;
   });
@@ -10227,8 +10371,8 @@ function renderAudits(){
     ${localStorage.getItem('aqms-last-backup') ? `<div class="muted-italic" style="font-size:11px;margin:-10px 0 12px;">Last backup: ${localStorage.getItem('aqms-last-backup')}</div>` : ''}
     <div class="card p4 grid3" style="margin-bottom:16px;">
       <label class="field">Search<input id="audit-search" placeholder="Title, area, auditor, finding text…" value="${esc(auditSearch)}" /></label>
-      <label class="field">Standard<select id="audit-filter-standard"><option>All</option>${STANDARDS.map(s=>`<option ${s===auditStandardFilter?'selected':''}>${s}</option>`).join('')}</select></label>
-      <label class="field">Status<select id="audit-filter-status"><option ${auditStatusFilter==="All"?'selected':''}>All</option><option ${auditStatusFilter==="Open"?'selected':''}>Open</option>${["Planned","In Progress","Closed"].map(s=>`<option ${s===auditStatusFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Standard<select id="audit-filter-standard"><option>All</option>${STANDARDS.concat([...new Set((state.audits||[]).map(x=>x.standard).filter(s=>s && !STANDARDS.includes(s)))]).map(s=>`<option ${s===auditStandardFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Status<select id="audit-filter-status"><option ${auditStatusFilter==="All"?'selected':''}>All</option><option ${auditStatusFilter==="Open"?'selected':''}>Open</option>${["Draft","Planned","In Progress","Awaiting Sign-Off","Signed","Follow-Up Required","Closed","Cancelled"].map(s=>`<option ${s===auditStatusFilter?'selected':''}>${s}</option>`).join('')}</select></label>
       <label class="field">Risk Level<select id="audit-filter-risk"><option>All</option>${RISK_LEVELS.map(s=>`<option ${s===auditRiskFilter?'selected':''}>${s}</option>`).join('')}</select></label>
     </div>
     ${showNewAudit ? `
@@ -10273,33 +10417,72 @@ function renderAuditRow(a){
   `;
 }
 
+function renderAuditLifecycle(a){
+  const st = a.serverStatus, role = auditRoleLower();
+  const isQm = ["admin","quality manager"].includes(role);
+  const canWork = isQm || role === "auditor";
+  const hints = {
+    draft: "Draft. Set up the plan and the checklist, then confirm the plan.",
+    planned: "Planned. Start the audit when fieldwork begins. Checklist results can only be recorded once it is In Progress.",
+    in_progress: "In progress. Answer every checklist line, then submit for sign-off.",
+    awaiting_signoff: "Awaiting sign-off. The auditor signs first, then a different person approves.",
+    signed: "Signed and locked. Mark follow-up required if findings are still open, or close the audit.",
+    follow_up_required: "Follow-up required. Close the audit once every Major and Critical finding is closed.",
+    closed: "Closed. Open findings stay visible in the CAPA register.",
+    cancelled: "Cancelled." + (a.cancelReason ? " " + a.cancelReason : "")
+  };
+  const steps = (AUDIT_NEXT_STEPS[st] || []).filter(x => x.qm ? isQm : canWork);
+  const unanswered = (a.sections||[]).reduce((n,s)=>n+(s.items||[]).filter(i=>!i.result).length, 0);
+  return `
+    <div class="card p4" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;">
+        <span class="tag tag-${statusTone[a.status]||'neutral'}">${esc(a.status)}</span>
+        <span style="font-size:12px;color:var(--muted);">${esc(hints[st]||'')}</span>
+      </div>
+      ${st==='in_progress' && unanswered>0 ? `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;">${unanswered} checklist line(s) still unanswered.</div>` : ''}
+      <div class="flex-wrap">
+        ${steps.map(x => `<button class="btn ${x.cls}" style="font-size:12px;" data-action="audit-transition" data-audit="${a.id}" data-to="${x.to}" ${x.reason?`data-reason="${esc(x.reason)}"`:''}>${esc(x.label)}</button>`).join('')}
+        ${auditCanCancel(a) ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-action="audit-transition" data-audit="${a.id}" data-to="cancelled" data-reason="Why is this audit being cancelled? (at least 10 characters)">Cancel audit</button>` : ''}
+      </div>
+    </div>`;
+}
+
 function renderAuditDetail(a){
   const items = a.sections.flatMap(s=>s.items).filter(i=>i.result==="Pass"||i.result==="Fail");
   const score = items.length ? Math.round((items.filter(i=>i.result==="Pass").length/items.length)*100) : null;
   const signOff = a.signOff || { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
   const ap = a.auditPlan || { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: a.standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] };
-  const locked = !!signOff.auditorSignedAt;
+  const cloud = !!a.cloud, st = a.serverStatus, myRole = auditRoleLower();
+  const auditorSigned = !!signOff.auditorSignedAt;
+  const headerEditable = cloud ? ["draft","planned","in_progress"].includes(st) : !auditorSigned;
+  const resultsEditable = cloud ? st === "in_progress" : !auditorSigned;
+  const locked = !headerEditable;
   const lockStyle = locked ? 'opacity:.55;pointer-events:none;' : '';
+  const resultLockStyle = (!locked && !resultsEditable) ? 'opacity:.55;pointer-events:none;' : '';
+  const canSignAuditor = cloud ? (st === "awaiting_signoff" && ["admin","quality manager","auditor"].includes(myRole)) : true;
+  const canSignApprover = cloud ? (st === "awaiting_signoff" && auditorSigned && ["admin","quality manager","approver"].includes(myRole)) : auditorSigned;
+  const canUnsign = cloud ? (["awaiting_signoff","signed"].includes(st) && ["admin","quality manager"].includes(myRole)) : true;
   return `
     ${a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">🔄 This audit's CAPA findings are shared and live — but the full audit record (checklist, plan, sign-off) was created on a teammate's device and hasn't been migrated to shared storage yet. That's next on the roadmap.</p></div>` : ''}
+    ${cloud ? renderAuditLifecycle(a) : (cloudReady() && !a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">⚠ This audit is stored only on this device (created before audits moved to the database). It has no enforced lifecycle or sign-off lock. Create new audits for real work.</p></div>` : '')}
     <div class="card p4" style="margin-bottom:12px;">
-      <div class="grid2">
+      <div class="grid2" style="${lockStyle}">
         <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
         <label class="field">Audit Scope<input data-audit-field="${a.id}:title" value="${esc(a.title)}" /></label>
-        <label class="field">Standard<select data-audit-field="${a.id}:standard">${STANDARDS.map(s=>`<option ${s===a.standard?'selected':''}>${s}</option>`).join('')}</select></label>
+        <label class="field">Standard<select data-audit-field="${a.id}:standard" ${cloud && st!=='draft' ? 'disabled' : ''}>${standardOptionsFor(a.standard).map(s=>`<option ${s===a.standard?'selected':''}>${s}</option>`).join('')}</select></label>
         <label class="field">Department / Area<input data-audit-field="${a.id}:area" value="${esc(a.area)}" /></label>
         <label class="field">Auditor<input data-audit-field="${a.id}:auditor" value="${esc(a.auditor)}" placeholder="e.g. Sandiso" /></label>
         <label class="field">Auditee<input data-audit-field="${a.id}:auditee" value="${esc(a.auditee)}" placeholder="e.g. Saider" /></label>
         <label class="field">Date<input type="date" data-audit-field="${a.id}:date" value="${a.date}" /></label>
-        <label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>
+        ${cloud ? `<label class="field">Status<input value="${esc(a.status)}" disabled style="opacity:.7;" /></label>` : `<label class="field">Status<select data-audit-field="${a.id}:status">${["Planned","In Progress","Closed"].map(s=>`<option ${s===a.status?'selected':''}>${s}</option>`).join('')}</select></label>`}
         <label class="field">Risk Level<select data-audit-field="${a.id}:riskLevel">${RISK_LEVELS.map(s=>`<option ${s===a.riskLevel?'selected':''}>${s}</option>`).join('')}</select></label>
-        <label class="field">Audit Type<select data-audit-field="${a.id}:auditType">${AUDIT_TYPES.map(t=>`<option ${t===(a.auditType||'Internal')?'selected':''}>${t}</option>`).join('')}</select></label>
+        <label class="field">Audit Type<select data-audit-field="${a.id}:auditType" ${cloud && st!=='draft' ? 'disabled' : ''}>${AUDIT_TYPES.map(t=>`<option ${t===(a.auditType||'Internal')?'selected':''}>${t}</option>`).join('')}</select></label>
       </div>
       <div class="top-border" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
         ${score!==null ? `<div style="display:flex;align-items:center;gap:8px;"><span class="serif" style="font-size:18px;color:var(--navy);">${score}%</span><span style="font-size:12px;color:var(--muted);">compliance score</span></div>` : `<span class="muted-italic">Score appears once checklist items are marked</span>`}
         <div class="flex-wrap">
           <button class="btn btn-ghost" data-action="export-audit-pdf" data-audit="${a.id}">📄 PDF Report</button>
-          <button class="btn btn-danger" data-action="delete-audit" data-audit="${a.id}">Delete Audit</button>
+          ${cloud ? '' : `<button class="btn btn-danger" data-action="delete-audit" data-audit="${a.id}">Delete Audit</button>`}
         </div>
       </div>
     </div>
@@ -10357,7 +10540,10 @@ function renderAuditDetail(a){
 
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Checklist</h3>
-      ${locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 Signed off — unsign below to make further edits.</div>` : ''}
+      ${cloud
+        ? (locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 ${st==='awaiting_signoff' ? 'Awaiting sign-off — the checklist is locked. Return the audit for rework to change it.' : 'Locked — the checklist can no longer change.'}</div>`
+                  : (!resultsEditable ? `<div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Checklist results can be recorded once the audit is In Progress. You can still add or remove lines until then.</div>` : ''))
+        : (locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 Signed off — unsign below to make further edits.</div>` : '')}
       <div style="${lockStyle}">
       ${a.sections.map(sec => `
         <div class="section-box">
@@ -10367,14 +10553,14 @@ function renderAuditDetail(a){
           </div>
           ${sec.items.map(it => `
             <div class="item-row">
-              <div class="result-toggle">
+              <div class="result-toggle" style="${resultLockStyle}">
                 <button data-toggle-result="${a.id}:${sec.id}:${it.id}:Pass" class="${it.result==='Pass'?'active':''}" style="color:#3f6b2e;">✓</button>
                 <button data-toggle-result="${a.id}:${sec.id}:${it.id}:Fail" class="${it.result==='Fail'?'active':''}" style="color:#9b3f28;">✕</button>
                 <button data-toggle-result="${a.id}:${sec.id}:${it.id}:NA" class="${it.result==='NA'?'active':''}" style="color:#a39a86;">–</button>
               </div>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:14px;">${esc(it.text)}</div>
-                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
+                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" ${resultsEditable?'':'disabled'} data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
                 ${it.photo
                   ? `<div style="margin-top:6px;"><img src="${it.photo}" style="max-width:90px;max-height:90px;border-radius:6px;display:block;object-fit:cover;" /><button class="x-btn" data-action="remove-item-photo" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}" style="font-size:11px;margin-top:4px;">✕ Remove Photo</button></div>`
                   : `<input type="file" accept="image/*" data-item-photo="${a.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
@@ -10398,7 +10584,7 @@ function renderAuditDetail(a){
 
     <div class="card p4">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Findings & CAPA</h3>
-      ${locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 Signed off — unsign below to make further edits.</div>` : ''}
+      ${locked ? `<div style="font-size:12px;color:var(--rust);margin-bottom:8px;">🔒 ${cloud ? 'Locked with the audit. Follow-up on each finding continues in the CAPA register; use Correction Request or Dispute Tracking to challenge what was found.' : 'Signed off — unsign below to make further edits.'}</div>` : ''}
       <div style="${lockStyle}">
       ${a.findings.map(f => `
         <div class="finding-box">
@@ -10498,11 +10684,11 @@ function renderAuditDetail(a){
               ${signOff.auditorSignature ? `<img src="${signOff.auditorSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
               <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.auditorName)}</strong></div>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.auditorSignedAt).toLocaleString()}</div>
-              <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="auditor">Unsign</button>
+              ${canUnsign ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="auditor">Revoke signature</button>` : ''}
             </div>
-          ` : `
+          ` : (canSignAuditor ? `
             <button class="btn btn-primary" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="auditor">✍️ Sign as Auditor</button>
-          `}
+          ` : `<span class="muted-italic" style="font-size:12px;">Available once the audit is awaiting sign-off.</span>`)}
         </div>
         <div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:6px;">APPROVAL SIGN-OFF</div>
@@ -10511,14 +10697,14 @@ function renderAuditDetail(a){
               ${signOff.approverSignature ? `<img src="${signOff.approverSignature}" style="max-height:44px;display:block;margin-bottom:4px;" />` : ''}
               <div style="font-size:13px;">✓ Signed by <strong>${esc(signOff.approverName)}</strong></div>
               <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${new Date(signOff.approverSignedAt).toLocaleString()}</div>
-              <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="approver">Unsign</button>
+              ${canUnsign ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-audit" data-audit="${a.id}" data-role="approver">Revoke signature</button>` : ''}
             </div>
-          ` : `
-            <button class="btn ${locked?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="approver" ${!locked?'disabled title="Auditor must sign first"':''}>✍️ Sign as Approver</button>
-          `}
+          ` : (canSignApprover ? `
+            <button class="btn btn-primary" style="font-size:12px;" data-action="sign-audit" data-audit="${a.id}" data-role="approver">✍️ Sign as Approver</button>
+          ` : `<span class="muted-italic" style="font-size:12px;">${cloud ? (auditorSigned ? 'A different person from the auditor, with approver rights, signs here.' : 'The auditor signs first.') : 'Auditor must sign first'}</span>`)}
         </div>
       </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:10px;">Signing locks the checklist and findings against further edits. Unsign to make corrections.</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:10px;">${cloud ? 'Signing locks the checklist, and what was found, in the database. Two different people must sign. Revoking a signature needs an admin or quality manager and a written reason, and is recorded.' : 'Signing locks the checklist and findings against further edits. Unsign to make corrections.'}</div>
     </div>
   `;
 }
@@ -12731,7 +12917,7 @@ function renderChecklists(){
     </div>
     <p class="muted-italic" style="font-size:12px;margin:-10px 0 16px;">Standalone checklists — no audit record, no audit number. Pick a template, fill it in, export it. Use the Audit Register instead when you need a formal tracked audit with findings and CAPA.</p>
     <div class="card p4" style="margin-bottom:16px;">
-      <label class="field">Filter by Template<select id="checklist-filter-template"><option>All</option>${STANDARDS.map(s=>`<option ${s===checklistTemplateFilter?'selected':''}>${s}</option>`).join('')}</select></label>
+      <label class="field">Filter by Template<select id="checklist-filter-template"><option>All</option>${ALL_CHECKLIST_TEMPLATES.map(s=>`<option ${s===checklistTemplateFilter?'selected':''}>${s}</option>`).join('')}</select></label>
     </div>
     ${showNewChecklist ? renderNewChecklistForm() : ''}
     <div>
@@ -12743,7 +12929,7 @@ function renderChecklists(){
 function renderNewChecklistForm(){
   return `
     <div class="card p4 grid2" style="margin-bottom:16px;">
-      <label class="field" style="grid-column:1/-1;">Checklist Template<select id="nc-template">${STANDARDS.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <label class="field" style="grid-column:1/-1;">Checklist Template<select id="nc-template">${ALL_CHECKLIST_TEMPLATES.map(s=>`<option>${s}</option>`).join('')}</select></label>
       <label class="field">Location / Area<input id="nc-location" placeholder="e.g. Warehouse Bay 2" /></label>
       <label class="field">Inspector<input id="nc-inspector" placeholder="e.g. S. Mabeka" /></label>
       <label class="field">Date<input type="date" id="nc-date" value="${today()}" /></label>
@@ -14295,7 +14481,7 @@ function attachHandlers(){
   const toggleNew = document.querySelector('[data-action="toggle-new-audit"]'); if(toggleNew) toggleNew.onclick=()=>{ showNewAudit=!showNewAudit; render(); };
   const cancelNew = document.querySelector('[data-action="cancel-new-audit"]'); if(cancelNew) cancelNew.onclick=()=>{ showNewAudit=false; render(); };
   const createAudit = document.querySelector('[data-action="create-audit"]');
-  if(createAudit) createAudit.onclick=()=>{
+  if(createAudit) createAudit.onclick=async()=>{
     const title = document.getElementById('na-title').value.trim();
     if(!title) return;
     const standard = document.getElementById('na-standard').value;
@@ -14303,6 +14489,20 @@ function attachHandlers(){
     const auditType = document.getElementById('na-audit-type').value;
     const tmpl = TEMPLATES[standard];
     const sections = tmpl ? tmpl.map(s=>({name:s.name, items:[...s.items]})) : [{name:"General", items:[]}];
+    if(cloudReady() && currentProfile && currentProfile.status === "Active"){
+      const draft = seedAudit(title, standard, area, sections, null, auditType);
+      const r = await auditRpc("create_audit", {
+        p_id: draft.id, p_title: title, p_standard: standard, p_area: area, p_audit_type: auditType,
+        p_risk_level: draft.riskLevel, p_audit_date: draft.date, p_auditee: null, p_auditor_name: null,
+        p_plan: auditPlanPayload(draft),
+        p_sections: draft.sections.map(sec => ({ id: sec.id, name: sec.name, items: sec.items.map(it => ({ id: it.id, text: it.text })) }))
+      });
+      if(!r.ok) return;
+      showNewAudit = false; openAuditId = draft.id;
+      await fetchAuditsFromCloud(draft.id);
+      logActivity(`Audit "${title}" created as a draft`);
+      return;
+    }
     state.auditSeq = (state.auditSeq||0) + 1;
     const auditNumber = formatAuditNumber(state.auditSeq, new Date().getFullYear());
     const a = seedAudit(title, standard, area, sections, auditNumber, auditType);
@@ -14316,9 +14516,23 @@ function attachHandlers(){
   });
 
   document.querySelectorAll('[data-audit-field]').forEach(el=>{
-    el.onchange = () => {
+    el.onchange = async () => {
       const [id, field] = el.dataset.auditField.split(':');
       const a = state.audits.find(x=>x.id===id);
+      if(a.cloud){
+        const map = { title:"title", area:"area", auditor:"auditor_name", auditee:"auditee", date:"audit_date", riskLevel:"risk_level", auditType:"audit_type", standard:"standard" };
+        if(!map[field]) return;
+        let reason = null;
+        if(field === "date" && auditNeedsReasonForDate(a)){
+          reason = prompt("Why is the audit date changing? (at least 10 characters)");
+          if(reason === null || reason.trim().length < 10){
+            if(reason !== null) alert("Please give a reason of at least 10 characters.");
+            await fetchAuditsFromCloud(a.id); return;
+          }
+        }
+        await auditChange(a, "update_audit_header", { p_id: a.id, p_changes: { [map[field]]: el.value }, p_reason: reason });
+        return;
+      }
       const oldValue = a[field];
       a[field] = el.value;
       if((field==="status" || field==="riskLevel") && oldValue !== el.value){
@@ -14341,6 +14555,7 @@ function attachHandlers(){
       if(!a.auditPlan){ a.auditPlan = { organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards:"", auditLanguage:"English", scope:"", objectives:"", itinerary: [] }; }
       a.auditPlan[field] = el.value;
       persist();
+      if(a.cloud) pushAuditPlan(a);
     };
   });
   document.querySelectorAll('[data-action="add-team-member"]').forEach(el=>el.onclick=()=>{
@@ -14355,6 +14570,7 @@ function attachHandlers(){
     if(!existing.includes(name)) existing.push(name);
     a.auditPlan.teamMembers = existing.join(", ");
     persist(); render();
+    if(a.cloud) pushAuditPlan(a);
   });
   document.querySelectorAll('#app input[id^="add-team-member-"]').forEach(el=>{
     el.onkeydown = (e) => {
@@ -14371,6 +14587,7 @@ function attachHandlers(){
     const existing = (a.auditPlan.teamMembers||"").split(",").map(s=>s.trim()).filter(Boolean);
     a.auditPlan.teamMembers = existing.filter(n=>n!==el.dataset.member).join(", ");
     persist(); render();
+    if(a.cloud) pushAuditPlan(a);
   });
   document.querySelectorAll('[data-audit-conclusion-field]').forEach(el=>{
     el.onchange = () => {
@@ -14379,6 +14596,7 @@ function attachHandlers(){
       if(!a.conclusion){ a.conclusion = { result:"", summary:"" }; }
       a.conclusion[field] = el.value;
       persist(); render();
+      if(a.cloud) pushAuditPlan(a);
     };
   });
   document.querySelectorAll('[data-audit-approvals-field]').forEach(el=>{
@@ -14388,6 +14606,7 @@ function attachHandlers(){
       if(!a.approvals){ a.approvals = { preparedBy:"", reviewedBy:"", approvedBy:"" }; }
       a.approvals[field] = el.value;
       persist();
+      if(a.cloud) pushAuditPlan(a);
     };
   });
   document.querySelectorAll('[data-itinerary-field]').forEach(el=>{
@@ -14397,6 +14616,7 @@ function attachHandlers(){
       if(a.auditPlan && a.auditPlan.itinerary && a.auditPlan.itinerary[idx]){
         a.auditPlan.itinerary[idx][field] = el.value;
         persist();
+        if(a.cloud) pushAuditPlan(a);
       }
     };
   });
@@ -14406,11 +14626,12 @@ function attachHandlers(){
     if(!a.auditPlan.itinerary) a.auditPlan.itinerary = [];
     a.auditPlan.itinerary.push({ date:"", time:"", auditor:"", activity:"", keyContact:"" });
     persist(); render();
+    if(a.cloud) pushAuditPlan(a);
   });
   document.querySelectorAll('[data-action="remove-itinerary-row"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const idx = parseInt(el.dataset.row, 10);
-    if(a.auditPlan && a.auditPlan.itinerary){ a.auditPlan.itinerary.splice(idx, 1); persist(); render(); }
+    if(a.auditPlan && a.auditPlan.itinerary){ a.auditPlan.itinerary.splice(idx, 1); persist(); render(); if(a.cloud) pushAuditPlan(a); }
   });
   document.querySelectorAll('[data-action="sign-audit"]').forEach(el=>el.onclick=()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
@@ -14420,9 +14641,25 @@ function attachHandlers(){
     sigPadDrawingDataUrl = null; sigPadHasDrawn = false;
     render();
   });
-  document.querySelectorAll('[data-action="unsign-audit"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="audit-transition"]').forEach(el=>el.onclick=async()=>{
+    const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(!a || !a.cloud) return;
+    let reason = null;
+    if(el.dataset.reason){
+      reason = prompt(el.dataset.reason);
+      if(reason === null) return;
+    }
+    await auditChange(a, "set_audit_status", { p_id: a.id, p_to: el.dataset.to, p_reason: reason });
+  });
+  document.querySelectorAll('[data-action="unsign-audit"]').forEach(el=>el.onclick=async()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     if(!a || !a.signOff) return;
+    if(a.cloud){
+      const why = prompt("Why is this signature being revoked? (at least 15 characters)");
+      if(why === null) return;
+      await auditChange(a, "unsign_audit", { p_id: a.id, p_role: el.dataset.role, p_reason: why });
+      return;
+    }
     const role = el.dataset.role;
     const u = currentUser();
     const signedName = role==="auditor" ? a.signOff.auditorName : a.signOff.approverName;
@@ -14594,12 +14831,17 @@ function attachHandlers(){
     render();
   });
 
-  document.querySelectorAll('[data-toggle-result]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-toggle-result]').forEach(el=>el.onclick=async()=>{
     const [auditId, secId, itemId, val] = el.dataset.toggleResult.split(':');
     const a = state.audits.find(x=>x.id===auditId);
     const sec = a.sections.find(s=>s.id===secId);
     const item = sec.items.find(i=>i.id===itemId);
-    item.result = item.result===val ? null : val;
+    const newResult = item.result===val ? null : val;
+    if(a.cloud){
+      const r = await auditRpc("set_audit_item_result", { p_item_id: itemId, p_result: newResult });
+      if(!r.ok){ await fetchAuditsFromCloud(a.id); return; }
+    }
+    item.result = newResult;
     if(item.result==="Fail"){
       const existing = item.linkedFindingId && a.findings.find(f=>f.id===item.linkedFindingId);
       if(!existing){
@@ -14625,13 +14867,18 @@ function attachHandlers(){
       }
     }
     persist(); render();
+    if(a.cloud) fetchAuditsFromCloud(a.id);
   });
 
-  document.querySelectorAll('[data-item-note]').forEach(el=>el.onchange=()=>{
+  document.querySelectorAll('[data-item-note]').forEach(el=>el.onchange=async()=>{
     const [auditId, secId, itemId] = el.dataset.itemNote.split(':');
     const a = state.audits.find(x=>x.id===auditId);
     const sec = a.sections.find(s=>s.id===secId);
     const item = sec.items.find(i=>i.id===itemId);
+    if(a.cloud){
+      const r = await auditRpc("set_audit_item_note", { p_item_id: itemId, p_note: el.value });
+      if(!r.ok){ await fetchAuditsFromCloud(a.id); return; }
+    }
     item.note = el.value; persist();
   });
 
@@ -14666,32 +14913,58 @@ function attachHandlers(){
     f.photo = null; persist(); render();
   });
 
-  document.querySelectorAll('[data-action="remove-item"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="remove-item"]').forEach(el=>el.onclick=async()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const sec = a.sections.find(s=>s.id===el.dataset.section);
+    if(a.cloud){
+      let reason = null;
+      if(a.serverStatus === "in_progress"){
+        reason = prompt("Why is this checklist line being removed? (at least 10 characters)");
+        if(reason === null) return;
+      }
+      await auditChange(a, "remove_audit_item", { p_item_id: el.dataset.item, p_reason: reason });
+      return;
+    }
     sec.items = sec.items.filter(i=>i.id!==el.dataset.item);
     persist(); render();
   });
 
-  document.querySelectorAll('[data-action="add-item"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="add-item"]').forEach(el=>el.onclick=async()=>{
     const input = document.querySelector(`[data-new-item="${el.dataset.audit}:${el.dataset.section}"]`);
     const text = input.value.trim(); if(!text) return;
     const a = state.audits.find(x=>x.id===el.dataset.audit);
     const sec = a.sections.find(s=>s.id===el.dataset.section);
+    if(a.cloud){
+      await auditChange(a, "add_audit_item", { p_audit_id: a.id, p_section_id: sec.id, p_item_id: uid(), p_text: text });
+      return;
+    }
     sec.items.push({id:uid(), text, result:null, note:""});
     persist(); render();
   });
 
-  document.querySelectorAll('[data-action="remove-section"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="remove-section"]').forEach(el=>el.onclick=async()=>{
     const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(a.cloud){
+      let reason = null;
+      if(a.serverStatus === "in_progress"){
+        reason = prompt("Why is this section being removed? (at least 10 characters)");
+        if(reason === null) return;
+      }
+      await auditChange(a, "remove_audit_section", { p_section_id: el.dataset.section, p_reason: reason });
+      return;
+    }
     a.sections = a.sections.filter(s=>s.id!==el.dataset.section);
     persist(); render();
   });
 
-  document.querySelectorAll('[data-action="add-section"]').forEach(el=>el.onclick=()=>{
+  document.querySelectorAll('[data-action="add-section"]').forEach(el=>el.onclick=async()=>{
     const input = document.getElementById(`new-section-${el.dataset.audit}`);
     const name = input.value.trim(); if(!name) return;
     const a = state.audits.find(x=>x.id===el.dataset.audit);
+    if(a.cloud){
+      await auditChange(a, "add_audit_section", { p_audit_id: a.id, p_section_id: uid(), p_name: name });
+      return;
+    }
     a.sections.push({id:uid(), name, items:[]});
     persist(); render();
   });
