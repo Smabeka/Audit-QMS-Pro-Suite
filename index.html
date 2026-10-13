@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -8561,6 +8561,7 @@ const NAV_MODULES = [
   { id:"nav-documents", icon:"📁", label:"Document Control", isActive(){ return tab==="documents"; }, action(){ tab="documents"; } },
   { id:"nav-audit", icon:"🔍", label:"Audit Management", children:[
       { id:"nav-audit-register", label:"Audit Register", isActive(){ return tab==="audits"; }, action(){ tab="audits"; } },
+      { id:"nav-audit-programme", label:"Audit Programme", isActive(){ return tab==="audit-programme"; }, action(){ tab="audit-programme"; } },
       { id:"nav-audit-planning", label:"Audit Planning", isActive(){ return tab==="audit-planning"; }, action(){ tab="audit-planning"; } },
       { id:"nav-audit-checklists", label:"Checklists", isActive(){ return tab==="checklists"; }, action(){ tab="checklists"; } }
     ]
@@ -9111,7 +9112,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
@@ -18460,6 +18461,329 @@ function showUpdateBanner(){
   window.ncrReset = function(){
     nc.loaded = false; nc.loading = false; nc.error = ''; nc.rows = []; nc.events = []; nc.links = []; nc.profiles = []; nc.capas = []; nc.reviews = []; nc.evidence = [];
     nc.open = null; nc.filter = 'active'; modal = null; mount();
+  };
+})();
+</script>
+
+<script>
+/* ===== Audit Programme (stage 2): annual schedule, planned vs original vs actual, approved changes ===== */
+(function(){
+  var FREQ = [['annual','Annual'],['six_monthly','Six-monthly'],['quarterly','Quarterly'],['monthly','Monthly'],['ad_hoc','Ad hoc / for cause']];
+  var RISK = [['Low','Low'],['Medium','Medium'],['High','High'],['Critical','Critical']];
+  var ST_LABEL = { planned:'Planned', in_progress:'In progress', completed:'Completed', cancelled:'Cancelled' };
+  var ST_TONE = { planned:'neutral', in_progress:'amber', completed:'green', cancelled:'rust' };
+  var EV_LABEL = { programme_created:'Programme created', programme_approved:'Programme approved (original dates frozen)', programme_closed:'Programme closed',
+    item_added:'Audit added', item_added_after_approval:'Audit added after approval', item_edited:'Audit edited', item_reassessed:'Reassessed after approval',
+    item_removed:'Audit removed', change_requested:'Change requested', change_approved:'Change approved', change_rejected:'Change rejected',
+    audit_linked:'Audit record linked', completed_by_audit:'Completed (audit signed)', audit_unlinked_cancelled:'Audit cancelled, line freed', reopened_by_audit:'Reopened (signature revoked)' };
+  var P = { loaded:false, loading:false, error:'', year:new Date().getFullYear(), programmes:[], items:[], changes:[], events:[], profiles:[], showEvents:false };
+  var modal = null;
+
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function day(d){ if(!d) return '—'; var x = new Date(String(d).length === 10 ? d + 'T00:00:00' : d); return isNaN(x.getTime()) ? String(d) : x.toLocaleDateString(); }
+  function stamp(d){ if(!d) return '—'; var x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleString(); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function myId(){ try{ return (currentCloudUser && currentCloudUser.id) || (currentProfile && currentProfile.id) || null; }catch(_){ return null; } }
+  function can(list){ return list.indexOf(myRole()) !== -1; }
+  function canPlan(){ return can(['admin','quality manager','auditor']); }
+  function canDecide(){ return can(['admin','quality manager']); }
+  function nameOf(id){ for(var i = 0; i < P.profiles.length; i++){ if(P.profiles[i].id === id) return P.profiles[i].full_name || String(id).slice(0, 8); } return id ? String(id).slice(0, 8) : '—'; }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function lbl(list, v){ for(var i = 0; i < list.length; i++){ if(list[i][0] === v) return list[i][1]; } return v || '—'; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())); }
+
+  function cur(){ for(var i = 0; i < P.programmes.length; i++){ if(P.programmes[i].year === P.year) return P.programmes[i]; } return null; }
+  function itemsOf(p){ return P.items.filter(function(i){ return i.programme_id === p.id; }).sort(function(a, b){ return String(a.planned_date).localeCompare(String(b.planned_date)); }); }
+  function pendingFor(id){ for(var i = 0; i < P.changes.length; i++){ if(P.changes[i].item_id === id && P.changes[i].status === 'pending') return P.changes[i]; } return null; }
+  function overdue(it){ return (it.status === 'planned' || it.status === 'in_progress') && String(it.planned_date) < today(); }
+  function daysLate(it){ return Math.floor((new Date(today() + 'T00:00:00') - new Date(it.planned_date + 'T00:00:00')) / 86400000); }
+
+  async function load(){
+    if(P.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()){ P.error = 'Sign in to the cloud to use the audit programme.'; return; }
+    P.loading = true; P.error = '';
+    try{
+      var res = await Promise.all([ fetchAllRows('audit_programmes'), fetchAllRows('audit_programme_items'),
+        fetchAllRows('audit_programme_changes', function(q){ return q.order('requested_at', { ascending:true }); }),
+        fetchAllRows('audit_programme_events', function(q){ return q.order('created_at', { ascending:true }); }) ]);
+      var bad = res.filter(function(r){ return r.error; })[0];
+      if(bad){ P.error = bad.error.message; }
+      else {
+        P.programmes = res[0].data; P.items = res[1].data; P.changes = res[2].data; P.events = res[3].data;
+        var pr = await supabaseClient.from('profiles').select('id, full_name');
+        if(!pr.error) P.profiles = pr.data || [];
+        var yrs = P.programmes.map(function(x){ return x.year; });
+        if(yrs.length && yrs.indexOf(P.year) === -1 && !P.yearChosen) P.year = Math.max.apply(null, yrs);
+        P.loaded = true;
+      }
+    }catch(err){ P.error = (err && err.message) || String(err); }
+    P.loading = false; rerender();
+  }
+
+  /* ---------- modal ---------- */
+  function mount(){
+    var host = document.getElementById('prog-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'prog-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(cfg){ modal = cfg; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function opts(list, blank, sel){
+    return (blank ? '<option value="">' + e(blank) + '</option>' : '') +
+      list.map(function(o){ return '<option value="' + e(o[0]) + '"' + (sel != null && String(sel) === String(o[0]) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('');
+  }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var ctl, id = 'pgf-' + x.id;
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="3" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + opts(x.options, x.blank, x.value) + '</select>';
+      else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div' + (x.full === false ? '' : ' style="grid-column:1/-1;"') + '><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-pg-modal="overlay"><div class="modal-card" style="max-width:520px;">' +
+      '<h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') +
+      '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-pg-modal="cancel">Cancel</button>' +
+      '<button class="btn btn-primary" data-pg-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){ var el = document.getElementById('pgf-' + x.id); v[x.id] = el ? String(el.value || '').trim() : ''; });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount();
+    var cfg = modal;
+    var r = await supabaseClient.rpc(cfg.fn, cfg.args(v));
+    if(r.error){ modal.busy = false; mount(); toast(r.error.message, 'error'); return; }
+    modal = null; mount(); toast(cfg.successText || 'Saved.');
+    P.loading = false; await load();
+  }
+  async function direct(fn, args, okText){
+    var r = await supabaseClient.rpc(fn, args);
+    if(r.error){ toast(r.error.message, 'error'); return false; }
+    toast(okText || 'Done.'); await load(); return true;
+  }
+
+  /* ---------- actions ---------- */
+  function itemFields(it, afterApproval){
+    var f = [
+      { id:'title', label:'Audit title', required:true, value:it ? it.title : '', placeholder:'e.g. Internal audit — Packing hall' },
+      { id:'area', label:'Process / department', value:it ? it.area : '', full:false },
+      { id:'standard', label:'Standard', type:'select', options:STANDARDS.map(function(s){ return [s, s]; }).concat(it && it.standard && STANDARDS.indexOf(it.standard) === -1 ? [[it.standard, it.standard]] : []), blank:'—', value:it ? it.standard : '', full:false },
+      { id:'audit_type', label:'Type', type:'select', options:[['Internal','Internal'],['External','External']], value:it ? it.audit_type : 'Internal', full:false },
+      { id:'risk', label:'Risk', type:'select', options:RISK, value:it ? it.risk_level : 'Medium', full:false },
+      { id:'freq', label:'Frequency', type:'select', options:FREQ, value:it ? it.frequency : 'annual', full:false },
+      { id:'lead', label:'Lead auditor', value:it ? it.lead_auditor_name : '', full:false }
+    ];
+    if(!it) f.push({ id:'date', label:'Planned date', type:'date', required:true, value:'', full:false });
+    if(afterApproval) f.push({ id:'reason', label:'Reason (at least 10 characters)', type:'textarea', required:true });
+    return f;
+  }
+  function actCreateProgramme(){
+    openModal({ title:'Create the ' + P.year + ' audit programme', submitText:'Create', successText:'Programme created as a draft.',
+      help:'A draft can be edited freely. A different quality manager or admin must approve it; approval freezes the original dates.',
+      fields:[ { id:'title', label:'Title', value:'Internal audit programme ' + P.year, required:true } ],
+      fn:'create_audit_programme', args:function(v){ return { p_id:newId(), p_year:P.year, p_title:v.title }; } });
+  }
+  function actAddItem(p){
+    var after = p.status === 'approved';
+    openModal({ title:'Add an audit to the programme', submitText:'Add', successText:'Audit added.',
+      help: after ? 'The programme is approved, so this is recorded as added after approval, with your reason.' : 'Pick the planned date within ' + p.year + '.',
+      fields:itemFields(null, after),
+      fn:'add_programme_item', args:function(v){ return { p_id:newId(), p_programme:p.id, p_title:v.title, p_area:v.area, p_standard:v.standard, p_audit_type:v.audit_type,
+        p_risk:v.risk, p_frequency:v.freq, p_lead:v.lead, p_date:v.date, p_reason:v.reason || null }; } });
+  }
+  function actEdit(it, p){
+    var after = p.status === 'approved';
+    var fields = itemFields(it, after);
+    if(!after) fields.push({ id:'date', label:'Planned date', type:'date', value:it.planned_date, full:false });
+    openModal({ title: after ? 'Reassess this audit' : 'Edit this audit', submitText:'Save', successText:'Saved.',
+      help: after ? 'Changes after approval are logged with your reason. To move the date, use "Request date change".' : '',
+      fields:fields,
+      fn:'update_programme_item', args:function(v){
+        var c = { title:v.title, area:v.area, standard:v.standard, audit_type:v.audit_type, risk_level:v.risk, frequency:v.freq, lead_auditor_name:v.lead };
+        if(!after && v.date) c.planned_date = v.date;
+        return { p_item:it.id, p_changes:c, p_reason:v.reason || null }; } });
+  }
+  function actChange(it, p){
+    openModal({ title:'Request a change for this audit', submitText:'Send request', successText:'Request sent for approval.',
+      help:'Another quality manager or admin must approve it. Approved date moves count as postponements against the original date.',
+      fields:[
+        { id:'kind', label:'What do you need', type:'select', options:[['reschedule','Move to a new date'],['cancel','Cancel this audit']], value:'reschedule' },
+        { id:'date', label:'New date (only for a move)', type:'date', value:it.planned_date },
+        { id:'reason', label:'Reason (at least 10 characters)', type:'textarea', required:true } ],
+      fn:'request_programme_change', args:function(v){ return { p_id:newId(), p_item:it.id, p_kind:v.kind, p_new_date:v.kind === 'reschedule' ? v.date : null, p_reason:v.reason }; } });
+  }
+  function actDecide(ch, approve){
+    openModal({ title: approve ? 'Approve this request' : 'Reject this request', submitText: approve ? 'Approve' : 'Reject', successText: approve ? 'Request approved.' : 'Request rejected.',
+      fields:[ { id:'note', label: approve ? 'Note (optional)' : 'Why is it rejected', type:'textarea', required:!approve } ],
+      fn:'decide_programme_change', args:function(v){ return { p_change:ch.id, p_approve:approve, p_note:v.note || null }; } });
+  }
+  function actLink(it){
+    var taken = {}; P.items.forEach(function(i){ if(i.audit_id) taken[i.audit_id] = 1; });
+    var list = (state.audits || []).filter(function(a){ return a.cloud && a.serverStatus !== 'cancelled' && !taken[a.id]; })
+      .map(function(a){ return [a.id, (a.referenceNumber || a.reference_number || '') + ' — ' + (a.title || '') + ' [' + (a.status || '') + ']']; });
+    if(!list.length){ toast('There is no unlinked audit record. Create the audit under Audit Register first, then link it here.', 'error'); return; }
+    openModal({ title:'Link an audit record', submitText:'Link', successText:'Audit linked. The line completes when that audit is signed.',
+      help:'Choose the audit that delivers this programme line.',
+      fields:[ { id:'audit', label:'Audit', type:'select', options:list, blank:'Choose…', required:true } ],
+      fn:'link_audit_to_item', args:function(v){ return { p_item:it.id, p_audit:v.audit }; } });
+  }
+  function actClose(p){
+    openModal({ title:'Close the ' + p.year + ' programme', submitText:'Close programme', successText:'Programme closed.',
+      help:'Closing freezes the programme. Unfinished lines need a reason.',
+      fields:[ { id:'reason', label:'Reason (needed if any line is unfinished)', type:'textarea' } ],
+      fn:'close_audit_programme', args:function(v){ return { p_programme:p.id, p_reason:v.reason || null }; } });
+  }
+
+  /* ---------- metrics ---------- */
+  function metrics(its){
+    var live = its.filter(function(i){ return i.status !== 'cancelled'; });
+    var done = live.filter(function(i){ return i.status === 'completed'; });
+    var origBase = live.filter(function(i){ return i.original_date; });
+    var dueByNow = origBase.filter(function(i){ return String(i.original_date) <= today(); });
+    var onTime = dueByNow.filter(function(i){ return i.status === 'completed' && i.actual_date && String(i.actual_date) <= String(i.original_date); });
+    return { total:its.length, live:live.length, done:done.length, overdue:live.filter(overdue).length,
+      postponed:live.filter(function(i){ return i.postponed_count > 0; }).length, cancelled:its.length - live.length,
+      added:its.filter(function(i){ return i.added_after_approval; }).length, dueByNow:dueByNow.length, onTime:onTime.length,
+      pctYear: live.length ? Math.round(done.length * 100 / live.length) : null,
+      pctOrig: dueByNow.length ? Math.round(onTime.length * 100 / dueByNow.length) : null };
+  }
+  function stat(n, label, tone){
+    return '<div style="flex:1 1 120px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(label) + '</div></div>';
+  }
+
+  /* ---------- render ---------- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11px;padding:4px 8px;" data-pg="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function itemCard(it, p){
+    var od = overdue(it), pc = pendingFor(it.id), approved = p.status === 'approved', open = it.status === 'planned' || it.status === 'in_progress';
+    var moved = it.original_date && String(it.original_date) !== String(it.planned_date);
+    var dates = '<div class="audit-sub">Planned ' + e(day(it.planned_date)) +
+      (it.original_date ? ' · Original ' + e(day(it.original_date)) + (moved ? ' (moved ' + it.postponed_count + '×)' : '') : '') +
+      (it.actual_date ? ' · Actual ' + e(day(it.actual_date)) : '') + '</div>';
+    var b = [];
+    if(canPlan() && p.status !== 'closed' && open) b.push(bt('edit', { id:it.id }, approved ? 'Reassess' : 'Edit'));
+    if(canPlan() && p.status === 'draft') b.push(bt('remove', { id:it.id }, 'Remove'));
+    if(canPlan() && approved && open && !pc) b.push(bt('change', { id:it.id }, 'Request date change / cancel'));
+    if(canPlan() && approved && it.status === 'planned' && !it.audit_id) b.push(bt('link', { id:it.id }, 'Link audit record', true));
+    var pend = '';
+    if(pc){
+      var mine = pc.requested_by === myId();
+      pend = '<div style="margin-top:6px;padding:6px 8px;border:1px dashed var(--amber);border-radius:6px;font-size:12px;">⏳ ' + (pc.kind === 'cancel' ? 'Cancellation' : 'Move to ' + e(day(pc.new_date))) +
+        ' requested by ' + e(nameOf(pc.requested_by)) + ' on ' + e(stamp(pc.requested_at)) + ': “' + e(pc.reason) + '”' +
+        (canDecide() && !mine ? '<div class="flex-wrap" style="margin-top:6px;gap:6px;">' + bt('approve', { id:pc.id }, 'Approve', true) + bt('reject', { id:pc.id }, 'Reject') + '</div>' :
+          '<div class="muted-italic" style="font-size:11px;">' + (mine ? 'Waiting for someone else to decide.' : 'Waiting for a quality manager or admin.') + '</div>') + '</div>';
+    }
+    var hist = P.changes.filter(function(c){ return c.item_id === it.id && c.status !== 'pending'; }).map(function(c){
+      return '<div class="muted-italic" style="font-size:11px;">' + e(c.status === 'approved' ? '✔' : '✖') + ' ' + (c.kind === 'cancel' ? 'Cancellation' : 'Move to ' + e(day(c.new_date))) + ' ' + e(c.status) +
+        ' by ' + e(nameOf(c.decided_by)) + ' (' + e(stamp(c.decided_at)) + ') — asked by ' + e(nameOf(c.requested_by)) + ': ' + e(c.reason) + (c.decision_note ? ' · ' + e(c.decision_note) : '') + '</div>'; }).join('');
+    return '<div class="card" style="margin-bottom:8px;padding:10px 12px;">' +
+      '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;"><div style="min-width:0;"><div class="audit-title">' + e(it.title) + '</div>' +
+      '<div class="audit-sub">' + e([it.area, it.standard, it.audit_type, 'Risk ' + it.risk_level, lbl(FREQ, it.frequency), it.lead_auditor_name ? 'Lead: ' + it.lead_auditor_name : 'No lead auditor yet'].filter(Boolean).join(' · ')) + '</div>' + dates + '</div>' +
+      '<div class="flex-wrap" style="align-items:flex-start;"><span class="tag tag-' + ST_TONE[it.status] + '">' + e(ST_LABEL[it.status]) + '</span>' +
+      (od ? '<span class="tag tag-rust">Overdue ' + daysLate(it) + 'd</span>' : '') + (it.added_after_approval ? '<span class="tag tag-amber">Added after approval</span>' : '') + '</div></div>' +
+      (it.status === 'cancelled' && it.cancel_reason ? '<div class="muted-italic" style="font-size:11.5px;">Cancelled: ' + e(it.cancel_reason) + '</div>' : '') +
+      pend + hist + (b.length ? '<div class="flex-wrap" style="margin-top:8px;gap:6px;">' + b.join('') + '</div>' : '') + '</div>';
+  }
+  function monthBlocks(its, p){
+    var names = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+    var out = '';
+    for(var m = 0; m < 12; m++){
+      var list = its.filter(function(i){ return Number(String(i.planned_date).slice(5, 7)) === m + 1; });
+      if(!list.length) continue;
+      out += '<h4 style="margin:14px 0 6px;font-size:13px;color:var(--navy);">' + names[m] + ' ' + p.year + ' (' + list.length + ')</h4>' + list.map(function(i){ return itemCard(i, p); }).join('');
+    }
+    return out;
+  }
+  function trail(p){
+    var ev = P.events.filter(function(x){ return x.programme_id === p.id; });
+    if(!P.showEvents) return '<div style="margin-top:14px;">' + bt('events', {}, 'Show revision history (' + ev.length + ')') + '</div>';
+    var titleOf = {}; P.items.forEach(function(i){ titleOf[i.id] = i.title; });
+    return '<div style="margin-top:14px;"><div style="margin-bottom:6px;">' + bt('events', {}, 'Hide revision history') + '</div>' +
+      ev.slice().reverse().map(function(x){
+        var d = x.detail || {}, extra = '';
+        if(d.reason) extra += ' — ' + d.reason; if(d.note) extra += ' — ' + d.note;
+        if(d.from && d.to) extra += ' (' + day(d.from) + ' → ' + day(d.to) + ')';
+        return '<div style="font-size:11.5px;padding:3px 0;border-bottom:1px solid var(--line,#eee);">' + e(stamp(x.created_at)) + ' · ' + e(nameOf(x.actor_id)) + ' · <b>' + e(EV_LABEL[x.event_type] || x.event_type) + '</b>' +
+          (x.item_id && titleOf[x.item_id] ? ' · ' + e(titleOf[x.item_id]) : '') + e(extra) + '</div>';
+      }).join('') + '</div>';
+  }
+  window.renderAuditProgramme = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use the audit programme.</p></div>';
+      if(!P.loaded && !P.loading){ setTimeout(load, 0); }
+      var p = cur(), its = p ? itemsOf(p) : [], m = metrics(its);
+      var years = P.programmes.map(function(x){ return x.year; });
+      if(years.indexOf(P.year) === -1) years.push(P.year);
+      years.sort();
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;">' +
+        '<h2 class="serif" style="margin:0;font-size:18px;color:var(--navy);">Audit Programme</h2><div class="flex-wrap" style="gap:6px;">' +
+        '<select data-pg-year style="font-size:12px;padding:4px 8px;">' + years.map(function(y){ return '<option' + (y === P.year ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select>' +
+        bt('year-next', {}, '+ Next year') + bt('reload', {}, '↻ Refresh') + '</div></div>';
+      var body;
+      if(!p){
+        body = '<p class="muted-italic">There is no programme for ' + P.year + ' yet.</p>' + (canPlan() ? bt('create', {}, 'Create the ' + P.year + ' programme', true) : '');
+      } else {
+        var statusTag = '<span class="tag tag-' + (p.status === 'approved' ? 'green' : p.status === 'closed' ? 'navy' : 'amber') + '">' + e(p.status === 'draft' ? 'Draft — not approved' : p.status === 'approved' ? 'Approved' : 'Closed') + '</span>';
+        var sub = p.status === 'approved' || p.status === 'closed' ? 'Approved by ' + e(nameOf(p.approved_by)) + ' on ' + e(stamp(p.approved_at)) + ' · created by ' + e(nameOf(p.created_by)) : 'Created by ' + e(nameOf(p.created_by)) + '. A different quality manager or admin must approve it.';
+        var acts = [];
+        if(canPlan() && p.status !== 'closed') acts.push(bt('add', {}, '+ Add audit', true));
+        if(canDecide() && p.status === 'draft') acts.push(bt('approve-prog', {}, p.created_by === myId() ? 'Approve (needs someone else)' : 'Approve programme', true));
+        if(canDecide() && p.status === 'approved') acts.push(bt('close-prog', {}, 'Close programme'));
+        var stats = '<div class="flex-wrap" style="gap:8px;margin:10px 0;">' +
+          stat(m.total, 'audits planned') + stat(m.done, 'completed', 'green') + stat(m.overdue, 'overdue', m.overdue ? 'rust' : '') + stat(m.postponed, 'postponed') + stat(m.cancelled, 'cancelled') + stat(m.added, 'added after approval') +
+          stat(m.pctYear == null ? '—' : m.pctYear + '%', 'of the year completed') +
+          stat(m.pctOrig == null ? '—' : m.pctOrig + '%', 'done by original date (' + m.onTime + ' of ' + m.dueByNow + ' due)') + '</div>';
+        body = '<div style="margin-bottom:6px;"><b>' + e(p.title) + '</b> ' + statusTag + '<div class="muted-italic" style="font-size:11.5px;">' + sub + '</div></div>' +
+          (p.status === 'draft' ? '<p class="muted-italic" style="font-size:11.5px;">Original dates are frozen at approval. “Done by original date” counts audits whose original date has passed and that were finished on or before it, so postponing never hides a slip.</p>' : '') +
+          stats + '<div class="flex-wrap" style="gap:6px;margin-bottom:6px;">' + acts.join('') + '</div>' +
+          (its.length ? monthBlocks(its, p) : '<p class="muted-italic">No audits yet. Add the audits planned for ' + p.year + '.</p>') + trail(p);
+      }
+      return '<div class="card p4" style="border-color:var(--navy);">' + head +
+        (P.error ? '<p style="color:var(--rust);font-size:12px;">' + e(P.error) + '</p>' : '') +
+        (P.loading && !P.loaded ? '<p class="muted-italic" style="font-size:12px;">Loading…</p>' : '') + body + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Audit programme error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  function item(id){ for(var i = 0; i < P.items.length; i++){ if(P.items[i].id === id) return P.items[i]; } return null; }
+  function chg(id){ for(var i = 0; i < P.changes.length; i++){ if(P.changes[i].id === id) return P.changes[i]; } return null; }
+
+  document.addEventListener('change', function(ev){
+    var t = ev.target; if(t && t.matches && t.matches('[data-pg-year]')){ P.year = Number(t.value); P.yearChosen = true; P.showEvents = false; rerender(); }
+  });
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-pg-modal]');
+    if(m){ var k = m.getAttribute('data-pg-modal');
+      if(k === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-pg]'); if(!el) return;
+    ev.preventDefault();
+    var a = el.getAttribute('data-pg'), id = el.getAttribute('data-id'), p = cur();
+    if(a === 'reload'){ P.loading = false; load(); }
+    else if(a === 'year-next'){ var ys = P.programmes.map(function(x){ return x.year; }).concat([P.year]); P.year = Math.max.apply(null, ys) + 1; P.yearChosen = true; rerender(); }
+    else if(a === 'create') actCreateProgramme();
+    else if(a === 'add' && p) actAddItem(p);
+    else if(a === 'edit' && p){ var it = item(id); if(it) actEdit(it, p); }
+    else if(a === 'remove'){ var r = item(id); if(r && confirm('Remove “' + r.title + '” from the draft programme?')) direct('remove_programme_item', { p_item:id }, 'Removed.'); }
+    else if(a === 'change' && p){ var c = item(id); if(c) actChange(c, p); }
+    else if(a === 'link'){ var l = item(id); if(l) actLink(l); }
+    else if(a === 'approve'){ var ap = chg(id); if(ap) actDecide(ap, true); }
+    else if(a === 'reject'){ var rj = chg(id); if(rj) actDecide(rj, false); }
+    else if(a === 'approve-prog' && p){ if(confirm('Approve the ' + p.year + ' programme? Original dates are frozen from this point.')) direct('approve_audit_programme', { p_programme:p.id }, 'Programme approved.'); }
+    else if(a === 'close-prog' && p) actClose(p);
+    else if(a === 'events'){ P.showEvents = !P.showEvents; rerender(); }
+  });
+  window.auditProgrammeReset = function(){
+    P.loaded = false; P.loading = false; P.error = ''; P.programmes = []; P.items = []; P.changes = []; P.events = []; P.profiles = []; P.showEvents = false; modal = null; mount();
   };
 })();
 </script>
