@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -2897,7 +2897,8 @@ function buildAuditFromCloud(row, secs, items, sigs, evs, old){
     items: items.filter(i=>i.section_id===s.id && !i.removed).sort((x,y)=>x.position-y.position).map(i => {
       const o = oldItems[i.id] || {};
       return { id:i.id, text:i.text, result:i.result||null, note:i.note||"", photo:o.photo||null,
-               linkedFindingId:o.linkedFindingId||null, addedAfterStart:!!i.added_after_start };
+               linkedFindingId:o.linkedFindingId||null, addedAfterStart:!!i.added_after_start,
+               standard:i.standard||"", clause:i.clause||"", interviewee:i.interviewee||"", docRef:i.doc_ref||"", docVersion:i.doc_version||"", sampleRef:i.sample_ref||"" };
     })
   }));
   const signOff = { auditorName:"", auditorSignedAt:null, approverName:"", approverSignedAt:null };
@@ -2910,6 +2911,7 @@ function buildAuditFromCloud(row, secs, items, sigs, evs, old){
     id: row.id, auditNumber: row.reference_number, title: row.title, standard: row.standard || "", area: row.area || "",
     auditor: row.auditor_name || "", auditee: row.auditee || "", date: row.audit_date || "",
     status: AUDIT_STATUS_LABEL[row.status] || row.status, serverStatus: row.status,
+    criteria: row.criteria || "", methods: row.methods || [],
     riskLevel: row.risk_level, auditType: row.audit_type, sections, signOff, cancelReason: row.cancel_reason || "",
     auditPlan: Object.assign({ organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: row.standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary:[] }, plan.auditPlan || {}),
     history: evs.map(e => ({ id:e.id, date:e.created_at, text:auditEventText(e) })),
@@ -2958,6 +2960,7 @@ async function fetchAuditsFromCloud(onlyId){
     if(idx >= 0) state.audits[idx] = built; else state.audits.unshift(built);
   });
   scoreCache.clear();
+  if(onlyId && window.auditExecutionRefreshReady) window.auditExecutionRefreshReady(onlyId);
   persist(); render();
 }
 async function auditRpc(name, args){
@@ -10468,6 +10471,7 @@ function renderAuditDetail(a){
     ${a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">🔄 This audit's CAPA findings are shared and live — but the full audit record (checklist, plan, sign-off) was created on a teammate's device and hasn't been migrated to shared storage yet. That's next on the roadmap.</p></div>` : ''}
     ${cloud ? renderAuditLifecycle(a) : (cloudReady() && !a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">⚠ This audit is stored only on this device (created before audits moved to the database). It has no enforced lifecycle or sign-off lock. Create new audits for real work.</p></div>` : '')}
     ${cloud && typeof renderAuditTeamCard === 'function' ? renderAuditTeamCard(a) : ''}
+    ${cloud && typeof renderAuditExecutionCard === 'function' ? renderAuditExecutionCard(a) : ''}
     <div class="card p4" style="margin-bottom:12px;">
       <div class="grid2" style="${lockStyle}">
         <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
@@ -10563,11 +10567,12 @@ function renderAuditDetail(a){
               </div>
               <div style="flex:1;min-width:0;">
                 <div style="font-size:14px;">${esc(it.text)}</div>
-                ${it.result==='Fail' ? `<input placeholder="Note (optional)…" ${resultsEditable?'':'disabled'} data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
-                ${it.photo
+                ${(it.result==='Fail' || (a.cloud && it.result)) ? `<input placeholder="${a.cloud ? (it.result==='Fail' ? 'Evidence: what was found (at least 15 characters)…' : it.result==='Pass' ? 'Evidence: what you saw, checked or were shown…' : 'Why is this not applicable?') : 'Note (optional)…'}" ${resultsEditable?'':'disabled'} data-item-note="${a.id}:${sec.id}:${it.id}" value="${esc(it.note)}" style="border:none;border-bottom:1px solid var(--line2);border-radius:0;background:none;font-size:12px;padding:2px 0;" />
+                ${it.result!=='Fail' ? '' : it.photo
                   ? `<div style="margin-top:6px;"><img src="${it.photo}" style="max-width:90px;max-height:90px;border-radius:6px;display:block;object-fit:cover;" /><button class="x-btn" data-action="remove-item-photo" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}" style="font-size:11px;margin-top:4px;">✕ Remove Photo</button></div>`
                   : `<input type="file" accept="image/*" data-item-photo="${a.id}:${sec.id}:${it.id}" style="font-size:11px;margin-top:6px;" />`}
                 ` : ''}
+                ${a.cloud && it.result && typeof renderItemEvidence === 'function' ? renderItemEvidence(a, it) : ''}
               </div>
               <button class="x-btn" data-action="remove-item" data-audit="${a.id}" data-section="${sec.id}" data-item="${it.id}">🗑</button>
             </div>
@@ -19045,6 +19050,179 @@ function showUpdateBanner(){
   }, true);
   window.auditTeamReset = function(){ T.loaded = false; T.loading = false; T.error = ''; T.people = []; T.comp = []; T.team = []; T.ready = {}; T.readyLoading = {}; modal = null; mount(); };
   window.auditTeamRefresh = function(auditId){ T.loading = false; return refreshAll(auditId); };
+})();
+</script>
+
+<script>
+/* ===== Audit execution (stage 4a): criteria, methods, meetings, evidence per line, sign-off readiness ===== */
+(function(){
+  var METHODS = ['Interview','Observation','Document review','Records review','Sampling / testing','Site walk-through','Process walk-through','Witnessing'];
+  var X = { meetings:[], ready:{}, readyLoading:{}, loaded:false, loading:false, error:'' };
+  var modal = null;
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function stamp(d){ if(!d) return '—'; var x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleString(); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function canWork(){ return ['admin','quality manager','auditor'].indexOf(myRole()) !== -1; }
+  function auditById(id){ return (state.audits || []).filter(function(a){ return a.id === id; })[0]; }
+  function localNow(){ var d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); }
+
+  async function load(){
+    if(X.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()){ return; }
+    X.loading = true; X.error = '';
+    var r = await fetchAllRows('audit_meetings');
+    if(r.error) X.error = r.error.message; else { X.meetings = r.data; X.loaded = true; }
+    X.loading = false; rerender();
+  }
+  async function loadReady(id){
+    if(X.readyLoading[id]) return; X.readyLoading[id] = true;
+    var r = await supabaseClient.rpc('audit_signoff_readiness', { p_audit:id });
+    X.readyLoading[id] = false;
+    if(!r.error){ X.ready[id] = r.data || []; rerender(); }
+  }
+  async function refresh(id){
+    X.loading = false; await load(); X.ready[id] = null; await loadReady(id);
+    if(typeof fetchAuditsFromCloud === 'function') await fetchAuditsFromCloud(id);
+  }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('exec-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'exec-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'exf-' + x.id, ctl;
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="3" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '"><option value="">—</option>' + x.options.map(function(o){ return '<option' + (o === x.value ? ' selected' : '') + '>' + e(o) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'datetime') ctl = '<input type="datetime-local" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'checks') ctl = '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;">' + x.options.map(function(o, i){
+        return '<label style="font-size:12.5px;display:flex;align-items:center;gap:5px;text-transform:none;font-weight:400;"><input type="checkbox" style="width:auto;flex:none;" data-exck="' + e(x.id) + '" value="' + e(o) + '"' + ((x.value || []).indexOf(o) !== -1 ? ' checked' : '') + ' />' + e(o) + '</label>'; }).join('') + '</div>';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div' + (x.full === false ? '' : ' style="grid-column:1/-1;"') + '><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-ex-modal="overlay"><div class="modal-card" style="max-width:540px;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-ex-modal="cancel">Cancel</button><button class="btn btn-primary" data-ex-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){
+      if(x.type === 'checks'){ v[x.id] = Array.prototype.map.call(document.querySelectorAll('[data-exck="' + x.id + '"]:checked'), function(c){ return c.value; }); }
+      else { var el = document.getElementById('exf-' + x.id); v[x.id] = el ? String(el.value || '').trim() : ''; }
+    });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount();
+    var cfg = modal, call = cfg.call(v);
+    var r = await supabaseClient.rpc(call.fn, call.args);
+    if(r.error){ modal.busy = false; mount(); toast(r.error.message, 'error'); return; }
+    modal = null; mount(); toast(cfg.successText || 'Saved.');
+    await refresh(cfg.auditId);
+  }
+
+  /* ----- actions ----- */
+  function actCriteria(a){
+    var started = a.serverStatus === 'in_progress';
+    openModal({ title:'Audit criteria and methods', submitText:'Save', successText:'Saved.', auditId:a.id,
+      help:'Criteria are what the audit is measured against (standard clauses, SOPs, legal requirements, customer specifications). Methods are how evidence is gathered.' + (started ? ' The audit has started, so a reason is required.' : ''),
+      fields:[ { id:'criteria', label:'Criteria', type:'textarea', value:a.criteria || '', placeholder:'e.g. ISO 9001:2015 clauses 7 and 8; SOP-QA-012 Rev 3; customer specification CS-44' },
+        { id:'methods', label:'Methods', type:'checks', options:METHODS, value:a.methods || [] } ].concat(started ? [{ id:'reason', label:'Reason for the change (at least 10 characters)', type:'textarea', required:true }] : []),
+      call:function(v){ return { fn:'set_audit_criteria', args:{ p_audit:a.id, p_criteria:v.criteria, p_methods:v.methods, p_reason:v.reason || null } }; } });
+  }
+  function actMeeting(a, kind){
+    var cur = X.meetings.filter(function(m){ return m.audit_id === a.id && m.kind === kind; })[0];
+    var held = cur ? (function(){ var d = new Date(cur.held_at); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); })() : localNow();
+    openModal({ title: (kind === 'opening' ? 'Opening' : 'Closing') + ' meeting', submitText:'Save meeting', successText:'Meeting recorded.', auditId:a.id,
+      help: kind === 'opening' ? 'Record the meeting held at the start: purpose, scope, criteria, method, timetable and confidentiality confirmed with the auditee.' : 'Record the meeting held at the end: findings presented, any disagreements, and the agreed timeline for responses.',
+      fields:[ { id:'held', label:'Held on', type:'datetime', value:held, required:true, full:false }, { id:'loc', label:'Location', value:cur ? cur.location : '', full:false },
+        { id:'chair', label:'Chaired by', value:cur ? cur.chaired_by : '' },
+        { id:'att', label:'Who attended (names and roles)', type:'textarea', value:cur ? cur.attendees : '', required:true },
+        { id:'sum', label:'What was discussed and agreed', type:'textarea', value:cur ? cur.summary : '' } ],
+      call:function(v){ return { fn:'record_audit_meeting', args:{ p_audit:a.id, p_kind:kind, p_held_at:new Date(v.held).toISOString(), p_location:v.loc || null, p_chaired_by:v.chair || null, p_attendees:v.att, p_summary:v.sum || null } }; } });
+  }
+  function actEvidence(a, it){
+    openModal({ title:'Evidence details for this line', submitText:'Save', successText:'Evidence details saved.', auditId:a.id,
+      help: it.text,
+      fields:[ { id:'standard', label:'Standard', type:'select', options:(typeof STANDARDS !== 'undefined' ? STANDARDS : []).concat(it.standard && (typeof STANDARDS !== 'undefined' ? STANDARDS : []).indexOf(it.standard) === -1 ? [it.standard] : []), value:it.standard || a.standard || '', full:false },
+        { id:'clause', label:'Clause (required for a Fail)', value:it.clause || '', full:false, placeholder:'e.g. 7.1.5' },
+        { id:'interviewee', label:'Who was interviewed', value:it.interviewee || '', full:false },
+        { id:'sample', label:'Sample / lot / batch', value:it.sampleRef || '', full:false },
+        { id:'doc', label:'Document or record reference', value:it.docRef || '', full:false, placeholder:'e.g. SOP-QA-012' },
+        { id:'ver', label:'Document version', value:it.docVersion || '', full:false, placeholder:'e.g. 1.1' } ],
+      call:function(v){ return { fn:'set_audit_item_evidence', args:{ p_item:it.id, p_fields:{ standard:v.standard, clause:v.clause, interviewee:v.interviewee, sample_ref:v.sample, doc_ref:v.doc, doc_version:v.ver } } }; } });
+  }
+
+  /* ----- render ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11px;padding:4px 8px;" data-ex="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  window.renderItemEvidence = function(a, it){
+    var bits = [];
+    if(it.standard) bits.push(it.standard); if(it.clause) bits.push('clause ' + it.clause);
+    if(it.interviewee) bits.push('interviewed ' + it.interviewee);
+    if(it.docRef) bits.push('document ' + it.docRef + (it.docVersion ? ' v' + it.docVersion : ''));
+    if(it.sampleRef) bits.push('sample ' + it.sampleRef);
+    var can = a.serverStatus === 'in_progress' && canWork();
+    return '<div style="font-size:11.5px;color:var(--muted);margin-top:3px;">' + (bits.length ? e(bits.join(' · ')) : (it.result === 'Fail' ? '<span style="color:var(--rust);">No clause recorded yet</span>' : 'No evidence details')) +
+      (can ? ' ' + bt('evidence', { audit:a.id, item:it.id }, 'Evidence details') : '') + '</div>';
+  };
+  window.renderAuditExecutionCard = function(a){
+    try{
+      if(!a || !a.cloud) return '';
+      if(!X.loaded && !X.loading) setTimeout(load, 0);
+      var st = a.serverStatus;
+      var open = st === 'draft' || st === 'planned' || st === 'in_progress';
+      if(X.loaded && !X.ready[a.id] && !X.readyLoading[a.id] && (st === 'in_progress' || st === 'planned' || st === 'draft')) setTimeout(function(){ loadReady(a.id); }, 0);
+      var rd = X.ready[a.id] || [];
+      function mtg(kind){
+        var m = X.meetings.filter(function(x){ return x.audit_id === a.id && x.kind === kind; })[0];
+        var can = canWork() && (kind === 'opening' ? (st === 'planned' || st === 'in_progress' || st === 'awaiting_signoff') : (st === 'in_progress' || st === 'awaiting_signoff'));
+        return '<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;flex:1 1 240px;"><b>' + (kind === 'opening' ? 'Opening meeting' : 'Closing meeting') + '</b> ' +
+          (m ? '<span class="tag tag-green">Recorded</span>' : '<span class="tag tag-amber">Not recorded</span>') +
+          (m ? '<div style="font-size:12px;margin-top:4px;">' + e(stamp(m.held_at)) + (m.location ? ' · ' + e(m.location) : '') + (m.chaired_by ? ' · chaired by ' + e(m.chaired_by) : '') +
+            '<div>Attended: ' + e(m.attendees) + '</div>' + (m.summary ? '<div>' + e(m.summary) + '</div>' : '') + '</div>' : '') +
+          (can ? '<div style="margin-top:6px;">' + bt('meeting', { audit:a.id, kind:kind }, m ? 'Edit' : 'Record meeting', !m) + '</div>' : '') + '</div>';
+      }
+      var methods = (a.methods && a.methods.length) ? a.methods.map(function(m){ return '<span class="tag tag-neutral">' + e(m) + '</span>'; }).join(' ') : '<span class="muted-italic" style="font-size:12px;">None chosen yet</span>';
+      return '<div class="card p4" style="margin-bottom:12px;"><h3 class="serif" style="margin:0 0 6px;font-size:16px;color:var(--navy);">Audit execution</h3>' +
+        (X.error ? '<p style="color:var(--rust);font-size:12px;">' + e(X.error) + '</p>' : '') +
+        '<div style="margin-bottom:8px;"><b style="font-size:12px;">Criteria</b><div style="font-size:13px;">' + (a.criteria ? e(a.criteria) : '<span class="muted-italic">Not set</span>') + '</div>' +
+        '<div style="margin-top:4px;"><b style="font-size:12px;">Methods</b> ' + methods + '</div>' +
+        (open && canWork() ? '<div style="margin-top:6px;">' + bt('criteria', { audit:a.id }, 'Edit criteria and methods') + '</div>' : '') + '</div>' +
+        '<div class="flex-wrap" style="gap:8px;">' + mtg('opening') + mtg('closing') + '</div>' +
+        (open && rd.length ? '<div style="margin-top:10px;font-size:12px;"><b>Before this audit can be submitted for sign-off:</b>' + rd.map(function(i){ return '<div style="color:var(--rust);margin-top:2px;">⚠ ' + e(i) + '</div>'; }).join('') + '</div>' : '') +
+        (open && X.ready[a.id] && !rd.length ? '<div style="margin-top:10px;font-size:12px;color:var(--green,#3f6b2e);">✔ Evidence, criteria and meetings are complete. Ready to submit for sign-off.</div>' : '') + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Execution card error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-ex-modal]');
+    if(m){ var k = m.getAttribute('data-ex-modal');
+      if(k === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-ex]'); if(!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var a = auditById(el.getAttribute('data-audit')); if(!a) return;
+    var act = el.getAttribute('data-ex');
+    if(act === 'criteria') actCriteria(a);
+    else if(act === 'meeting') actMeeting(a, el.getAttribute('data-kind'));
+    else if(act === 'evidence'){
+      var itemId = el.getAttribute('data-item'), found = null;
+      (a.sections || []).forEach(function(s){ (s.items || []).forEach(function(i){ if(i.id === itemId) found = i; }); });
+      if(found) actEvidence(a, found);
+    }
+  }, true);
+  window.auditExecutionReset = function(){ X.meetings = []; X.ready = {}; X.readyLoading = {}; X.loaded = false; X.loading = false; X.error = ''; modal = null; mount(); };
+  window.auditExecutionRefreshReady = function(id){ X.ready[id] = null; };
 })();
 </script>
 
