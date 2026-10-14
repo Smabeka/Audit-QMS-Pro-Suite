@@ -9476,7 +9476,10 @@ function metricTrend(key, currentValue){
 }
 
 function renderDashboard(){
-  const audits = state.audits;
+  // Signed in to the database: audit figures come from managed database audits only. Legacy device-only audits are counted separately, never mixed in.
+  const managedMode = !!(typeof cloudReady==='function' && cloudReady() && currentCloudUser);
+  const legacyAuditCount = managedMode ? state.audits.filter(a=>!a.cloud).length : 0;
+  const audits = managedMode ? state.audits.filter(a=>a.cloud) : state.audits;
   const allFindings = audits.flatMap(a=>a.findings.map(f=>({...f, auditTitle:a.title, auditId:a.id})));
   const openFindings = allFindings.filter(f=>f.status!=="Closed");
   const overdue = openFindings.filter(f=>f.dueDate && daysUntil(f.dueDate)<0);
@@ -9617,8 +9620,9 @@ function renderDashboard(){
      specific standard (e.g. FSSC 22000 vs ISO 9001) without touching any
      of the module scores computed above. */
   const dashAudits = dashboardStandardFilter==="All" ? audits : audits.filter(a=>a.standard===dashboardStandardFilter);
-  const dashClosedAudits = dashAudits.filter(a=>a.status==="Closed").length;
-  const dashCompletionRate = dashAudits.length ? Math.round((dashClosedAudits/dashAudits.length)*100) : null;
+  const dashCounted = dashAudits.filter(a=>a.status!=="Cancelled");
+  const dashClosedAudits = dashCounted.filter(a=>a.status==="Closed").length;
+  const dashCompletionRate = dashCounted.length>=5 ? Math.round((dashClosedAudits/dashCounted.length)*100) : null;
   const dashFindings = dashAudits.flatMap(a=>(a.findings||[]).map(f=>({...f, auditTitle:a.title, auditId:a.id})));
   const dashOpenFindings = dashFindings.filter(f=>f.status!=="Closed");
   const dashCritical = dashOpenFindings.filter(f=>f.severity==="Critical");
@@ -9687,7 +9691,8 @@ function renderDashboard(){
       <div class="card p4" style="margin:0;">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Audit Completion</div>
         <div style="font-size:26px;font-weight:700;margin-top:4px;">${dashCompletionRate===null?'—':dashCompletionRate+'%'}</div>
-        <div class="muted-italic" style="font-size:12px;">${dashClosedAudits} of ${dashAudits.length} closed</div>
+        <div class="muted-italic" style="font-size:12px;">${dashClosedAudits} of ${dashCounted.length} closed${dashCounted.length<5?' — percentage shown once there are 5 audits':''} (cancelled excluded)</div>
+        <div class="muted-italic" style="font-size:11px;">${managedMode?`Managed database audits only${legacyAuditCount?` · ${legacyAuditCount} legacy device-only audit(s) not counted`:''}`:'Not signed in to the database — showing audits stored on this device'}</div>
       </div>
       <div class="card p4" style="margin:0;">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Open Findings</div>
