@@ -2348,7 +2348,23 @@ function nextFindingRefNo(audit){
   return nextSeqCode(allFindings, "refNo", "FIND");
 }
 const CONCLUSION_OPTIONS = ["Pass","Pass with Corrective Actions","Fail"];
+function auditAssessmentState(audit){
+  const items = (audit.sections||[]).flatMap(s=>s.items||[]);
+  const answered = items.filter(i=>i.result).length;
+  const na = items.filter(i=>i.result==="NA").length;
+  const notStarted = audit.cloud ? ["draft","planned"].includes(audit.serverStatus) : (audit.status==="Planned");
+  return { total:items.length, answered, unanswered:items.length-answered, na, assessed: items.length>0 && answered===items.length && !notStarted, notStarted };
+}
+function conclusionHint(audit){
+  const st = auditAssessmentState(audit);
+  if(!st.assessed){
+    return st.notStarted ? "Not yet concluded — the audit has not started, so there is no assessment evidence"
+      : `Not yet concluded — insufficient assessment evidence (${st.unanswered} of ${st.total} checklist lines unanswered)`;
+  }
+  return "Suggested: " + suggestConclusionResult(audit) + (st.na ? ` (${st.na} line(s) marked Not applicable are excluded from the assessment)` : "");
+}
 function suggestConclusionResult(audit){
+  if(!auditAssessmentState(audit).assessed) return "";
   const open = (audit.findings||[]).filter(f=>f.status!=="Closed");
   if(open.some(f=>f.severity==="Critical")) return "Fail";
   if(open.some(f=>f.severity==="Major")) return "Pass with Corrective Actions";
@@ -2876,6 +2892,35 @@ function auditCanCancel(a){ return a.cloud && ["draft","planned","in_progress","
 function auditPlanPayload(a){
   return { auditPlan: a.auditPlan || {}, conclusion: a.conclusion || {}, approvals: a.approvals || {} };
 }
+/* Re-asks for the signed-in user's password. This is a client-side check (it proves the person at the keyboard knows the password,
+   which blocks an unattended or borrowed session); it is not enforced by the server. */
+function askPasswordMasked(message){
+  return new Promise(function(resolve){
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    ov.innerHTML = '<div style="background:#fff;border-radius:10px;padding:18px;max-width:380px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.3);">' +
+      '<h3 class="serif" style="margin:0 0 6px;font-size:16px;color:var(--navy);">Confirm it is you</h3>' +
+      '<p style="font-size:12.5px;margin:0 0 10px;"></p>' +
+      '<input type="password" autocomplete="current-password" placeholder="Your password" style="width:100%;box-sizing:border-box;padding:8px;font-size:14px;" />' +
+      '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn btn-ghost" data-x="no">Cancel</button><button class="btn btn-primary" data-x="ok">Confirm</button></div></div>';
+    ov.querySelector('p').textContent = message;
+    document.body.appendChild(ov);
+    const inp = ov.querySelector('input'); inp.focus();
+    const done = function(v){ ov.remove(); resolve(v); };
+    ov.addEventListener('click', function(e){ const x = e.target.closest && e.target.closest('[data-x]'); if(x) done(x.dataset.x === 'ok' ? inp.value : null); });
+    inp.addEventListener('keydown', function(e){ if(e.key === 'Enter') done(inp.value); if(e.key === 'Escape') done(null); });
+  });
+}
+async function confirmPasswordForAction(message){
+  if(!cloudReady() || !currentCloudUser || !currentCloudUser.email){ showToast("Sign in to the database first."); return false; }
+  const pw = await askPasswordMasked(message);
+  if(pw === null || pw === "") return false;
+  try{
+    const { error } = await supabaseClient.auth.signInWithPassword({ email: currentCloudUser.email, password: pw });
+    if(error){ showToast("Password not accepted. Nothing was changed."); return false; }
+    return true;
+  }catch(err){ showToast("Could not check the password. Nothing was changed."); return false; }
+}
 function auditEventText(ev){
   const d = ev.detail || {};
   switch(ev.event_type){
@@ -2890,7 +2935,29 @@ function auditEventText(ev){
     case "section_removed": return `Section removed: ${d.name||''} (${d.items_removed||0} lines)${d.reason?` — ${d.reason}`:''}`;
     case "signed": return `Signed as ${d.role}: ${d.signer||''} (checklist fingerprint ${String(d.content_hash||'').slice(0,12)}…)`;
     case "unsigned": return `Signature revoked (${d.role}) — ${d.reason||''}`;
-    default: return ev.event_type;
+    case "criteria_set": {
+      const ch = d.changes || d;
+      const crit = ch.criteria !== undefined ? ch.criteria : d.criteria;
+      const meth = ch.methods !== undefined ? ch.methods : d.methods;
+      const parts = [];
+      if(crit !== undefined) parts.push(crit ? `criteria: "${String(crit).slice(0,120)}"` : "criteria left blank");
+      if(Array.isArray(meth)) parts.push(`methods: ${meth.length ? meth.join(', ') : 'none'}`);
+      return `Audit criteria updated${parts.length?` — ${parts.join('; ')}`:''}${d.reason?` — reason: ${d.reason}`:''}`;
+    }
+    case "meeting_recorded": return `${d.kind==='closing'?'Closing':d.kind==='opening'?'Opening':'Audit'} meeting recorded${d.held_at?` (${new Date(d.held_at).toLocaleDateString()})`:''}${d.attendees!==undefined?` — ${typeof d.attendees==='number'?d.attendees:(d.attendees||[]).length} attendee(s)`:''}`;
+    case "team_member_assigned": return `Team member assigned: ${d.member||d.name||''} as ${String(d.role||'').replace(/_/g,' ')}`;
+    case "team_member_removed": return `Team member removed: ${d.member||d.name||''}${d.reason?` — ${d.reason}`:''}`;
+    case "independence_declared": return `Independence declared${d.has_conflict?' — conflict of interest disclosed':' — no conflict'}`;
+    case "team_exception_decided": case "team_exception_approved": case "team_exception_rejected": return `Team exception ${d.decision||d.status||'decided'}${d.reason?` — ${d.reason}`:''}`;
+    case "item_evidence": return `Evidence details recorded for: "${d.text||''}"`;
+    case "evidence_added": return `Evidence file attached${d.file_name?`: ${d.file_name}`:''}${d.sha256?` (fingerprint ${String(d.sha256).slice(0,12)}…)`:''}`;
+    case "evidence_downloaded": return `Evidence file downloaded${d.file_name?`: ${d.file_name}`:''}`;
+    case "report_drafted": case "report_created": return "Audit report drafted";
+    case "report_reviewed": return "Audit report reviewed";
+    case "report_issued": return `Audit report issued${d.version?` (version ${d.version})`:''}`;
+    case "report_acknowledged": return "Audit report acknowledged";
+    case "followup_scheduled": return `Follow-up audit scheduled${d.reference?`: ${d.reference}`:''}`;
+    default: return String(ev.event_type||'event').replace(/_/g,' ').replace(/^./,c=>c.toUpperCase()) + (d.reason?` — ${d.reason}`:'');
   }
 }
 function buildAuditFromCloud(row, secs, items, sigs, evs, old){
@@ -10413,7 +10480,7 @@ function renderAuditRow(a){
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
-            <div class="audit-title">${esc(a.title)} ${a.auditNumber?`<span style="color:var(--muted);font-weight:400;font-size:11px;">· ${a.auditNumber}</span>`:''}</div>
+            <div class="audit-title">${esc(a.title)} ${a.auditNumber?`<span style="color:var(--muted);font-weight:400;font-size:11px;">· ${a.auditNumber}</span>`:''} ${a.cloud?'':'<span class="tag tag-amber" style="font-size:10px;" title="Created before audits moved to the database. Stored on this device only; not covered by database controls or metrics.">Legacy · this device only</span>'}${a.auditNumber && state.audits.some(o=>o!==a && o.auditNumber===a.auditNumber)?' <span class="tag tag-rust" style="font-size:10px;" title="Another audit carries the same number. Existing records are not renumbered.">Duplicate number</span>':''}</div>
             <div class="audit-sub">${esc(a.standard)} · ${esc(a.area)||'—'} · ${a.date}</div>
           </div>
         </div>
@@ -10608,6 +10675,7 @@ function renderAuditDetail(a){
             <button class="x-btn" data-action="remove-finding" data-audit="${a.id}" data-finding="${f.id}">✕</button>
           </div>
           <div class="flex-wrap" style="font-size:12px;color:var(--muted);margin:6px 0;">
+            ${!f.findingType && a.cloud ? `<span class="tag tag-amber" title="This finding has no type, so it cannot be counted as a nonconformity or an observation. Remove it (✕) and log it again with a type before sign-off.">Not classified — needs a type</span>` : ''}
             ${f.findingType ? `<span class="tag tag-${f.findingType==='positive_practice'||f.findingType==='conformity' ? 'green' : f.findingType==='ofi'||f.findingType==='observation' ? 'navy' : sevTone[f.severity]}">${FINDING_TYPE_LABEL[f.findingType]||f.findingType}</span>` : ''}
             ${f.findingType && FINDING_NO_ACTION.has(f.findingType) ? '' : `<span class="tag tag-${sevTone[f.severity]}">${f.severity}</span>`}
             <span>${esc(f.clause)}</span>
@@ -10665,7 +10733,7 @@ function renderAuditDetail(a){
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📋 Audit Conclusion</h3>
       <div class="grid2">
         <label class="field" style="grid-column:1/-1;">Overall Result<select data-audit-conclusion-field="${a.id}:result">
-          <option value="" ${!(a.conclusion&&a.conclusion.result)?'selected':''}>— Not yet concluded (suggested: ${suggestConclusionResult(a)}) —</option>
+          <option value="" ${!(a.conclusion&&a.conclusion.result)?'selected':''}>— ${conclusionHint(a)} —</option>
           ${CONCLUSION_OPTIONS.map(o=>`<option ${a.conclusion&&a.conclusion.result===o?'selected':''}>${o}</option>`).join('')}
         </select></label>
         <label class="field" style="grid-column:1/-1;">Summary<input data-audit-conclusion-field="${a.id}:summary" value="${esc(a.conclusion&&a.conclusion.summary)}" placeholder="e.g. The audit identified one major non-conformance relating to CCP monitoring. Corrective actions have been assigned and verification is required before audit closure." /></label>
@@ -13669,8 +13737,8 @@ async function buildAuditPrintReport(a){
   const findingCounts = { Critical:0, Major:0, Minor:0 };
   a.findings.forEach(f=>{ if(findingCounts[f.severity]!==undefined) findingCounts[f.severity]++; });
   const conclusionResult = (a.conclusion && a.conclusion.result) ? a.conclusion.result : suggestConclusionResult(a);
-  const overallResultLabel = conclusionResult ? conclusionResult.toUpperCase() : "NOT SCORED";
-  const overallResultTone = conclusionResult==="Fail" ? "rust" : conclusionResult==="Pass with Corrective Actions" ? "amber" : "green";
+  const overallResultLabel = conclusionResult ? conclusionResult.toUpperCase() : "NOT YET CONCLUDED";
+  const overallResultTone = !conclusionResult ? "amber" : conclusionResult==="Fail" ? "rust" : conclusionResult==="Pass with Corrective Actions" ? "amber" : "green";
 
   // Hardcoded (non-theme) colors so the report always prints light, regardless of dark mode
   const PRINT_TONES = {
@@ -14685,6 +14753,9 @@ function attachHandlers(){
     if(a.cloud){
       const why = prompt("Why is this signature being revoked? (at least 15 characters)");
       if(why === null) return;
+      if(why.trim().length < 15){ showToast("Give a reason of at least 15 characters."); return; }
+      const okPw = await confirmPasswordForAction("Revoking a signature is recorded permanently. Enter your password to confirm it is you.");
+      if(!okPw) return;
       await auditChange(a, "unsign_audit", { p_id: a.id, p_role: el.dataset.role, p_reason: why });
       return;
     }
@@ -18688,6 +18759,7 @@ function showUpdateBanner(){
     return { total:its.length, live:live.length, done:done.length, overdue:live.filter(overdue).length,
       postponed:live.filter(function(i){ return i.postponed_count > 0; }).length, cancelled:its.length - live.length,
       added:its.filter(function(i){ return i.added_after_approval; }).length, dueByNow:dueByNow.length, onTime:onTime.length,
+      unaccounted: live.filter(function(i){ return i.status !== 'completed'; }).length,
       pctYear: live.length ? Math.round(done.length * 100 / live.length) : null,
       pctOrig: dueByNow.length ? Math.round(onTime.length * 100 / dueByNow.length) : null };
   }
@@ -18781,6 +18853,7 @@ function showUpdateBanner(){
           stat(m.pctOrig == null ? '—' : m.pctOrig + '%', 'done by original date (' + m.onTime + ' of ' + m.dueByNow + ' due)') + '</div>';
         body = '<div style="margin-bottom:6px;"><b>' + e(p.title) + '</b> ' + statusTag + '<div class="muted-italic" style="font-size:11.5px;">' + sub + '</div></div>' +
           (p.status === 'draft' ? '<p class="muted-italic" style="font-size:11.5px;">Original dates are frozen at approval. “Done by original date” counts audits whose original date has passed and that were finished on or before it, so postponing never hides a slip.</p>' : '') +
+          (p.status === 'closed' && m.unaccounted ? '<div style="border:1px solid var(--rust);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:12.5px;color:var(--rust);"><b>Exception — closed with ' + m.unaccounted + ' audit(s) not completed, cancelled or transferred.</b> This programme was closed before the rule requiring every audit to be accounted for. It is shown as it happened and is not hidden; each unfinished line needs to be completed, cancelled with a reason, or moved to another programme.</div>' : '') +
           stats + '<div class="flex-wrap" style="gap:6px;margin-bottom:6px;">' + acts.join('') + '</div>' +
           (its.length ? monthBlocks(its, p) : '<p class="muted-italic">No audits yet. Add the audits planned for ' + p.year + '.</p>') + trail(p);
       }
@@ -18829,7 +18902,7 @@ function showUpdateBanner(){
 /* ===== Audit team, independence and competence (stage 3) ===== */
 (function(){
   var ROLES = [['lead','Lead auditor'],['auditor','Auditor'],['technical_expert','Technical expert'],['trainee','Trainee']];
-  var T = { loaded:false, loading:false, error:'', people:[], comp:[], team:[], ready:{}, readyLoading:{}, showAll:false };
+  var T = { loaded:false, loading:false, error:'', people:[], comp:[], team:[], ready:{}, readyKey:{}, readyLoading:{}, showAll:false };
   var modal = null;
 
   function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
@@ -18862,7 +18935,7 @@ function showUpdateBanner(){
     if(T.readyLoading[auditId]) return; T.readyLoading[auditId] = true;
     var r = await supabaseClient.rpc('audit_readiness', { p_audit: auditId });
     T.readyLoading[auditId] = false;
-    if(!r.error){ T.ready[auditId] = r.data; rerender(); }
+    if(!r.error){ T.ready[auditId] = r.data; T.readyKey[auditId] = T.pendingKey && T.pendingKey[auditId] || T.readyKey[auditId]; rerender(); }
   }
   async function refreshAll(auditId){
     T.loading = false; await load();
@@ -18988,11 +19061,26 @@ function showUpdateBanner(){
       var st = a.serverStatus, editable = st === 'draft' || st === 'planned';
       var members = T.team.filter(function(m){ return m.audit_id === a.id && !m.removed; });
       var rd = T.ready[a.id];
-      if(T.loaded && !rd && !T.readyLoading[a.id] && editable) setTimeout(function(){ loadReady(a.id); }, 0);
-      var byMember = {}; if(rd && rd.members) rd.members.forEach(function(x){ byMember[x.id] = x.issues || []; });
-      var teamIssues = rd && rd.team_issues ? rd.team_issues : [];
+      // The checklist is recomputed whenever the team on screen changes, so it can never disagree with the member list below it.
+      var teamKey = members.map(function(m){ return m.id + ':' + m.role + ':' + (m.declared_at||'') + ':' + (m.has_conflict?1:0) + ':' + m.exception_status; }).sort().join('|') + '#' + (a.standard||'');
+      T.pendingKey = T.pendingKey || {}; T.pendingKey[a.id] = teamKey;
+      if(T.loaded && editable && !T.readyLoading[a.id] && (!rd || T.readyKey[a.id] !== teamKey)) setTimeout(function(){ loadReady(a.id); }, 0);
+      var leads = members.filter(function(m){ return m.role === 'lead'; });
+      var byMember = {}; if(rd && T.readyKey[a.id] === (T.pendingKey && T.pendingKey[a.id]) && rd.members) rd.members.forEach(function(x){ byMember[x.id] = x.issues || []; });
+      var fresh = rd && T.readyKey[a.id] === teamKey;
+      var teamIssues = fresh && rd.team_issues ? rd.team_issues : [];
+      var checks = '';
+      if(editable && members.length){
+        var undecl = members.filter(function(m){ return !m.declared_at; }).length;
+        var nocomp = members.filter(function(m){ return (m.role === 'lead' || m.role === 'auditor') && !validFor(m.user_id, a.standard).length && m.exception_status !== 'approved'; }).length;
+        var line = function(ok, t){ return '<div style="font-size:12px;margin-top:3px;color:' + (ok ? 'var(--green,#2e7d32)' : 'var(--rust)') + ';">' + (ok ? '✓ ' : '⚠ ') + e(t) + '</div>'; };
+        checks = '<div style="margin-top:8px;">' +
+          line(leads.length === 1, leads.length === 1 ? 'Lead auditor assigned: ' + leads[0].member_name : leads.length ? 'More than one lead auditor assigned' : 'No lead auditor assigned') +
+          line(!undecl, undecl ? undecl + ' of ' + members.length + ' member(s) have not declared independence' : 'All members have declared independence') +
+          line(!nocomp, nocomp ? nocomp + ' lead/auditor(s) without valid competence for ' + (a.standard || 'this audit') : 'Competence valid for every lead and auditor') + '</div>';
+      }
       var head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><h3 class="serif" style="margin:0;font-size:16px;color:var(--navy);">Audit team and independence</h3>' +
-        (editable && rd ? (rd.ready ? '<span class="tag tag-green">Cleared to start</span>' : '<span class="tag tag-rust">Not cleared to start</span>') : '') + '</div>';
+        (editable && fresh ? (rd.ready ? '<span class="tag tag-green">Cleared to start</span>' : '<span class="tag tag-rust">Not cleared to start</span>') : '') + '</div>';
       var rows = members.map(function(m){
         var issues = byMember[m.id] || [], mine = m.user_id === myId();
         var needsComp = m.role === 'lead' || m.role === 'auditor';
@@ -19016,7 +19104,8 @@ function showUpdateBanner(){
       return '<div class="card p4" style="margin-bottom:12px;">' + head +
         (T.error ? '<p style="color:var(--rust);font-size:12px;">' + e(T.error) + '</p>' : '') +
         (editable ? '<p class="muted-italic" style="font-size:11.5px;margin:4px 0 0;">The audit cannot start until there is one lead auditor, every member has declared independence, and each lead or auditor has valid competence for ' + e(a.standard || 'this audit') + ' (or an approved exception).</p>' : '') +
-        (editable ? teamIssues.map(function(i){ return '<div style="font-size:12px;color:var(--rust);margin-top:6px;">⚠ ' + e(i) + '</div>'; }).join('') : '') +
+        checks +
+        (editable ? teamIssues.filter(function(i){ return !(leads.length === 1 && /lead/i.test(i) && /assign|no lead|one lead/i.test(i)); }).map(function(i){ return '<div style="font-size:12px;color:var(--rust);margin-top:6px;">⚠ ' + e(i) + '</div>'; }).join('') : '') +
         (members.length ? rows : '<p class="muted-italic" style="margin:8px 0 0;">No team assigned yet.' + (st !== 'draft' && st !== 'planned' ? ' (This audit started before team control existed.)' : '') + '</p>') +
         (editable && canTeam() ? '<div style="margin-top:10px;">' + bt('assign', { id:a.id }, '+ Add team member', true) + '</div>' : '') + '</div>';
     }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Team card error: ' + e(err && err.message || err) + '</p></div>'; }
@@ -19067,7 +19156,7 @@ function showUpdateBanner(){
       if(a === 'declare') actDeclare(mm); else if(a === 'exc-yes') actException(mm, true); else if(a === 'exc-no') actException(mm, false);
       else if(a === 'remove') actRemove(mm); }
   }, true);
-  window.auditTeamReset = function(){ T.loaded = false; T.loading = false; T.error = ''; T.people = []; T.comp = []; T.team = []; T.ready = {}; T.readyLoading = {}; modal = null; mount(); };
+  window.auditTeamReset = function(){ T.loaded = false; T.loading = false; T.error = ''; T.people = []; T.comp = []; T.team = []; T.ready = {}; T.readyKey = {}; T.readyLoading = {}; modal = null; mount(); };
   window.auditTeamRefresh = function(auditId){ T.loading = false; return refreshAll(auditId); };
 })();
 </script>
@@ -19559,6 +19648,7 @@ function showUpdateBanner(){
   function enough(label, have, need, unit){ return tile('—', label, 'Not enough data yet: ' + have + ' of ' + need + ' ' + unit + ' needed.'); }
   var TYPE_LABEL = { conformity:'Conformity', positive_practice:'Positive practice', ofi:'OFI', observation:'Observation', minor_nc:'Minor NC', major_nc:'Major NC', critical_nc:'Critical NC', unclassified:'Not classified' };
 
+  function legacyCount(){ try{ return (state.audits||[]).filter(function(a){ return !a.cloud; }).length; }catch(x){ return 0; } }
   window.renderAuditMetrics = function(){
     try{
       if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to see audit metrics.</p></div>';
@@ -19568,7 +19658,7 @@ function showUpdateBanner(){
       var head = '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;"><h2 class="serif" style="margin:0;font-size:18px;color:var(--navy);">Audit Metrics</h2><div class="flex-wrap" style="gap:6px;">' +
         '<select data-am-year style="font-size:12px;padding:4px 8px;">' + yrs.map(function(y){ return '<option' + (y === M.year ? ' selected' : '') + '>' + y + '</option>'; }).join('') + '</select>' +
         '<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" data-am="reload">↻ Refresh</button></div></div>' +
-        '<p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">Every number is counted from the database records of audits stored in the database (audits created before that move are not included). A percentage appears only when there is enough data behind it; otherwise you see the plain counts.</p>';
+        '<p style="font-size:12px;margin:6px 0 0;"><b>Managed database audits only.</b> ' + (legacyCount() ? legacyCount() + ' legacy audit(s) stored on this device only are NOT counted here and are not assumed signed or unsigned.' : 'No legacy device-only audits on this device.') + '</p><p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">Every number is counted from the database records of audits stored in the database. A percentage appears only when there is enough data behind it; otherwise you see the plain counts.</p>';
       if(!d) return '<div class="card p4" style="border-color:var(--navy);">' + head + (M.error ? '<p style="color:var(--rust);font-size:12px;">' + e(M.error) + '</p>' : '<p class="muted-italic">Loading…</p>') + '</div>';
       var p = d.programme || {}, au = d.audits || {}, fi = d.findings || {}, op = d.open || {}, cl = d.closure || {}, ef = d.effectiveness || {}, co = d.competence || {}, rp = d.reports || {};
       var out = '';
@@ -19582,13 +19672,13 @@ function showUpdateBanner(){
           tile(n(p.overdue), 'overdue', 'Planned date passed and not completed.', n(p.overdue) ? 'rust' : '') + tile(n(p.postponed), 'postponed', n(p.avg_days_late) ? 'Completed audits ran ' + p.avg_days_late + ' days late on average.' : '') +
           tile(n(p.cancelled), 'cancelled') + tile(n(p.added_after_approval), 'added after approval');
       }
-      out += sec('Audit programme against the original schedule', prog, d.programme_status ? 'Programme status: ' + d.programme_status + '.' : '');
+      out += sec('Audit programme against the original schedule', prog, (d.programme_status ? 'Programme status: ' + d.programme_status + '.' : '') + (d.programme_status === 'closed' && n(p.unaccounted) ? ' EXCEPTION: closed with ' + n(p.unaccounted) + ' audit(s) not completed or cancelled.' : ''));
       // audits
       out += sec('Audits held in ' + d.year, tile(n(au.total), 'audits') + tile(n(au.in_progress), 'in progress') + tile(n(au.signed_or_later), 'signed or later') + tile(n(au.closed), 'closed') + tile(n(au.follow_ups), 'follow-up audits') + tile(n(au.cancelled), 'cancelled'));
       // findings
       var types = fi.by_type || {}, tk = Object.keys(types);
       out += sec('Findings', tile(n(fi.total), 'findings logged') + tk.map(function(k){ return tile(n(types[k]), TYPE_LABEL[k] || k); }).join('') +
-        tile(n(op.open_nc), 'open nonconformities', '', n(op.open_nc) ? 'amber' : '') + tile(n(op.open_major_critical), 'open Major / Critical', '', n(op.open_major_critical) ? 'rust' : '') + tile(n(op.overdue), 'corrective actions overdue', 'Due date passed, still open.', n(op.overdue) ? 'rust' : ''));
+        tile(n(op.unclassified), 'findings not yet classified', 'Need a finding type before the audit can be signed.', n(op.unclassified) ? 'amber' : '') + tile(n(op.open_nc), 'open confirmed nonconformities', 'Minor, Major or Critical only.', n(op.open_nc) ? 'amber' : '') + tile(n(op.open_obs), 'open observations / OFIs', 'No corrective action required.') + tile(n(op.open_major_critical), 'open Major / Critical', '', n(op.open_major_critical) ? 'rust' : '') + tile(n(op.overdue), 'corrective actions overdue', 'Due date passed, still open.', n(op.overdue) ? 'rust' : ''));
       // closure time
       out += sec('Time to close', n(cl.n) >= MIN_CLOSURE ? tile(cl.avg_days + ' days', 'average from logging to verified closure', 'Based on ' + n(cl.n) + ' closed nonconformities.') : enough('Average time to close a nonconformity', n(cl.n), MIN_CLOSURE, 'closed nonconformities'));
       // repeats
