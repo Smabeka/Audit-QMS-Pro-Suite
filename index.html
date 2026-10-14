@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -2624,12 +2624,23 @@ async function pushCustomModuleToCloud(item, tableName){
   if(!cloudReady()) return;
   const row = customLocalToRow(item);
   const { error } = await supabaseClient.from(tableName).upsert(row);
-  if(error){ customModuleSyncError = `${tableName}: ${error.message}`; render(); }
+  if(error){
+    customModuleSyncError = `${tableName}: ${error.message}`;
+    showToast(error.message);
+    const arr = Object.keys(CUSTOM_MODULE_TABLES).find(k=>CUSTOM_MODULE_TABLES[k]===tableName);
+    if(arr) await fetchCustomModuleFromCloud(arr, tableName); // put the screen back to what the database holds
+    else render();
+  }
 }
 async function deleteCustomModuleFromCloud(id, tableName){
   if(!cloudReady()) return;
   const { error } = await supabaseClient.from(tableName).delete().eq("id", id);
-  if(error){ customModuleSyncError = `${tableName}: ${error.message}`; render(); }
+  if(error){
+    customModuleSyncError = `${tableName}: ${error.message}`;
+    showToast(error.message);
+    const arr = Object.keys(CUSTOM_MODULE_TABLES).find(k=>CUSTOM_MODULE_TABLES[k]===tableName);
+    if(arr) await fetchCustomModuleFromCloud(arr, tableName); else render();
+  }
 }
 function subscribeCustomModuleRealtime(stateArrayName, tableName){
   if(!cloudReady() || customModuleChannels[tableName]) return;
@@ -2668,10 +2679,8 @@ function evaluateSupplierCriticalScars(supplierName){
   if(!supplier) return;
   const openCritical = state.supplierScars.filter(s=>s.supplierName===supplierName && s.status!=="Closed" && s.severity==="Critical");
   if(openCritical.length>=2 && supplier.approvalStatus!=="Not Approved"){
-    supplier.approvalStatus = "Not Approved";
     logActivity(`Supplier ${supplier.name} downgraded to Not Approved — ${openCritical.length} unresolved Critical SCARs`);
-    persist(); render();
-    pushToCloud("suppliers", supplier);
+    supplierDowngrade(supplier, "Not Approved", openCritical.length + " unresolved Critical SCARs");
     alert(`${supplier.name} now has ${openCritical.length} unresolved Critical SCARs and has been automatically downgraded to Not Approved. Review before any further use of this supplier.`);
   }
 }
@@ -6274,8 +6283,8 @@ const RECALL_ACTION_STEPS = [
 ];
 
 const SUPPLIER_CATEGORIES = ["Raw Material","Packaging","Ingredients","Services","Transport/Logistics","Equipment","Other"];
-const SUPPLIER_APPROVAL_STATUSES = ["Approved","Conditional","Not Approved"];
-const supplierApprovalTone = {Approved:"green",Conditional:"amber","Not Approved":"rust"};
+const SUPPLIER_APPROVAL_STATUSES = ["Pending","Approved","Conditional","Not Approved"];
+const supplierApprovalTone = {Pending:"navy",Approved:"green",Conditional:"amber","Not Approved":"rust"};
 
 const ALLERGEN_LIST = ["Milk","Eggs","Fish","Crustaceans","Peanuts","Tree Nuts","Soy","Wheat/Gluten","Sesame","Sulphites","Mustard","Celery","Lupin","Molluscs"];
 const ALLERGEN_STATUSES = ["Contains Allergen","May Contain Allergen","Allergen-Free"];
@@ -11880,7 +11889,7 @@ function renderNewSupplierForm(){
     <div class="card p4 grid2" style="margin-bottom:16px;">
       <label class="field" style="grid-column:1/-1;">Supplier Name<input id="ns-name" placeholder="e.g. Sasko Milling" /></label>
       <label class="field">Category<select id="ns-category">${SUPPLIER_CATEGORIES.map(c=>`<option>${c}</option>`).join('')}</select></label>
-      <label class="field">Approval Status<select id="ns-approval">${SUPPLIER_APPROVAL_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
+      <div class="field"><span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Approval Status</span><div class="muted-italic" style="font-size:12px;margin-top:6px;">Starts as <b>Pending</b>. Approval is a recorded decision made after the supplier is saved.</div></div>
       <label class="field">Risk Rating<select id="ns-risk">${RISK_LEVELS.filter(l=>l!=="Critical").map(l=>`<option>${l}</option>`).join('')}</select></label>
       <label class="field">Last Assessment Date<input type="date" id="ns-assessment-date" /></label>
       <label class="field">Contact Person<input id="ns-contact" placeholder="e.g. J. Smith" /></label>
@@ -11898,6 +11907,114 @@ function renderNewSupplierForm(){
     </div>
   `;
 }
+
+/* ---------- Supplier approval: recorded decisions, history, controlled downgrade ---------- */
+let supplierEventsCache = {}, supplierEventsLoading = {};
+function supplierRoleLower(){ return String((currentProfile && currentProfile.role) || '').toLowerCase(); }
+function supplierCanDecide(){ return ['admin','quality manager','approver'].includes(supplierRoleLower()); }
+async function loadSupplierEvents(id, force){
+  if(!cloudReady() || supplierEventsLoading[id] || (supplierEventsCache[id] && !force)) return;
+  supplierEventsLoading[id] = true;
+  try{
+    const { data, error } = await supabaseClient.from('supplier_events').select('*').eq('supplier_id', id).order('created_at', { ascending:false }).limit(40);
+    if(!error) supplierEventsCache[id] = data || [];
+  }catch(err){}
+  supplierEventsLoading[id] = false;
+  render();
+}
+async function supplierDowngrade(s, to, reason){
+  if(!cloudReady() || !currentCloudUser){ s.approvalStatus = to; persist(); render(); return; }
+  const { error } = await supabaseClient.rpc('downgrade_supplier', { p_supplier: s.id, p_to: to, p_reason: reason });
+  if(error){ showToast(error.message); return; }
+  await fetchCustomModuleFromCloud("suppliers", "suppliers");
+  delete supplierEventsCache[s.id];
+  alert(`${s.name} has been moved to ${to}. Reason: ${reason}\n\nThe change is recorded in the supplier history. Review before any further use of this supplier.`);
+}
+function supplierEventText(e){
+  const d = e.detail || {};
+  const day = x => x ? String(x).slice(0,10) : '';
+  switch(e.event_type){
+    case 'created': return 'Supplier record created (Pending assessment)';
+    case 'updated': return 'Details changed: ' + (d.fields||[]).map(k=>String(k).replace(/([A-Z])/g,' $1').toLowerCase()).join(', ');
+    case 'deleted': return 'Supplier record deleted';
+    case 'baseline': return `Existing record before controlled approval — status carried over as ${d.status||'unknown'} (not a decision)`;
+    case 'approval_decided': return `Decision: ${d.from||'—'} → ${d.to} (${String(d.method||'—').replace('_',' ')}) — ${d.reason||''}` + (d.conditions ? ` · Conditions: ${d.conditions}` : '') + (d.exception_expires ? ` · Conditional until ${day(d.exception_expires)}` : '') + (d.next_review ? ` · Next reassessment ${day(d.next_review)}` : '') + ((d.materials||[]).length ? ` · Scope: ${d.materials.join(', ')}` : '');
+    case 'downgraded': return `Downgraded ${d.from||'—'} → ${d.to}: ${d.reason||''}`;
+    case 'expiry_downgrade': return `Certificate expired ${day(d.cert_expiry)} — moved from Approved to Conditional`;
+    case 'exception_expired': return `Conditional approval expired ${day(d.expired_on)} — moved to Not Approved`;
+    default: return String(e.event_type).replace(/_/g,' ');
+  }
+}
+function renderSupplierApprovalBlock(s){
+  if(cloudReady() && supplierEventsCache[s.id] === undefined) setTimeout(()=>loadSupplierEvents(s.id), 0);
+  const ev = supplierEventsCache[s.id] || [];
+  const st = s.approvalStatus || 'Pending';
+  const lines = [];
+  if(s.approvedBy) lines.push(`Decided by ${esc(s.approvedBy)}${s.approvedAt?' on '+esc(String(s.approvedAt).slice(0,10)):''}${s.approvalMethod?' · method: '+esc(String(s.approvalMethod).replace('_',' ')):''}`);
+  if(st==='Conditional' && s.approvalConditions) lines.push(`Conditions: ${esc(s.approvalConditions)}${s.approvalExceptionExpires?' · expires '+esc(String(s.approvalExceptionExpires).slice(0,10)):''}`);
+  if(st==='Approved' && s.nextReassessmentDate) lines.push(`Next reassessment: ${esc(String(s.nextReassessmentDate).slice(0,10))}`);
+  if(!s.approvedBy && st!=='Pending') lines.push('Status carried over from before controlled approval — no decision on record.');
+  return `<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:10px 12px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+      <div><span style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;">Approval status</span> <span class="tag tag-${supplierApprovalTone[st]||'neutral'}" style="margin-left:6px;">${esc(st)}</span></div>
+      ${supplierCanDecide() ? `<button class="btn btn-primary" style="font-size:12px;padding:5px 10px;" data-action="supplier-decide" data-supplier="${s.id}">Record approval decision</button>` : `<span class="muted-italic" style="font-size:11px;">Only an Admin, Quality Manager or Approver can record a decision.</span>`}
+    </div>
+    ${lines.map(l=>`<div style="font-size:12px;margin-top:5px;">${l}</div>`).join('')}
+    ${ev.length ? `<details style="margin-top:8px;"><summary style="font-size:12px;cursor:pointer;">History (${ev.length})</summary>${ev.map(e=>`<div style="font-size:11.5px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">${esc(new Date(e.created_at).toLocaleString())} · ${esc(e.actor_name||'—')}</span><br>${esc(supplierEventText(e))}</div>`).join('')}</details>` : ''}
+  </div>`;
+}
+function openSupplierDecisionModal(s){
+  const mats = (s.suppliedMaterials||[]).length;
+  const certDays = s.certExpiryDate ? daysUntil(s.certExpiryDate) : null;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100000;display:flex;align-items:flex-start;justify-content:center;padding:16px;overflow:auto;';
+  const row = (ok,t) => `<div style="font-size:12px;color:${ok?'var(--green,#2e7d32)':'var(--rust)'};margin-top:2px;">${ok?'✓':'⚠'} ${esc(t)}</div>`;
+  ov.innerHTML = `<div style="background:#fff;border-radius:10px;padding:18px;max-width:460px;width:100%;margin-top:24px;">
+    <h3 class="serif" style="margin:0 0 4px;font-size:16px;color:var(--navy);">Approval decision — ${esc(s.name)}</h3>
+    <p class="muted-italic" style="font-size:11.5px;margin:0 0 8px;">Recorded permanently in the supplier history with your name and the time.</p>
+    ${row(mats>0, mats>0 ? mats+' material(s) in scope' : 'No materials in scope — required to approve')}
+    ${row(certDays===null || certDays>=0, certDays===null ? 'No certificate on record' : certDays>=0 ? 'Certificate valid ('+certDays+' days left)' : 'Certificate expired — cannot approve')}
+    <label class="field" style="margin-top:10px;">Decision<select id="sd-decision"><option value="approved">Approved</option><option value="conditional">Conditional</option><option value="not_approved">Not approved</option></select></label>
+    <label class="field" id="sd-method-wrap">Approval method<select id="sd-method"><option value="certification">Certification</option><option value="audit">Supplier audit</option><option value="questionnaire">Questionnaire</option><option value="combination">Combination</option></select></label>
+    <label class="field">Reason for this decision (at least 15 characters)<textarea id="sd-reason" rows="2" style="width:100%;box-sizing:border-box;"></textarea></label>
+    <label class="field" id="sd-cond-wrap" style="display:none;">Conditions and purchasing restriction<textarea id="sd-conditions" rows="2" style="width:100%;box-sizing:border-box;"></textarea></label>
+    <label class="field" id="sd-exp-wrap" style="display:none;">Conditional approval expires on<input type="date" id="sd-exp" /></label>
+    <label class="field" id="sd-next-wrap">Next reassessment date<input type="date" id="sd-next" /></label>
+    <div id="sd-err" style="color:var(--rust);font-size:12px;margin-top:8px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;"><button class="btn btn-ghost" data-x="no">Cancel</button><button class="btn btn-primary" data-x="ok">Record decision</button></div></div>`;
+  document.body.appendChild(ov);
+  const $ = id => ov.querySelector('#'+id);
+  const sync = () => { const d = $('sd-decision').value;
+    $('sd-method-wrap').style.display = d==='not_approved' ? 'none' : '';
+    $('sd-cond-wrap').style.display = d==='conditional' ? '' : 'none';
+    $('sd-exp-wrap').style.display = d==='conditional' ? '' : 'none';
+    $('sd-next-wrap').style.display = d==='approved' ? '' : 'none'; };
+  $('sd-decision').onchange = sync; sync();
+  ov.addEventListener('click', async e => {
+    const x = e.target.closest && e.target.closest('[data-x]'); if(!x) return;
+    if(x.dataset.x === 'no'){ ov.remove(); return; }
+    const d = $('sd-decision').value;
+    x.disabled = true;
+    const { error } = await supabaseClient.rpc('decide_supplier_approval', { p_supplier: s.id, p_decision: d, p_reason: $('sd-reason').value,
+      p_method: d==='not_approved' ? null : $('sd-method').value, p_conditions: d==='conditional' ? $('sd-conditions').value : null,
+      p_exception_expires: d==='conditional' && $('sd-exp').value ? $('sd-exp').value : null, p_next_review: d==='approved' && $('sd-next').value ? $('sd-next').value : null });
+    x.disabled = false;
+    if(error){ $('sd-err').textContent = error.message; return; }
+    ov.remove();
+    await fetchCustomModuleFromCloud("suppliers", "suppliers");
+    await loadSupplierEvents(s.id, true);
+    showToast('Decision recorded.');
+  });
+}
+document.addEventListener('click', function(ev){
+  const b = ev.target.closest && ev.target.closest('[data-action="supplier-decide"]');
+  if(!b) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const s = state.suppliers.find(x=>x.id===b.dataset.supplier);
+  if(!s) return;
+  if(!cloudReady() || !currentCloudUser){ showToast('Sign in to the database to record an approval decision.'); return; }
+  openSupplierDecisionModal(s);
+}, true);
 
 function renderSupplierRow(s){
   const open = openSupplierId === s.id;
@@ -11943,7 +12060,7 @@ function renderSupplierCertStatus(s){
   else { tone="green"; label="Valid"; }
   return `<div class="card p4" style="margin:0 0 14px;background:var(--${tone}Bg);border-color:var(--${tone});">
     <p style="margin:0;font-size:12.5px;color:var(--${tone});"><strong>${esc(s.certType||'Certificate')}</strong>${s.certNumber?` (${esc(s.certNumber)})`:''} — <span class="tag tag-${tone}" style="font-size:10px;">${label}</span></p>
-    ${d<0 ? `<p class="muted-italic" style="font-size:11.5px;margin-top:4px;">This certificate has expired. The supplier's Approval Status has been automatically set to Conditional — renew the certificate and update the expiry date to allow re-approval.</p>` : ''}
+    ${d<0 ? `<p class="muted-italic" style="font-size:11.5px;margin-top:4px;">This certificate has expired. An Approved supplier is moved to Conditional (30 days to reassess). Updating the expiry date does not restore approval — record a new approval decision once the renewed certificate has been checked.</p>` : ''}
   </div>`;
 }
 function renderSupplierDetail(s){
@@ -11951,7 +12068,7 @@ function renderSupplierDetail(s){
     <div class="grid2" style="margin-bottom:12px;">
       <label class="field" style="grid-column:1/-1;">Supplier Name<input data-supplier-field="${s.id}:name" value="${esc(s.name)}" /></label>
       <label class="field">Category<select data-supplier-field="${s.id}:category">${SUPPLIER_CATEGORIES.map(c=>`<option ${c===s.category?'selected':''}>${c}</option>`).join('')}</select></label>
-      <label class="field">Approval Status<select data-supplier-field="${s.id}:approvalStatus">${SUPPLIER_APPROVAL_STATUSES.map(a=>`<option ${a===s.approvalStatus?'selected':''}>${a}</option>`).join('')}</select></label>
+      <div class="field" style="grid-column:1/-1;">${renderSupplierApprovalBlock(s)}</div>
       <label class="field">Risk Rating<select data-supplier-field="${s.id}:riskRating">${RISK_LEVELS.filter(l=>l!=="Critical").map(l=>`<option ${l===s.riskRating?'selected':''}>${l}</option>`).join('')}</select></label>
       <label class="field">Last Assessment Date<input type="date" data-supplier-field="${s.id}:lastAssessmentDate" value="${s.lastAssessmentDate||''}" /></label>
       <label class="field">Contact Person<input data-supplier-field="${s.id}:contactPerson" value="${esc(s.contactPerson)}" /></label>
@@ -14370,14 +14487,7 @@ function attachHandlers(){
           rec.closureDate = rec.closureDate || today();
           rec.status = "Closed";
           logActivity(`SCAR for ${rec.supplierName||'supplier'} closed — QA approved by ${rec.qaApprovedBy}`);
-          const supplier = state.suppliers.find(s=>s.name===rec.supplierName);
-          if(supplier){
-            const otherOpenScars = state.supplierScars.some(s=>s.id!==rec.id && s.supplierName===rec.supplierName && s.status!=="Closed");
-            if(!otherOpenScars && supplier.approvalStatus!=="Approved"){
-              supplier.approvalStatus = "Approved";
-              logActivity(`Supplier ${supplier.name} restored to Approved — all SCARs closed`);
-            }
-          }
+          // Closing a SCAR never restores approval; a person records a new approval decision.
           persist(); render();
           if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
           return;
@@ -14385,8 +14495,8 @@ function attachHandlers(){
           rec.status = el.value;
           const supplier = state.suppliers.find(s=>s.name===rec.supplierName);
           if(supplier && supplier.approvalStatus==="Approved"){
-            supplier.approvalStatus = "Conditional";
-            logActivity(`Supplier ${supplier.name} moved to Conditional — open SCAR raised`);
+            logActivity(`Supplier ${supplier.name} moved to Conditional — SCAR reopened`);
+            supplierDowngrade(supplier, "Conditional", "A SCAR for this supplier is open: " + (rec.issue||rec.materialAffected||"corrective action requested") );
           }
         }
         persist(); render();
@@ -16049,7 +16159,7 @@ function attachHandlers(){
     const supplier = {
       id: uid(), name,
       category: document.getElementById('ns-category').value,
-      approvalStatus: document.getElementById('ns-approval').value,
+      approvalStatus: 'Pending',
       riskRating: document.getElementById('ns-risk').value,
       lastAssessmentDate: document.getElementById('ns-assessment-date').value,
       contactPerson: document.getElementById('ns-contact').value,
@@ -16080,8 +16190,7 @@ function attachHandlers(){
       const s = state.suppliers.find(x=>x.id===id);
       if(!s) return;
       s[field] = el.value;
-      if(field==="approvalStatus" && el.value==="Approved") logActivity(`Supplier ${s.name} approved`);
-      if(field==="certExpiryDate") s.certExpiryFlagged = false; // re-arm the auto-downgrade check for the new date
+            if(field==="certExpiryDate") s.certExpiryFlagged = false; // re-arm the auto-downgrade check for the new date
       persist(); render();
       pushToCloud("suppliers", s);
       if(field==="certExpiryDate") checkSupplierCertExpiries();
@@ -17077,23 +17186,19 @@ function attachHandlers(){
   });
 }
 
-function checkSupplierCertExpiries(){
+async function checkSupplierCertExpiries(){
+  if(cloudReady() && currentCloudUser){
+    // The database applies expiry rules (certificate expired -> Conditional, conditional exception expired -> Not Approved) and records them in the history.
+    try{
+      const { data, error } = await supabaseClient.rpc('sweep_supplier_expiries');
+      if(!error && data > 0){ await fetchCustomModuleFromCloud("suppliers", "suppliers"); }
+    }catch(err){}
+    return;
+  }
   let changed = false;
   state.suppliers.forEach(s=>{
     if(!s.certExpiryDate) return;
-    const expired = daysUntil(s.certExpiryDate) < 0;
-    if(expired && s.approvalStatus==="Approved" && !s.certExpiryFlagged){
-      s.approvalStatus = "Conditional";
-      s.certExpiryFlagged = true;
-      logActivity(`Supplier ${s.name} moved to Conditional — ${s.certType||'certificate'} expired ${s.certExpiryDate}`);
-      pushToCloud("suppliers", s);
-      changed = true;
-    } else if(!expired && s.certExpiryFlagged){
-      // Certificate was renewed with a future date — clear the flag so a
-      // future expiry can trigger the downgrade again.
-      s.certExpiryFlagged = false;
-      changed = true;
-    }
+    if(daysUntil(s.certExpiryDate) < 0 && s.approvalStatus==="Approved"){ s.approvalStatus = "Conditional"; changed = true; }
   });
   if(changed){ persist(); render(); }
 }
