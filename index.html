@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset();
+  if(window.ncrReset) window.ncrReset(); if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -2915,7 +2915,7 @@ function buildAuditFromCloud(row, secs, items, sigs, evs, old){
     id: row.id, auditNumber: row.reference_number, title: row.title, standard: row.standard || "", area: row.area || "",
     auditor: row.auditor_name || "", auditee: row.auditee || "", date: row.audit_date || "",
     status: AUDIT_STATUS_LABEL[row.status] || row.status, serverStatus: row.status,
-    criteria: row.criteria || "", methods: row.methods || [],
+    criteria: row.criteria || "", methods: row.methods || [], followUpOf: row.follow_up_of || null,
     riskLevel: row.risk_level, auditType: row.audit_type, sections, signOff, cancelReason: row.cancel_reason || "",
     auditPlan: Object.assign({ organization:"", address:"", visitNumber:"", leadAuditor:"", teamMembers:"", standards: row.standard||"", auditLanguage:"English", scope:"", objectives:"", itinerary:[] }, plan.auditPlan || {}),
     history: evs.map(e => ({ id:e.id, date:e.created_at, text:auditEventText(e) })),
@@ -8570,6 +8570,7 @@ const NAV_MODULES = [
       { id:"nav-audit-register", label:"Audit Register", isActive(){ return tab==="audits"; }, action(){ tab="audits"; } },
       { id:"nav-audit-programme", label:"Audit Programme", isActive(){ return tab==="audit-programme"; }, action(){ tab="audit-programme"; } },
       { id:"nav-audit-competence", label:"Auditor Competence", isActive(){ return tab==="audit-competence"; }, action(){ tab="audit-competence"; } },
+      { id:"nav-audit-reports", label:"Audit Reports", isActive(){ return tab==="audit-reports"; }, action(){ tab="audit-reports"; } },
       { id:"nav-audit-planning", label:"Audit Planning", isActive(){ return tab==="audit-planning"; }, action(){ tab="audit-planning"; } },
       { id:"nav-audit-checklists", label:"Checklists", isActive(){ return tab==="checklists"; }, action(){ tab="checklists"; } }
     ]
@@ -9120,7 +9121,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
@@ -10476,6 +10477,7 @@ function renderAuditDetail(a){
     ${cloud ? renderAuditLifecycle(a) : (cloudReady() && !a.isCloudShellAudit ? `<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:12px;"><p style="margin:0;font-size:13px;">⚠ This audit is stored only on this device (created before audits moved to the database). It has no enforced lifecycle or sign-off lock. Create new audits for real work.</p></div>` : '')}
     ${cloud && typeof renderAuditTeamCard === 'function' ? renderAuditTeamCard(a) : ''}
     ${cloud && typeof renderAuditExecutionCard === 'function' ? renderAuditExecutionCard(a) : ''}
+    ${cloud && typeof renderAuditReportCard === 'function' ? renderAuditReportCard(a) : ''}
     <div class="card p4" style="margin-bottom:12px;">
       <div class="grid2" style="${lockStyle}">
         <label class="field">Audit Number<input value="${esc(a.auditNumber)||'—'}" disabled style="opacity:.7;" /></label>
@@ -19289,6 +19291,243 @@ function showUpdateBanner(){
   }, true);
   window.auditExecutionReset = function(){ X.meetings = []; X.files = []; X.people = []; X.ready = {}; X.readyLoading = {}; X.loaded = false; X.loading = false; X.error = ''; modal = null; mount(); };
   window.auditExecutionRefreshReady = function(id){ X.ready[id] = null; };
+})();
+</script>
+
+<script>
+/* ===== Audit report control (stage 5): Draft -> Reviewed -> Issued, distribution, acknowledgement, follow-up audits ===== */
+(function(){
+  var R = { reports:[], recips:[], people:[], loaded:false, loading:false, error:'' };
+  var modal = null;
+  var ST = { draft:['Draft','amber'], reviewed:['Reviewed','navy'], issued:['Issued','green'] };
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function stamp(d){ if(!d) return '—'; var x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleString(); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function myId(){ try{ return (currentCloudUser && currentCloudUser.id) || (currentProfile && currentProfile.id) || null; }catch(_){ return null; } }
+  function canWork(){ return ['admin','quality manager','auditor'].indexOf(myRole()) !== -1; }
+  function canReview(){ return ['admin','quality manager','approver'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function newId(){ return (typeof uid === 'function') ? uid() : crypto.randomUUID(); }
+  function nameOf(id){ for(var i = 0; i < R.people.length; i++){ if(R.people[i].id === id) return R.people[i].full_name || 'Unnamed'; } return String(id || '').slice(0, 8); }
+  function reportOf(auditId){ return R.reports.filter(function(r){ return r.audit_id === auditId; })[0]; }
+  function recipsOf(reportId){ return R.recips.filter(function(x){ return x.report_id === reportId; }); }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+
+  async function load(){
+    if(R.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    R.loading = true; R.error = '';
+    var a = await fetchAllRows('audit_reports'), b = await fetchAllRows('audit_report_recipients');
+    var pp = await supabaseClient.rpc('audit_people');
+    if(a.error) R.error = a.error.message; else if(b.error) R.error = b.error.message;
+    else { R.reports = a.data; R.recips = b.data; R.people = pp.data || []; R.loaded = true; }
+    R.loading = false; rerender();
+  }
+  async function refresh(auditId){
+    R.loading = false; await load();
+    if(auditId && typeof fetchAuditsFromCloud === 'function') await fetchAuditsFromCloud(auditId);
+  }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('rep-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'rep-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'rpf-' + x.id, ctl;
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (o[0] === x.value ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-rp-modal="overlay"><div class="modal-card" style="max-width:560px;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-rp-modal="cancel">Cancel</button><button class="btn btn-primary" data-rp-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){ var el = document.getElementById('rpf-' + x.id); v[x.id] = el ? String(el.value || '').trim() : ''; });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount();
+    var cfg = modal, call = cfg.call(v);
+    var r = await supabaseClient.rpc(call.fn, call.args);
+    if(r.error){ modal.busy = false; mount(); toast(r.error.message, 'error'); return; }
+    modal = null; mount(); toast(cfg.successText || 'Saved.');
+    await refresh(cfg.auditId);
+    if(cfg.afterNav) cfg.afterNav();
+  }
+  async function direct(fn, args, ok, auditId){
+    var r = await supabaseClient.rpc(fn, args);
+    if(r.error){ toast(r.error.message, 'error'); return; }
+    toast(ok); await refresh(auditId);
+  }
+
+  /* ----- suggested summary written from the audit's own records ----- */
+  function suggestSummary(a){
+    var fs = a.findings || [], c = {};
+    fs.forEach(function(f){ var t = f.findingType || 'unclassified'; c[t] = (c[t] || 0) + 1; });
+    var items = []; (a.sections || []).forEach(function(s){ (s.items || []).forEach(function(i){ items.push(i); }); });
+    var pass = items.filter(function(i){ return i.result === 'Pass'; }).length, fail = items.filter(function(i){ return i.result === 'Fail'; }).length, na = items.filter(function(i){ return i.result === 'NA'; }).length;
+    var lab = { major_nc:'major nonconformit', critical_nc:'critical nonconformit', minor_nc:'minor nonconformit', observation:'observation', ofi:'opportunit', positive_practice:'positive practice', conformity:'conformit' };
+    var parts = [];
+    ['critical_nc','major_nc','minor_nc'].forEach(function(k){ if(c[k]) parts.push(c[k] + ' ' + lab[k] + (c[k] === 1 ? 'y' : 'ies')); });
+    if(c.observation) parts.push(c.observation + ' observation' + (c.observation === 1 ? '' : 's'));
+    if(c.ofi) parts.push(c.ofi + ' opportunit' + (c.ofi === 1 ? 'y' : 'ies') + ' for improvement');
+    if(c.positive_practice) parts.push(c.positive_practice + ' positive practice' + (c.positive_practice === 1 ? '' : 's'));
+    return (a.title || 'The audit') + ' (' + (a.standard || 'no standard stated') + ', ' + (a.area || 'area not stated') + ') was carried out on ' + (a.date || 'the recorded date') + '. ' +
+      (a.criteria ? 'Criteria: ' + a.criteria + '. ' : '') + (a.methods && a.methods.length ? 'Methods: ' + a.methods.join(', ').toLowerCase() + '. ' : '') +
+      'Of ' + items.length + ' checklist lines, ' + pass + ' passed, ' + fail + ' failed and ' + na + ' were not applicable. ' +
+      (parts.length ? 'Findings recorded: ' + parts.join(', ') + '. ' : 'No findings were recorded. ') +
+      (a.conclusion && a.conclusion.result ? 'Overall result: ' + a.conclusion.result + '. ' : '') + 'Corrective actions are tracked in the CAPA register.';
+  }
+
+  /* ----- actions ----- */
+  function actStart(a){
+    openModal({ title:'Start the audit report', submitText:'Start report', successText:'Report started as a draft.', auditId:a.id,
+      help:'This summary is written from the audit records. Read it, correct it, and add anything the records do not show.',
+      fields:[ { id:'sum', label:'Report summary', type:'textarea', rows:9, value:suggestSummary(a), required:true } ],
+      call:function(v){ return { fn:'create_audit_report', args:{ p_audit:a.id, p_summary:v.sum } }; } });
+  }
+  function actEdit(a, r){
+    openModal({ title:'Edit the report summary', submitText:'Save', successText:'Saved.', auditId:a.id,
+      help: r.status === 'reviewed' ? 'This report was reviewed. Saving changes sends it back to Draft and it must be reviewed again.' : '',
+      fields:[ { id:'sum', label:'Report summary', type:'textarea', rows:9, value:r.summary, required:true } ],
+      call:function(v){ return { fn:'update_audit_report', args:{ p_audit:a.id, p_summary:v.sum } }; } });
+  }
+  function actRecipient(a, r){
+    var taken = {}; recipsOf(r.id).forEach(function(x){ if(x.user_id) taken[x.user_id] = 1; });
+    var opts = [['', 'External recipient (type a name below)']].concat(R.people.filter(function(p){ return !taken[p.id]; }).map(function(p){ return [p.id, (p.full_name || 'Unnamed') + ' (' + p.role + ')']; }));
+    openModal({ title:'Add a recipient', submitText:'Add', successText:'Recipient added.', auditId:a.id,
+      help:'People in your organisation acknowledge receipt themselves. External recipients are listed but their receipt is not tracked.',
+      fields:[ { id:'u', label:'Person', type:'select', options:opts, value:'' }, { id:'ext', label:'External recipient name (only if you chose External)' } ],
+      call:function(v){ return { fn:'add_report_recipient', args:{ p_audit:a.id, p_user:v.u || null, p_external_name:v.u ? null : v.ext } }; } });
+  }
+  function actReopen(a){
+    openModal({ title:'Re-open the issued report', submitText:'Re-open', successText:'Report re-opened as a new revision.', auditId:a.id,
+      help:'The report goes back to Draft as a new revision and must be reviewed and issued again. Acknowledgements restart. The reason is recorded.',
+      fields:[ { id:'r', label:'Reason (at least 15 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'reopen_audit_report', args:{ p_audit:a.id, p_reason:v.r } }; } });
+  }
+  function actFollowUp(a){
+    var d = new Date(); d.setDate(d.getDate() + 30);
+    var def = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    var nid = newId();
+    openModal({ title:'Schedule a follow-up audit', submitText:'Create follow-up audit', successText:'Follow-up audit created as a draft. Find it in the Audit Register.', auditId:a.id,
+      help:'A new draft audit is created with one checklist line to verify each open nonconformity from this audit. You will still need to assign its team and approve its plan.',
+      fields:[ { id:'d', label:'Planned date', type:'date', value:def, required:true } ],
+      call:function(v){ return { fn:'schedule_followup_audit', args:{ p_audit:a.id, p_new_id:nid, p_date:v.d } }; } });
+  }
+
+  /* ----- render: audit card ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11px;padding:4px 8px;" data-rp="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function recipHtml(r, x){
+    var tag = x.is_external ? '<span class="tag tag-neutral">External, not tracked</span>' :
+      (r.status !== 'issued' ? '<span class="tag tag-neutral">Not yet issued</span>' :
+       (x.acknowledged_at && x.ack_revision === r.revision ? '<span class="tag tag-green">Acknowledged ' + e(stamp(x.acknowledged_at)) + '</span>' : '<span class="tag tag-amber">Awaiting acknowledgement</span>'));
+    return '<div style="display:flex;justify-content:space-between;gap:6px;flex-wrap:wrap;font-size:12.5px;padding:3px 0;border-bottom:1px solid var(--line,#eee);"><span>' + e(x.display_name) + '</span><span class="flex-wrap" style="gap:6px;">' + tag +
+      (r.status !== 'issued' && canWork() ? bt('rm', { id:x.id, audit:r.audit_id }, 'Remove') : '') + '</span></div>';
+  }
+  window.renderAuditReportCard = function(a){
+    try{
+      if(!a || !a.cloud) return '';
+      if(!R.loaded && !R.loading) setTimeout(load, 0);
+      var st = a.serverStatus;
+      var post = st === 'signed' || st === 'follow_up_required' || st === 'closed';
+      var r = reportOf(a.id);
+      var fu = (state.audits || []).filter(function(x){ return x.followUpOf === a.id; });
+      var parent = a.followUpOf ? (state.audits || []).filter(function(x){ return x.id === a.followUpOf; })[0] : null;
+      var head = '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><h3 class="serif" style="margin:0;font-size:16px;color:var(--navy);">Audit report</h3>' +
+        (r ? '<span class="tag tag-' + ST[r.status][1] + '">' + ST[r.status][0] + ' · revision ' + r.revision + '</span>' : '') + '</div>';
+      var body = '';
+      if(!post && !r){ body = '<p class="muted-italic" style="font-size:12px;margin:6px 0 0;">The report is started once the audit is signed. The audit cannot be closed until its report is issued.</p>'; }
+      else if(!r){
+        body = '<p class="muted-italic" style="font-size:12px;margin:6px 0;">No report yet. The audit cannot be closed until a report is issued.</p>' + (canWork() ? bt('start', { audit:a.id }, 'Start the report', true) : '');
+      } else {
+        var rc = recipsOf(r.id), ackd = rc.filter(function(x){ return !x.is_external && x.acknowledged_at && x.ack_revision === r.revision; }).length, tracked = rc.filter(function(x){ return !x.is_external; }).length;
+        var mine = rc.filter(function(x){ return x.user_id === myId(); })[0];
+        var b = [];
+        if(r.status !== 'issued' && canWork()) b.push(bt('edit', { audit:a.id }, 'Edit summary'), bt('add', { audit:a.id }, '+ Add recipient'));
+        if(r.status === 'draft' && canReview() && r.drafted_by !== myId()) b.push(bt('review', { audit:a.id }, 'Mark as reviewed', true));
+        if(r.status === 'draft' && canReview() && r.drafted_by === myId()) b.push('<span class="muted-italic" style="font-size:11px;">A different person must review this report.</span>');
+        if(r.status === 'reviewed' && isQm()) b.push(bt('issue', { audit:a.id }, 'Issue report', true));
+        if(r.status === 'issued' && mine && !(mine.acknowledged_at && mine.ack_revision === r.revision)) b.push(bt('ack', { audit:a.id }, 'Acknowledge receipt', true));
+        if(r.status === 'issued' && isQm() && st !== 'closed') b.push(bt('reopen', { audit:a.id }, 'Re-open report'));
+        body = '<div style="font-size:13px;white-space:pre-wrap;margin:8px 0;">' + e(r.summary || '(empty)') + '</div>' +
+          '<div class="muted-italic" style="font-size:11.5px;">Drafted by ' + e(nameOf(r.drafted_by)) + ' on ' + e(stamp(r.drafted_at)) +
+          (r.reviewed_at ? ' · reviewed by ' + e(nameOf(r.reviewed_by)) + ' on ' + e(stamp(r.reviewed_at)) : '') +
+          (r.issued_at ? ' · issued by ' + e(nameOf(r.issued_by)) + ' on ' + e(stamp(r.issued_at)) + ' · SHA-256 ' + e(String(r.issued_hash || '').slice(0, 12)) + '…' : '') + '</div>' +
+          '<div style="margin-top:8px;"><b style="font-size:12px;">Distribution</b>' + (r.status === 'issued' ? ' <span class="muted-italic" style="font-size:11.5px;">' + ackd + ' of ' + tracked + ' acknowledged</span>' : '') +
+          (rc.length ? rc.map(function(x){ return recipHtml(r, x); }).join('') : '<div class="muted-italic" style="font-size:12px;">No recipients yet.</div>') + '</div>' +
+          (b.length ? '<div class="flex-wrap" style="margin-top:8px;gap:6px;">' + b.join('') + '</div>' : '');
+      }
+      var openNc = (a.findings || []).filter(function(f){ return String(f.status || '').toLowerCase() !== 'closed' && (!f.findingType || /_nc$/.test(f.findingType)); }).length;
+      var follow = '<div style="margin-top:12px;border-top:1px solid var(--line,#eee);padding-top:8px;"><b style="font-size:12px;">Follow-up audits</b>' +
+        (parent ? '<div style="font-size:12.5px;margin-top:4px;">This is a follow-up of ' + e(parent.auditNumber || '') + ' — ' + e(parent.title) + '.</div>' : '') +
+        (fu.length ? fu.map(function(x){ return '<div style="font-size:12.5px;margin-top:4px;">' + e(x.auditNumber || '') + ' — ' + e(x.title) + ' <span class="tag tag-neutral">' + e(x.status) + '</span> · ' + e(x.date || '') + '</div>'; }).join('') : '<div class="muted-italic" style="font-size:12px;margin-top:4px;">None scheduled.</div>') +
+        ((st === 'signed' || st === 'follow_up_required') && canWork() && !fu.filter(function(x){ return x.serverStatus !== 'cancelled'; }).length ?
+          '<div style="margin-top:6px;">' + (openNc ? bt('followup', { audit:a.id }, 'Schedule follow-up audit (' + openNc + ' open)', false) : '<span class="muted-italic" style="font-size:11.5px;">No open nonconformities to follow up.</span>') + '</div>' : '') + '</div>';
+      return '<div class="card p4" style="margin-bottom:12px;">' + head + (R.error ? '<p style="color:var(--rust);font-size:12px;">' + e(R.error) + '</p>' : '') + body + (post || fu.length || parent ? follow : '') + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Report card error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  /* ----- render: reports page (everyone who is a recipient, and staff) ----- */
+  window.renderAuditReports = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to see audit reports.</p></div>';
+      if(!R.loaded && !R.loading) setTimeout(load, 0);
+      var list = R.reports.slice().sort(function(a, b){ return String(b.updated_at).localeCompare(String(a.updated_at)); });
+      var body = list.map(function(r){
+        var rc = recipsOf(r.id), mine = rc.filter(function(x){ return x.user_id === myId(); })[0];
+        var tracked = rc.filter(function(x){ return !x.is_external; }), ackd = tracked.filter(function(x){ return x.acknowledged_at && x.ack_revision === r.revision; }).length;
+        var needs = mine && r.status === 'issued' && !(mine.acknowledged_at && mine.ack_revision === r.revision);
+        return '<div class="card" style="margin-bottom:8px;padding:10px 12px;"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;"><div><div class="audit-title">' + e(r.audit_reference || '') + ' — ' + e(r.audit_title || 'Audit report') + '</div>' +
+          '<div class="audit-sub">Revision ' + r.revision + (r.issued_at ? ' · issued ' + e(stamp(r.issued_at)) : ' · not issued yet') + (r.status === 'issued' ? ' · ' + ackd + ' of ' + tracked.length + ' acknowledged' : '') + '</div></div>' +
+          '<div class="flex-wrap" style="align-items:flex-start;"><span class="tag tag-' + ST[r.status][1] + '">' + ST[r.status][0] + '</span>' + (needs ? '<span class="tag tag-rust">Needs your acknowledgement</span>' : '') + '</div></div>' +
+          (r.status === 'issued' || canWork() ? '<div style="font-size:12.5px;white-space:pre-wrap;margin-top:6px;">' + e(r.summary) + '</div>' : '') +
+          (needs ? '<div style="margin-top:8px;">' + bt('ack', { audit:r.audit_id }, 'Acknowledge receipt', true) + '</div>' : '') + '</div>';
+      }).join('');
+      return '<div class="card p4" style="border-color:var(--navy);"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="margin:0;font-size:18px;color:var(--navy);">Audit Reports</h2>' + bt('reload', {}, '↻ Refresh') + '</div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Reports are drafted, independently reviewed and issued by a quality manager. Everyone on the distribution list acknowledges receipt here.</p>' +
+        (R.error ? '<p style="color:var(--rust);font-size:12px;">' + e(R.error) + '</p>' : '') + (R.loading && !R.loaded ? '<p class="muted-italic">Loading…</p>' : '') +
+        (R.loaded && !list.length ? '<p class="muted-italic">No reports yet.</p>' : '') + body + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Audit reports error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-rp-modal]');
+    if(m){ var k = m.getAttribute('data-rp-modal');
+      if(k === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-rp]'); if(!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var act = el.getAttribute('data-rp'), auditId = el.getAttribute('data-audit');
+    if(act === 'reload'){ R.loading = false; load(); return; }
+    var a = (state.audits || []).filter(function(x){ return x.id === auditId; })[0], r = reportOf(auditId);
+    if(act === 'ack'){ direct('acknowledge_audit_report', { p_audit:auditId }, 'Receipt acknowledged.', auditId); return; }
+    if(act === 'rm'){ if(confirm('Remove this recipient?')) direct('remove_report_recipient', { p_recipient:el.getAttribute('data-id') }, 'Removed.', auditId); return; }
+    if(!a) return;
+    if(act === 'start') actStart(a);
+    else if(act === 'edit' && r) actEdit(a, r);
+    else if(act === 'add' && r) actRecipient(a, r);
+    else if(act === 'review'){ if(confirm('Mark this report as reviewed? You are confirming you have read it and it is accurate.')) direct('review_audit_report', { p_audit:a.id }, 'Report reviewed.', a.id); }
+    else if(act === 'issue'){ if(confirm('Issue this report? It is locked and a fingerprint is recorded. Recipients can then acknowledge it.')) direct('issue_audit_report', { p_audit:a.id }, 'Report issued.', a.id); }
+    else if(act === 'reopen') actReopen(a);
+    else if(act === 'followup') actFollowUp(a);
+  }, true);
+  window.auditReportReset = function(){ R.reports = []; R.recips = []; R.people = []; R.loaded = false; R.loading = false; R.error = ''; modal = null; mount(); };
 })();
 </script>
 
