@@ -19861,14 +19861,18 @@ function showUpdateBanner(){
     }catch(err){ S.error = (err && err.message) || String(err); }
     S.loading = false; rerender();
   }
+  S.eventsDirty = {};
   async function loadEvents(id, force){
-    if(S.eventsLoading[id] || (S.events[id] && !force)) return;
+    if(S.eventsLoading[id]){ if(force) S.eventsDirty[id] = true; return; }   // a newer change arrived while a read was in flight: read again afterwards
+    if(S.events[id] && !force) return;
     S.eventsLoading[id] = true;
     try{
       var r = await supabaseClient.from('scar_events').select('*').eq('scar_id', id).order('created_at', { ascending:false }).limit(60);
       if(!r.error) S.events[id] = r.data || [];
     }catch(_){}
-    S.eventsLoading[id] = false; rerender();
+    S.eventsLoading[id] = false;
+    if(S.eventsDirty[id]){ S.eventsDirty[id] = false; return loadEvents(id, true); }
+    rerender();
   }
   async function refresh(id){ S.loading = false; await load(); if(id){ await loadEvents(id, true); } if(typeof fetchCustomModuleFromCloud === 'function'){ try{ await fetchCustomModuleFromCloud('suppliers', 'suppliers'); }catch(_){} } }
 
