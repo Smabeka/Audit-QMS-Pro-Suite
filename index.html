@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -7270,6 +7270,7 @@ function recallOptionsList(){
   return ["None / Not applicable", ...state.productRecalls.map(r=>`${r.recallNumber?r.recallNumber+' — ':''}${r.productName} — ${r.status}`)];
 }
 function changeControlOptionsList(){
+  if(window.changeLinkOptions && window.changeLinkOptions().length) return ["None / Not linked", ...window.changeLinkOptions()];
   return ["None / Not linked", ...state.changeControls.map(c=>`${c.changeNumber?c.changeNumber+' — ':''}${c.title} (${c.status})`)];
 }
 function riskOptionsList(){
@@ -9226,7 +9227,7 @@ function render(){
         : tab==="mgmt-review" ? renderManagementReview()
         : tab==="quality-objectives" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="quality-objectives"))
         : tab==="interested-parties" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="interested-parties"))
-        : tab==="change-control" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="change-control"))
+        : tab==="change-control" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderChangeControl) ? window.renderChangeControl() : renderGenericModule(GENERIC_MODULES.find(m=>m.key==="change-control")))
         : tab==="compliance-framework" ? renderComplianceFramework()
         : tab==="validation-qualification" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="validation-qualification"))
         : tab==="communication-log" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="communication-log"))
@@ -20151,6 +20152,433 @@ function showUpdateBanner(){
     }
   }, true);
   window.supplierScarReset = function(){ S.cases = []; S.evidence = []; S.events = {}; S.eventsLoading = {}; S.people = []; S.loaded = false; S.loading = false; S.error = ''; S.openId = null; modal = null; mount(); };
+})();
+</script>
+
+<script>
+/* ===== Change control (stage 1): controlled change lifecycle with assessment, separated approval, go-live, verification, effectiveness, rollback ===== */
+(function(){
+  var C = { cases:[], evidence:[], events:{}, eventsLoading:{}, eventsDirty:{}, people:[], ncrs:[], capas:[], loaded:false, loading:false, error:'', filter:'open', openId:null };
+  var modal = null;
+  var STATUS = { draft:['Draft','neutral'], under_review:['Under review','navy'], changes_requested:['Changes requested','amber'], approved:['Approved','green'], implemented:['Implemented','amber'],
+    verified:['Verified','navy'], closed:['Closed','green'], not_effective:['Not effective','rust'], rejected:['Rejected','rust'], cancelled:['Cancelled','neutral'], rolled_back:['Rolled back','neutral'] };
+  var STEPS = [['draft','Draft'],['under_review','Review'],['approved','Approved'],['implemented','Implemented'],['verified','Verified'],['closed','Closed']];
+  var TYPE = [['process','Process'],['document','Document'],['equipment','Equipment'],['product','Product / recipe / packaging'],['software','Software / data'],['supplier','Supplier / material'],['other','Other']];
+  var PRIORITY = [['routine','Routine'],['urgent','Urgent'],['emergency','Emergency']];
+  var SOURCE = [['ncr','NCR'],['capa','CAPA'],['audit_finding','Audit finding'],['customer_request','Customer request'],['improvement','Improvement idea'],['regulatory','Regulatory update'],['other','Other']];
+  var IMPACT = [['none','None'],['low','Low'],['medium','Medium'],['high','High']];
+  var CHECK = [['product_safety','Product safety, quality, legality or customer requirements'],['haccp_allergen','HACCP hazards, CCPs/OPRPs, allergens, cleaning controls'],
+    ['spec_label','Specifications, labels, shelf life, traceability'],['equipment','Equipment qualification, calibration, maintenance'],['docs_training','Controlled documents and employee training'],
+    ['supplier','Supplier approval and incoming-material checks'],['software_data','Software, data integrity, access permissions, integrations'],['regulatory_customer','Regulatory or customer notification / approval']];
+  var STAGE_LABEL = { assessment:'Assessment', implementation:'Implementation', verification:'Verification', effectiveness:'Effectiveness' };
+  var FILE_TYPES = { pdf:'application/pdf', doc:'application/msword', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    xls:'application/vnd.ms-excel', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', txt:'text/plain' };
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function stamp(d){ if(!d) return '—'; var x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleString(); }
+  function day(d){ return d ? String(d).slice(0, 10) : '—'; }
+  function todayStr(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function myId(){ try{ return currentProfile ? currentProfile.id : null; }catch(_){ return null; } }
+  function canRaise(){ return ['admin','quality manager','approver','department manager','auditor'].indexOf(myRole()) !== -1; }
+  function isApprover(){ return ['admin','quality manager','approver'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function nameOf(id){ for(var i = 0; i < C.people.length; i++){ if(C.people[i].id === id) return C.people[i].full_name || 'Unnamed'; } return id ? String(id).slice(0, 8) : '—'; }
+  function byId(id){ return C.cases.filter(function(c){ return c.id === id; })[0]; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function isHigh(c){ return c.quality_impact === 'high' || c.safety_impact === 'high' || c.regulatory_impact === 'high'; }
+  function isOpen(c){ return ['closed','cancelled','rejected','rolled_back'].indexOf(c.status) === -1; }
+  function refLabel(list, id){ for(var i = 0; i < list.length; i++){ if(list[i].id === id) return (list[i].reference_number || '') + ' — ' + (list[i].title || ''); } return ''; }
+
+  async function load(){
+    if(C.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    C.loading = true; C.error = '';
+    try{
+      var a = await fetchAllRows('change_cases', function(q){ return q.order('created_at', { ascending:false }); });
+      var b = await fetchAllRows('change_evidence', function(q){ return q.order('uploaded_at', { ascending:true }); });
+      var p = await supabaseClient.rpc('audit_people');
+      var n = await supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500);
+      var cp = await supabaseClient.from('capas').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500);
+      if(a.error) C.error = a.error.message; else if(b.error) C.error = b.error.message;
+      else { C.cases = a.data; C.evidence = b.data; C.people = p.data || []; C.ncrs = (n && n.data) || []; C.capas = (cp && cp.data) || []; C.loaded = true; }
+    }catch(err){ C.error = (err && err.message) || String(err); }
+    C.loading = false; rerender();
+  }
+  async function loadEvents(id, force){
+    if(C.eventsLoading[id]){ if(force) C.eventsDirty[id] = true; return; }
+    if(C.events[id] && !force) return;
+    C.eventsLoading[id] = true;
+    try{
+      var r = await supabaseClient.from('change_events').select('*').eq('change_id', id).order('created_at', { ascending:false }).limit(80);
+      if(!r.error) C.events[id] = r.data || [];
+    }catch(_){}
+    C.eventsLoading[id] = false;
+    if(C.eventsDirty[id]){ C.eventsDirty[id] = false; return loadEvents(id, true); }
+    rerender();
+  }
+  async function refresh(id){ C.loading = false; await load(); if(id){ await loadEvents(id, true); } }
+
+  /* ----- generic modal ----- */
+  function mount(){
+    var host = document.getElementById('ch-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'ch-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'chf-' + x.id, ctl;
+      if(x.type === 'heading') return '<div style="grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd);font-size:12.5px;font-weight:700;color:var(--navy);">' + e(x.label) + (x.help ? '<div style="font-weight:400;color:var(--muted);font-size:11.5px;">' + e(x.help) + '</div>' : '') + '</div>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'file') ctl = '<input type="file" id="' + id + '" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-ch-modal="overlay"><div class="modal-card" style="max-width:620px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-ch-modal="cancel">Cancel</button><button class="btn btn-primary" data-ch-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {}, files = {};
+    modal.fields.forEach(function(x){ if(x.type === 'heading') return; var el = document.getElementById('chf-' + x.id); if(!el) return; if(x.type === 'file') files[x.id] = el.files && el.files[0]; else v[x.id] = String(el.value || '').trim(); });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id] && !files[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount();
+    var cfg = modal;
+    try{
+      var extra = cfg.prepare ? await cfg.prepare(v, files) : null;
+      var call = cfg.call(v, extra);
+      var r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      modal = null; mount(); toast(cfg.successText || 'Saved.');
+      var newId = (typeof r.data === 'string' && r.data.length > 20) ? r.data : null;
+      await refresh(cfg.changeId || newId);
+      if(newId && !cfg.changeId) C.openId = newId;
+      if(cfg.after){ try{ cfg.after(v); }catch(_){} }
+      rerender();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+  async function direct(fn, args, ok, id){
+    var r = await supabaseClient.rpc(fn, args);
+    if(r.error){ toast(r.error.message, 'error'); return; }
+    toast(ok); await refresh(id);
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+
+  /* ----- forms ----- */
+  function peopleOptions(){ return [['', '— choose —']].concat(C.people.map(function(p){ return [p.id, (p.full_name || 'Unnamed') + (p.role ? ' · ' + p.role : '')]; })); }
+  function refOptions(list, none){ return [['', none]].concat(list.map(function(x){ return [x.id, (x.reference_number || '') + ' — ' + String(x.title || '').slice(0, 70)]; })); }
+  function chooseOptions(list){ return [['', '— choose —']].concat(list); }
+  function caseFields(c){
+    c = c || {}; var cl = c.checklist || {};
+    var f = [
+      { id:'title', label:'Change title', value:c.title || '', required:true },
+      { id:'change_type', label:'Change type', type:'select', options:chooseOptions(TYPE), value:c.change_type || '' },
+      { id:'priority', label:'Priority', type:'select', options:chooseOptions(PRIORITY), value:c.priority || '' },
+      { id:'site', label:'Site / department / process affected', value:c.site || '' },
+      { id:'owner_id', label:'Change owner (accountable for delivery)', type:'select', options:peopleOptions(), value:c.owner_id || '' },
+      { id:'permanence', label:'Permanent or temporary', type:'select', options:chooseOptions([['permanent','Permanent'],['temporary','Temporary']]), value:c.permanence || '' },
+      { id:'temp_expiry', label:'Temporary change expires on (temporary changes only)', type:'date', value:c.temp_expiry || '' },
+      { type:'heading', label:'Why is this change needed? (source)' },
+      { id:'source', label:'Source', type:'select', options:chooseOptions(SOURCE), value:c.source || '' },
+      { id:'source_ncr_id', label:'Linked NCR (when the source is an NCR)', type:'select', options:refOptions(C.ncrs, '— none —'), value:c.source_ncr_id || '' },
+      { id:'source_capa_id', label:'Linked CAPA (when the source is a CAPA)', type:'select', options:refOptions(C.capas, '— none —'), value:c.source_capa_id || '' },
+      { id:'source_note', label:'Source detail (audit finding, customer, regulation or idea — needed unless NCR/CAPA)', value:c.source_note || '' },
+      { id:'reason', label:'Reason for the change', type:'textarea', value:c.reason || '' },
+      { type:'heading', label:'What changes?' },
+      { id:'description', label:'Description of the change', type:'textarea', value:c.description || '' },
+      { id:'current_state', label:'Current state (what exists now)', type:'textarea', value:c.current_state || '' },
+      { id:'proposed_state', label:'Proposed state (what will be different)', type:'textarea', value:c.proposed_state || '' },
+      { id:'affected_records', label:'Affected documents, equipment, products, suppliers, software or specifications', type:'textarea', rows:2, value:c.affected_records || '' },
+      { type:'heading', label:'Impact assessment' },
+      { id:'quality_impact', label:'Quality impact', type:'select', options:chooseOptions(IMPACT), value:c.quality_impact || '' },
+      { id:'safety_impact', label:'Food-safety / safety impact', type:'select', options:chooseOptions(IMPACT), value:c.safety_impact || '' },
+      { id:'regulatory_impact', label:'Regulatory / customer impact', type:'select', options:chooseOptions(IMPACT), value:c.regulatory_impact || '' },
+      { id:'impact_reasoning', label:'Reasoning for the ratings (required if any is High)', type:'textarea', value:c.impact_reasoning || '' },
+      { id:'reviewer_id', label:'Named reviewer (required if food-safety or regulatory impact is High, e.g. food safety / compliance lead)', type:'select', options:peopleOptions(), value:c.reviewer_id || '' },
+      { type:'heading', label:'Impact checklist', help:'Answer all eight. If a question is affected, describe the consequence and the action needed.' } ];
+    CHECK.forEach(function(k){
+      var a = cl[k[0]] || {};
+      f.push({ id:'cl_' + k[0], label:k[1] + ' — affected?', type:'select', options:[['', '— answer —'],['no','No'],['yes','Yes']], value:a.affected === true ? 'yes' : a.affected === false ? 'no' : '' });
+      f.push({ id:'cln_' + k[0], label:'If yes: consequence and action needed', type:'textarea', rows:2, value:a.note || '' });
+    });
+    f = f.concat([
+      { type:'heading', label:'Plan and controls' },
+      { id:'risk_assessment', label:'Risk assessment summary', type:'textarea', value:c.risk_assessment || '' },
+      { id:'implementation_plan', label:'Implementation plan', type:'textarea', value:c.implementation_plan || '' },
+      { id:'verification_method', label:'Verification method (how you will check it was done right and works)', type:'textarea', value:c.verification_method || '' },
+      { id:'rollback_plan', label:'Rollback / contingency plan (if it cannot be reversed: the containment or recovery plan)', type:'textarea', value:c.rollback_plan || '' },
+      { id:'planned_date', label:'Planned implementation date', type:'date', value:c.planned_date || '' } ]);
+    return f;
+  }
+  function caseArgs(v){
+    var f = {}; ['title','change_type','priority','site','owner_id','permanence','temp_expiry','source','source_ncr_id','source_capa_id','source_note','reason','description','current_state','proposed_state','affected_records',
+      'quality_impact','safety_impact','regulatory_impact','impact_reasoning','reviewer_id','risk_assessment','implementation_plan','verification_method','rollback_plan','planned_date'].forEach(function(k){ f[k] = v[k] || ''; });
+    var cl = {}; CHECK.forEach(function(k){ var s = v['cl_' + k[0]]; if(s) cl[k[0]] = { affected:s === 'yes', note:v['cln_' + k[0]] || '' }; });
+    f.checklist = cl; return f;
+  }
+  function actCreate(){
+    openModal({ title:'Raise a change request', submitText:'Save as draft', successText:'Change saved as a draft.', fields:caseFields(),
+      help:'Only the title is needed to save. Everything else is checked when you submit it for review.',
+      call:function(v){ return { fn:'change_save', args:{ p_id:null, p_f:caseArgs(v) } }; } });
+  }
+  function actEdit(c){
+    openModal({ title:'Edit ' + c.change_number, submitText:'Save', successText:'Change saved.', changeId:c.id, fields:caseFields(c),
+      call:function(v){ return { fn:'change_save', args:{ p_id:c.id, p_f:caseArgs(v) } }; } });
+  }
+  function actReview(c){
+    openModal({ title:'Record your review of ' + c.change_number, submitText:'Record review', successText:'Review recorded.', changeId:c.id,
+      help:'You are the named reviewer. Objecting sends the change back to the requester.',
+      fields:[ { id:'dec', label:'Your decision', type:'select', options:[['endorse','Endorse'],['object','Object']], value:'endorse' }, { id:'comment', label:'Comment (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'record_change_review', args:{ p_id:c.id, p_decision:v.dec, p_comment:v.comment } }; } });
+  }
+  function actDecide(c){
+    openModal({ title:'Decide on ' + c.change_number, submitText:'Record decision', successText:'Decision recorded.', changeId:c.id,
+      help:'Approving is a signature: you are recorded with the time, and your password is checked. You cannot approve a change you raised (unless you are the only eligible approver, which is recorded).',
+      fields:[ { id:'dec', label:'Decision', type:'select', options:[['approve','Approve'],['changes','Send back for changes'],['reject','Reject']], value:'approve' },
+        { id:'reason', label:'Justification / reason', type:'textarea', required:true }, { id:'cond', label:'Conditions of approval (optional)', type:'textarea', rows:2 } ],
+      prepare:async function(v){ if(v.dec === 'approve') await signed('Approving a change is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'decide_change', args:{ p_id:c.id, p_decision:v.dec, p_reason:v.reason, p_conditions:nul(v.cond) } }; } });
+  }
+  function actGolive(c){
+    openModal({ title:'Authorise go-live of ' + c.change_number, submitText:'Authorise', successText:'Go-live authorised.', changeId:c.id,
+      help:'Confirm the go-live conditions are met: validation done, procedures revised, operators trained, equipment ready. This is a signature.',
+      fields:[ { id:'note', label:'Go-live conditions confirmed (at least 15 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Authorising go-live is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'authorise_change_golive', args:{ p_id:c.id, p_note:v.note } }; } });
+  }
+  function actImpl(c){
+    openModal({ title:'Record implementation of ' + c.change_number, submitText:'Record', successText:'Implementation recorded.', changeId:c.id,
+      help:'Attach implementation evidence first if this change has Medium or High impact. You are recorded as the implementer.',
+      fields:[ { id:'text', label:'What was implemented', type:'textarea', required:true }, { id:'date', label:'Date it went live', type:'date', value:todayStr(), required:true } ],
+      call:function(v){ return { fn:'record_change_implementation', args:{ p_id:c.id, p_text:v.text, p_date:nul(v.date) } }; },
+      after:function(){ if(isHigh(c) && typeof flagFsmsReview === 'function'){ flagFsmsReview('Change ' + c.change_number + ' (' + c.title + ') with a High impact was implemented on ' + todayStr() + ': confirm the FSMS checklist still reflects current practice.'); if(typeof persist === 'function') persist(); } } });
+  }
+  function actVerify(c){
+    openModal({ title:'Verify implementation of ' + c.change_number, submitText:'Record verification', successText:'Verification recorded.', changeId:c.id,
+      help:'Check what was done against the approved plan. You cannot verify what you implemented (unless you are the only eligible person, which is recorded). Effectiveness is judged later, on the review date you set.',
+      fields:[ { id:'crit', label:'Criteria used to check the implementation', type:'textarea', required:true }, { id:'res', label:'What you found', type:'textarea', required:true },
+        { id:'val', label:'Validation: evidence the new control achieves the required result' + (isHigh(c) ? ' (required: High impact)' : ' (optional)'), type:'textarea' },
+        { id:'due', label:'Effectiveness review date', type:'date', required:true } ],
+      call:function(v){ return { fn:'verify_change', args:{ p_id:c.id, p_criteria:v.crit, p_result:v.res, p_validation:nul(v.val), p_effectiveness_due:nul(v.due) } }; } });
+  }
+  function actEffect(c){
+    openModal({ title:'Effectiveness review of ' + c.change_number, submitText:'Record outcome', successText:'Outcome recorded.', changeId:c.id,
+      help:'Did the change achieve its intended outcome? Effective closes the change (a signature). Not effective blocks closure and requires corrective action or rollback.',
+      fields:[ { id:'eff', label:'Outcome', type:'select', options:[['yes','Effective: close the change'],['no','Not effective']], value:'yes' }, { id:'sum', label:'Findings / closure summary', type:'textarea', required:true } ],
+      prepare:async function(v){ if(v.eff === 'yes') await signed('Closing a change is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'review_change_effectiveness', args:{ p_id:c.id, p_effective:v.eff === 'yes', p_summary:v.sum } }; } });
+  }
+  function actRemed(c){
+    openModal({ title:'Failed effectiveness: ' + c.change_number, submitText:'Record', successText:'Recorded.', changeId:c.id,
+      help:'Corrective action returns the change to verification as a new cycle. Rollback ends the change. Either way, link the NCR or CAPA raised for the failure.',
+      fields:[ { id:'act', label:'Action', type:'select', options:[['corrective','Corrective action, then re-verify'],['rollback','Roll the change back']], value:'corrective' },
+        { id:'plan', label:'Corrective actions taken, or how the rollback was done', type:'textarea', required:true },
+        { id:'res', label:'Residual-risk decision and the controls in place meanwhile', type:'textarea', required:true },
+        { id:'ncr', label:'Linked NCR', type:'select', options:refOptions(C.ncrs, '— none —'), value:'' }, { id:'capa', label:'Linked CAPA', type:'select', options:refOptions(C.capas, '— none —'), value:'' } ],
+      call:function(v){ return { fn:'record_change_remediation', args:{ p_id:c.id, p_action:v.act, p_plan:v.plan, p_residual:v.res, p_ncr:nul(v.ncr), p_capa:nul(v.capa) } }; } });
+  }
+  function actReason(c, fn, title, help, ok){
+    openModal({ title:title, submitText:'Confirm', successText:ok, changeId:c.id, help:help, fields:[ { id:'reason', label:'Reason (at least 15 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:fn, args:{ p_id:c.id, p_reason:v.reason } }; } });
+  }
+  function actExtend(c){
+    openModal({ title:'Extend temporary change ' + c.change_number, submitText:'Extend', successText:'Expiry extended.', changeId:c.id, help:'Currently expires ' + day(c.temp_expiry) + '. The old date, new date and reason are kept in the history.',
+      fields:[ { id:'date', label:'New expiry date', type:'date', required:true }, { id:'reason', label:'Justification', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'extend_temporary_change', args:{ p_id:c.id, p_date:nul(v.date), p_reason:v.reason } }; } });
+  }
+  async function sha256Hex(buf){ var d = await crypto.subtle.digest('SHA-256', buf); return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
+  function defaultStage(st){ return { draft:'assessment', changes_requested:'assessment', under_review:'assessment', approved:'implementation', implemented:'verification', verified:'effectiveness', not_effective:'effectiveness' }[st] || 'assessment'; }
+  function actAttach(c){
+    openModal({ title:'Attach evidence to ' + c.change_number, submitText:'Attach', successText:'File attached.', changeId:c.id,
+      help:'Photo, PDF, Word, Excel or text, up to 25 MB. A fingerprint (SHA-256) is recorded and checked on every download. Files cannot be replaced or deleted once attached.',
+      fields:[ { id:'file', label:'File', type:'file' }, { id:'stage', label:'Which step does it support?', type:'select', options:Object.keys(STAGE_LABEL).map(function(k){ return [k, STAGE_LABEL[k]]; }), value:defaultStage(c.status) },
+        { id:'note', label:'What does it show? (optional)' } ],
+      prepare:async function(v, files){
+        var file = files.file; if(!file) throw new Error('Choose a file first.');
+        if(file.size < 1) throw new Error('The file is empty.'); if(file.size > 26214400) throw new Error('The file is larger than 25 MB.');
+        var ext = (file.name.split('.').pop() || '').toLowerCase(); var mime = FILE_TYPES[ext]; if(!mime) throw new Error('This file type is not allowed.');
+        var hash = await sha256Hex(await file.arrayBuffer());
+        var rand = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+        var path = ((currentProfile && currentProfile.organization_id) || '') + '/' + c.id + '/' + rand + '.' + ext;
+        var up = await supabaseClient.storage.from('change-evidence').upload(path, file, { contentType:mime, upsert:false });
+        if(up.error) throw new Error('Upload failed: ' + up.error.message);
+        return { path:path, name:file.name, mime:mime, size:file.size, hash:hash };
+      },
+      call:function(v, x){ return { fn:'attach_change_evidence', args:{ p_change:c.id, p_stage:v.stage, p_path:x.path, p_file_name:x.name, p_mime_type:x.mime, p_file_size:x.size, p_content_hash:x.hash, p_note:nul(v.note) } }; } });
+  }
+  async function download(evId){
+    try{
+      var x = C.evidence.filter(function(r){ return r.id === evId; })[0]; if(!x) throw new Error('File not found.');
+      var lg = await supabaseClient.rpc('log_change_evidence_download', { p_evidence:evId }); if(lg.error) throw new Error(lg.error.message);
+      var dl = await supabaseClient.storage.from('change-evidence').download(x.storage_path);
+      if(dl.error || !dl.data) throw new Error((dl.error && dl.error.message) || 'Could not download the file.');
+      var hash = await sha256Hex(await dl.data.arrayBuffer());
+      if(hash !== x.content_hash) toast('Warning: this file does not match its recorded fingerprint. Do not rely on it.', 'error');
+      var url = URL.createObjectURL(dl.data), l = document.createElement('a'); l.href = url; l.download = x.file_name; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+      if(hash === x.content_hash) toast('Downloaded. Fingerprint verified.');
+    }catch(err){ toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- render ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-ch="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function dueInfo(c){
+    var t = todayStr();
+    if(c.status === 'approved' && c.planned_date && String(c.planned_date) < t) return 'Implementation overdue (planned ' + day(c.planned_date) + ')';
+    if(c.status === 'verified' && c.effectiveness_due && String(c.effectiveness_due) <= t) return 'Effectiveness review due (' + day(c.effectiveness_due) + ')';
+    if(c.permanence === 'temporary' && c.temp_expiry && String(c.temp_expiry) < t && ['approved','implemented','verified'].indexOf(c.status) !== -1) return 'Temporary change expired ' + day(c.temp_expiry) + ': reverse it or extend formally';
+    return '';
+  }
+  function progress(c){
+    if(['cancelled','rejected','rolled_back'].indexOf(c.status) !== -1) return '<div class="muted-italic" style="font-size:12px;">' + e(STATUS[c.status][0]) + ': ' + e(c.close_reason || '') + '</div>';
+    var key = c.status === 'changes_requested' ? 'draft' : c.status === 'not_effective' ? 'verified' : c.status, idx = 0;
+    STEPS.forEach(function(s, i){ if(s[0] === key) idx = i; });
+    return '<div class="flex-wrap" style="gap:4px;margin:6px 0;">' + STEPS.map(function(s, i){
+      var on = i <= idx; return '<span style="font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid ' + (on ? 'var(--navy)' : 'var(--line,#ddd)') + ';background:' + (on ? 'var(--navy)' : 'transparent') + ';color:' + (on ? '#fff' : 'var(--muted)') + ';">' + e(s[1]) + '</span>'; }).join('') +
+      (c.status === 'changes_requested' ? '<span class="tag tag-amber" style="font-size:10px;">Sent back</span>' : '') + (c.status === 'not_effective' ? '<span class="tag tag-rust" style="font-size:10px;">Closure blocked</span>' : '') + (c.cycle > 1 ? '<span class="tag tag-amber" style="font-size:10px;">Cycle ' + c.cycle + '</span>' : '') + '</div>';
+  }
+  function evidenceBlock(c){
+    var fs = C.evidence.filter(function(x){ return x.change_id === c.id; });
+    if(!fs.length) return '<div class="muted-italic" style="font-size:12px;">No evidence files yet.</div>';
+    return fs.map(function(f){ return '<div style="font-size:11.5px;margin-top:3px;">📎 <b>' + e(STAGE_LABEL[f.stage] || f.stage) + '</b> · ' + e(f.file_name) + ' · ' + e(nameOf(f.uploaded_by)) + ' · ' + e(stamp(f.uploaded_at)) + ' · SHA-256 ' + e(String(f.content_hash).slice(0, 10)) + '… ' + bt('dl', { id:f.id }, 'Download') + (f.note ? '<div class="muted-italic">' + e(f.note) + '</div>' : '') + '</div>'; }).join('');
+  }
+  function kv(k, v){ return v ? '<div style="font-size:12.5px;margin-top:4px;"><b>' + e(k) + ':</b> ' + e(v) + '</div>' : ''; }
+  function section(title, inner){ return inner ? '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line,#ddd);"><b style="font-size:12px;">' + e(title) + '</b>' + inner + '</div>' : ''; }
+  function eventText(ev){
+    var d = ev.detail || {};
+    switch(ev.event_type){
+      case 'created': return 'Raised as a draft (' + (d.number || '') + ')';
+      case 'draft_saved': return 'Draft edited';
+      case 'submitted': return 'Submitted for review (cycle ' + d.cycle + ')' + (d.high_impact ? ' — High impact' : '');
+      case 'review_endorsed': return 'Reviewer endorsed: ' + (d.comment || '');
+      case 'review_objected': return 'Reviewer objected, sent back: ' + (d.comment || '');
+      case 'approved': return 'Approved' + (d.self_approved_sole_approver ? ' (SELF-APPROVED: sole eligible approver)' : '') + (d.golive_required ? '; go-live authorisation required' : '') + ': ' + (d.reason || '') + (d.conditions ? ' Conditions: ' + d.conditions : '');
+      case 'rejected': return 'Rejected: ' + (d.reason || '');
+      case 'changes_requested': return 'Sent back for changes: ' + (d.reason || '');
+      case 'approval_withdrawn': return 'Approval withdrawn (cycle ' + d.cycle + '): ' + (d.reason || '');
+      case 'golive_authorised': return 'Go-live authorised' + (d.self_approved_sole_approver ? ' (sole eligible approver)' : '') + ': ' + (d.note || '');
+      case 'implemented': return 'Implementation recorded (live ' + day(d.on) + ')';
+      case 'fsms_review_required': return 'FSMS review required: ' + (d.reason || '');
+      case 'verified': return 'Implementation verified' + (d.self_verified_sole_approver ? ' (sole eligible person)' : '') + '. Criteria: ' + (d.criteria || '') + ' Result: ' + (d.result || '') + ' Effectiveness review ' + day(d.effectiveness_due);
+      case 'closed_effective': return 'Effective: closed. ' + (d.summary || '');
+      case 'effectiveness_failed': return 'Found NOT effective: closure blocked. ' + (d.summary || '');
+      case 'remediation_recorded': return 'Corrective action recorded (cycle ' + d.cycle + '): ' + (d.plan || '') + ' Residual risk: ' + (d.residual_risk || '');
+      case 'rolled_back': return 'Rolled back: ' + (d.plan || '') + ' Residual risk: ' + (d.residual_risk || '');
+      case 'reopened': return 'Reopened (cycle ' + d.cycle + '): ' + (d.reason || '');
+      case 'cancelled': return 'Cancelled: ' + (d.reason || '');
+      case 'temporary_extended': return 'Temporary expiry moved ' + day(d.from) + ' → ' + day(d.to) + ': ' + (d.reason || '');
+      case 'evidence_added': return 'Evidence attached (' + (STAGE_LABEL[d.stage] || d.stage) + '): ' + (d.file_name || '') + ' [' + (d.sha256 || '') + '…]';
+      case 'evidence_downloaded': return 'Evidence downloaded: ' + (d.file_name || '');
+      default: return String(ev.event_type).replace(/_/g, ' ');
+    }
+  }
+  function impactTag(k, v){ var tone = v === 'high' ? 'rust' : v === 'medium' ? 'amber' : 'neutral'; return '<span class="tag tag-' + tone + '" style="font-size:10.5px;">' + e(k) + ': ' + e(lbl(IMPACT, v)) + '</span> '; }
+  function detail(c){
+    if(!C.events[c.id] && !C.eventsLoading[c.id]) setTimeout(function(){ loadEvents(c.id); }, 0);
+    var ev = C.events[c.id] || [], st = c.status, b = [], me = myId();
+    var mine = c.created_by === me;
+    if(st === 'draft' || st === 'changes_requested'){ if(mine || isQm()){ b.push(bt('edit', { id:c.id }, 'Edit')); b.push(bt('submit', { id:c.id }, 'Submit for review', true)); b.push(bt('cancel', { id:c.id }, 'Cancel')); } }
+    if(st === 'under_review'){
+      if(c.reviewer_id && c.reviewer_id === me && !c.review_decision) b.push(bt('review', { id:c.id }, 'Record my review', true));
+      if(isApprover()) b.push(bt('decide', { id:c.id }, 'Approve / reject / send back', true));
+      if(isQm()) b.push(bt('cancel', { id:c.id }, 'Cancel')); }
+    if(st === 'approved'){
+      if(c.golive_required && !c.golive_at && isApprover()) b.push(bt('golive', { id:c.id }, 'Authorise go-live', true));
+      if((!c.golive_required || c.golive_at) && (c.owner_id === me || isQm())) b.push(bt('impl', { id:c.id }, 'Record implementation', true));
+      if(isQm()){ b.push(bt('withdraw', { id:c.id }, 'Withdraw approval (to amend)')); if(c.permanence === 'temporary') b.push(bt('extend', { id:c.id }, 'Extend temporary change')); b.push(bt('cancel', { id:c.id }, 'Cancel')); } }
+    if(st === 'implemented'){ if(isApprover()) b.push(bt('verify', { id:c.id }, 'Verify implementation', true)); if(isQm() && c.permanence === 'temporary') b.push(bt('extend', { id:c.id }, 'Extend temporary change')); }
+    if(st === 'verified'){ if(isApprover()) b.push(bt('effect', { id:c.id }, 'Effectiveness review', true)); if(isQm() && c.permanence === 'temporary') b.push(bt('extend', { id:c.id }, 'Extend temporary change')); }
+    if(st === 'not_effective' && isApprover()) b.push(bt('remed', { id:c.id }, 'Record corrective action / rollback', true));
+    if(st === 'closed' && isQm()) b.push(bt('reopen', { id:c.id }, 'Reopen'));
+    if(isOpen(c) && canRaise()) b.push(bt('attach', { id:c.id }, '📎 Attach evidence'));
+    var od = dueInfo(c);
+    var yes = CHECK.filter(function(k){ var a = (c.checklist || {})[k[0]]; return a && a.affected === true; }).map(function(k){ return kv(k[1], ((c.checklist || {})[k[0]] || {}).note); }).join('');
+    var nos = CHECK.filter(function(k){ var a = (c.checklist || {})[k[0]]; return a && a.affected === false; }).length;
+    var src = c.source === 'ncr' ? 'NCR ' + refLabel(C.ncrs, c.source_ncr_id) : c.source === 'capa' ? 'CAPA ' + refLabel(C.capas, c.source_capa_id) : lbl(SOURCE, c.source) + (c.source_note ? ' — ' + c.source_note : '');
+    return '<div style="border-top:1px solid var(--line2,#eee);padding:12px 14px;">' + progress(c) + (od ? '<div style="color:var(--rust);font-size:12.5px;font-weight:600;">⚠ ' + e(od) + '</div>' : '') +
+      '<div style="margin:4px 0;">' + impactTag('Quality', c.quality_impact) + impactTag('Food safety', c.safety_impact) + impactTag('Regulatory', c.regulatory_impact) + '</div>' +
+      kv('Type / priority', lbl(TYPE, c.change_type) + ' · ' + lbl(PRIORITY, c.priority)) + kv('Site / process', c.site) + kv('Owner', c.owner_id ? nameOf(c.owner_id) : '') + kv('Requested by', nameOf(c.created_by)) +
+      kv('Source', c.source ? src : '') + kv('Permanent / temporary', c.permanence ? lbl([['permanent','Permanent'],['temporary','Temporary']], c.permanence) + (c.temp_expiry ? ' — expires ' + day(c.temp_expiry) : '') : '') +
+      kv('Reason', c.reason) + kv('Description', c.description) + kv('Current state', c.current_state) + kv('Proposed state', c.proposed_state) + kv('Affected records', c.affected_records) +
+      section('Assessment', kv('Impact reasoning', c.impact_reasoning) + yes + (nos ? '<div class="muted-italic" style="font-size:11.5px;margin-top:3px;">' + nos + ' checklist question(s) answered "not affected".</div>' : '') + kv('Risk assessment', c.risk_assessment)) +
+      section('Plan', kv('Implementation plan', c.implementation_plan) + kv('Verification method', c.verification_method) + kv('Rollback / contingency', c.rollback_plan) + kv('Planned date', c.planned_date ? day(c.planned_date) : '')) +
+      section('Review and approval', kv('Named reviewer', c.reviewer_id ? nameOf(c.reviewer_id) + (c.review_decision ? ' — ' + (c.review_decision === 'endorse' ? 'endorsed' : 'objected') + ': ' + (c.review_comment || '') : ' — review pending') : '') +
+        (c.approved_by ? kv('Approved by', nameOf(c.approved_by) + ', ' + stamp(c.approved_at)) + kv('Justification', c.approval_reason) + kv('Conditions', c.approval_conditions) + (c.self_approved ? '<div style="color:var(--rust);font-size:12px;font-weight:600;margin-top:3px;">Self-approved: the requester was the organisation\'s only eligible approver.</div>' : '') : '') +
+        (c.golive_required ? kv('Go-live', c.golive_at ? nameOf(c.golive_by) + ', ' + stamp(c.golive_at) + ' — ' + (c.golive_note || '') : 'authorisation required before implementation') : '')) +
+      section('Implementation', kv('Done', c.implemented_text) + (c.implemented_at ? kv('Live on', day(c.implemented_on)) + kv('Recorded by', nameOf(c.implemented_by)) : '')) +
+      section('Verification', kv('Criteria', c.verify_criteria) + kv('Result', c.verify_result) + kv('Validation', c.validation_note) + (c.verified_at ? kv('Verified by', nameOf(c.verified_by) + ', ' + stamp(c.verified_at)) + kv('Effectiveness review due', day(c.effectiveness_due)) : '')) +
+      section('Effectiveness', c.effectiveness_at ? (c.effectiveness_result === 'effective' ? '<span class="tag tag-green">Effective</span>' : '<span class="tag tag-rust">Not effective</span>') + kv('Findings', c.effectiveness_summary) + kv('Reviewed by', nameOf(c.effectiveness_by) + ', ' + stamp(c.effectiveness_at)) : '') +
+      section('Corrective action / rollback', c.remediation_at ? kv('Action', c.remediation_action === 'rollback' ? 'Rollback' : 'Corrective action') + kv('Plan', c.remediation_plan) + kv('Residual risk', c.residual_risk) + kv('Linked NCR', refLabel(C.ncrs, c.remediation_ncr_id)) + kv('Linked CAPA', refLabel(C.capas, c.remediation_capa_id)) + kv('By', nameOf(c.remediation_by) + ', ' + stamp(c.remediation_at)) : '') +
+      (c.status === 'closed' ? section('Closure', kv('Closed by', nameOf(c.closed_by) + ', ' + stamp(c.closed_at))) : '') +
+      '<div style="margin-top:10px;"><b style="font-size:12px;">Evidence</b>' + evidenceBlock(c) + '</div>' +
+      (b.length ? '<div class="flex-wrap" style="gap:6px;margin-top:10px;">' + b.join('') + '</div>' : '') +
+      (ev.length ? '<details style="margin-top:10px;"><summary style="font-size:12px;cursor:pointer;">History (' + ev.length + ')</summary>' + ev.map(function(x){ return '<div style="font-size:11.5px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">' + e(stamp(x.created_at)) + ' · ' + e(x.actor_name || '—') + '</span><br>' + e(eventText(x)) + '</div>'; }).join('') + '</details>' : '') + '</div>';
+  }
+  window.renderChangeControl = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use change control.</p></div>';
+      if(!C.loaded && !C.loading) setTimeout(load, 0);
+      var all = C.cases, open = all.filter(isOpen), review = open.filter(function(c){ return c.status === 'under_review'; }), due = open.filter(function(c){ return dueInfo(c); }), high = open.filter(isHigh);
+      var list = all.filter(function(c){ return C.filter === 'all' ? true : C.filter === 'open' ? isOpen(c) : C.filter === 'review' ? c.status === 'under_review' : C.filter === 'due' ? (isOpen(c) && dueInfo(c)) : !isOpen(c); });
+      function stat(n, l, tone){ return '<div style="flex:1 1 110px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+      var chips = [['open','Open'],['review','Awaiting approval'],['due','Due / overdue'],['closed','Finished'],['all','All']].map(function(x){ return '<button class="status-pill ' + (C.filter === x[0] ? 'active' : '') + '" data-ch="filter" data-f="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+      var rows = list.map(function(c){
+        var od = dueInfo(c), st = STATUS[c.status] || [c.status, 'neutral'], op = C.openId === c.id;
+        return '<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-ch="toggle" data-id="' + e(c.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (op ? '▾' : '›') + '</span><div style="min-width:0;">' +
+          '<div class="audit-title">' + e(c.change_number) + ' · ' + e(c.title) + '</div><div class="audit-sub">' + e(lbl(TYPE, c.change_type)) + ' · ' + e(c.site || '—') + ' · owner ' + e(c.owner_id ? nameOf(c.owner_id) : '—') + '</div></div></div>' +
+          '<div class="flex-wrap">' + (isHigh(c) ? '<span class="tag tag-rust">High impact</span>' : '') + '<span class="tag tag-' + st[1] + '">' + e(st[0]) + '</span>' + (od ? '<span class="tag tag-rust">Due</span>' : '') + '</div></button>' + (op ? detail(c) : '') + '</div>';
+      }).join('');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;"><h2 class="serif" style="font-size:18px;margin:0;">🔄 Change Control</h2><div class="flex-wrap">' +
+        bt('reload', {}, '↻ Refresh') + (canRaise() ? bt('create', {}, '+ Raise change', true) : '') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">🔒 Shared with authorised users in your organisation. Each change moves through assessment, review, separate approval, go-live (High impact), implementation, verification and an effectiveness review. Every step records who did it and when, and cannot be edited afterwards.</p>' +
+        (C.error ? '<p style="color:var(--rust);font-size:12px;">' + e(C.error) + '</p>' : '') +
+        '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + stat(open.length, 'open changes') + stat(review.length, 'awaiting approval') + stat(due.length, 'due / overdue', due.length ? 'rust' : '') + stat(high.length, 'high impact open', high.length ? 'rust' : '') + '</div>' +
+        '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + chips + '</div>' +
+        (C.loading && !C.loaded ? '<p class="muted-italic">Loading…</p>' : (rows || '<p class="muted-italic">No changes in this view.</p>'));
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Change control page error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+  window.changeLinkOptions = function(){ return C.cases.map(function(c){ return c.change_number + ' — ' + c.title + ' (' + (STATUS[c.status] ? STATUS[c.status][0] : c.status) + ')'; }); };
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-ch-modal]');
+    if(m){ var k = m.getAttribute('data-ch-modal');
+      if(k === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-ch]'); if(!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var a = el.getAttribute('data-ch'), id = el.getAttribute('data-id'), c = id ? byId(id) : null;
+    if(a === 'reload'){ C.loading = false; C.events = {}; load(); }
+    else if(a === 'filter'){ C.filter = el.getAttribute('data-f'); rerender(); }
+    else if(a === 'toggle'){ C.openId = C.openId === id ? null : id; rerender(); }
+    else if(a === 'create') actCreate();
+    else if(a === 'dl') download(id);
+    else if(c){
+      if(a === 'edit') actEdit(c); else if(a === 'review') actReview(c); else if(a === 'decide') actDecide(c); else if(a === 'golive') actGolive(c); else if(a === 'impl') actImpl(c);
+      else if(a === 'verify') actVerify(c); else if(a === 'effect') actEffect(c); else if(a === 'remed') actRemed(c); else if(a === 'attach') actAttach(c); else if(a === 'extend') actExtend(c);
+      else if(a === 'submit'){ if(confirm('Submit ' + c.change_number + ' for review? The database checks that every required field is complete.')) direct('submit_change', { p_id:c.id }, 'Submitted for review.', c.id); }
+      else if(a === 'withdraw') actReason(c, 'withdraw_change_approval', 'Withdraw approval of ' + c.change_number, 'The change goes back to the requester to be amended and approved again.', 'Approval withdrawn.');
+      else if(a === 'reopen') actReason(c, 'reopen_change', 'Reopen ' + c.change_number, 'Starts a new cycle; the change must be reassessed and approved again.', 'Change reopened.');
+      else if(a === 'cancel') actReason(c, 'cancel_change', 'Cancel ' + c.change_number, 'A cancelled change stays on record with your reason.', 'Change cancelled.');
+    }
+  }, true);
+  window.changeControlReset = function(){ C.cases = []; C.evidence = []; C.events = {}; C.eventsLoading = {}; C.eventsDirty = {}; C.people = []; C.ncrs = []; C.capas = []; C.loaded = false; C.loading = false; C.error = ''; C.openId = null; modal = null; mount(); };
 })();
 </script>
 
