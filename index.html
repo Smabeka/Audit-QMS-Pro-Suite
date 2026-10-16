@@ -20158,7 +20158,7 @@ function showUpdateBanner(){
 <script>
 /* ===== Change control (stage 1): controlled change lifecycle with assessment, separated approval, go-live, verification, effectiveness, rollback ===== */
 (function(){
-  var C = { cases:[], evidence:[], events:{}, eventsLoading:{}, eventsDirty:{}, people:[], ncrs:[], capas:[], loaded:false, loading:false, error:'', filter:'open', openId:null };
+  var C = { cases:[], evidence:[], events:{}, eventsLoading:{}, eventsDirty:{}, people:[], ncrs:[], capas:[], tasks:[], links:[], docs:[], loaded:false, loading:false, error:'', filter:'open', openId:null };
   var modal = null;
   var STATUS = { draft:['Draft','neutral'], under_review:['Under review','navy'], changes_requested:['Changes requested','amber'], approved:['Approved','green'], implemented:['Implemented','amber'],
     verified:['Verified','navy'], closed:['Closed','green'], not_effective:['Not effective','rust'], rejected:['Rejected','rust'], cancelled:['Cancelled','neutral'], rolled_back:['Rolled back','neutral'] };
@@ -20199,11 +20199,15 @@ function showUpdateBanner(){
     try{
       var a = await fetchAllRows('change_cases', function(q){ return q.order('created_at', { ascending:false }); });
       var b = await fetchAllRows('change_evidence', function(q){ return q.order('uploaded_at', { ascending:true }); });
+      var tk = await fetchAllRows('change_tasks', function(q){ return q.order('created_at', { ascending:true }); });
+      var lk = await fetchAllRows('change_links', function(q){ return q.order('created_at', { ascending:true }); });
+      var dc = await supabaseClient.from('document_families').select('id,document_number,title').order('document_number').limit(1000);
       var p = await supabaseClient.rpc('audit_people');
       var n = await supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500);
       var cp = await supabaseClient.from('capas').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500);
       if(a.error) C.error = a.error.message; else if(b.error) C.error = b.error.message;
-      else { C.cases = a.data; C.evidence = b.data; C.people = p.data || []; C.ncrs = (n && n.data) || []; C.capas = (cp && cp.data) || []; C.loaded = true; }
+      else if(tk.error) C.error = tk.error.message; else if(lk.error) C.error = lk.error.message;
+      else { C.cases = a.data; C.evidence = b.data; C.tasks = tk.data; C.links = lk.data; C.docs = (dc && dc.data) || []; C.people = p.data || []; C.ncrs = (n && n.data) || []; C.capas = (cp && cp.data) || []; C.loaded = true; }
     }catch(err){ C.error = (err && err.message) || String(err); }
     C.loading = false; rerender();
   }
@@ -20399,6 +20403,39 @@ function showUpdateBanner(){
       fields:[ { id:'date', label:'New expiry date', type:'date', required:true }, { id:'reason', label:'Justification', type:'textarea', required:true } ],
       call:function(v){ return { fn:'extend_temporary_change', args:{ p_id:c.id, p_date:nul(v.date), p_reason:v.reason } }; } });
   }
+  var TASK_CAT = [['assessment','Assessment / review'],['document','Document revision'],['training','Training'],['equipment','Equipment / installation'],['validation','Validation / testing'],['supplier','Supplier / material'],['communication','Communication / notification'],['other','Other']];
+  function taskById(id){ return C.tasks.filter(function(t){ return t.id === id; })[0]; }
+  function actAddTask(c){
+    openModal({ title:'Add a task to ' + c.change_number, submitText:'Add task', successText:'Task added.', changeId:c.id,
+      help:'Tasks marked "required before go-live" must be done before the change can be authorised or implemented. Every task must be done or cancelled before the change can close as effective.',
+      fields:[ { id:'title', label:'Task (what must be done)', type:'textarea', rows:2, required:true }, { id:'cat', label:'Category', type:'select', options:TASK_CAT, value:'other' },
+        { id:'owner', label:'Task owner', type:'select', options:peopleOptions(), value:'', required:true }, { id:'due', label:'Due date', type:'date', required:true },
+        { id:'req', label:'Required before go-live?', type:'select', options:[['no','No'],['yes','Yes: blocks go-live until done']], value:'no' },
+        { id:'ev', label:'Evidence file required to complete it?', type:'select', options:[['no','No'],['yes','Yes']], value:'no' } ],
+      call:function(v){ return { fn:'add_change_task', args:{ p_change:c.id, p_title:v.title, p_category:v.cat, p_owner:nul(v.owner), p_due:nul(v.due), p_required:v.req === 'yes', p_needs_evidence:v.ev === 'yes' } }; } });
+  }
+  function actCompleteTask(t){
+    var c = byId(t.change_id); var evs = C.evidence.filter(function(x){ return x.change_id === t.change_id; });
+    openModal({ title:'Complete task', submitText:'Mark done', successText:'Task completed.', changeId:t.change_id,
+      help:t.needs_evidence ? 'This task needs an evidence file. Attach it to the change first (📎 Attach evidence), then choose it below.' : 'Say what was done. You may link an evidence file already attached to the change.',
+      fields:[ { id:'note', label:'What was done', type:'textarea', required:true },
+        { id:'ev', label:'Evidence file' + (t.needs_evidence ? ' (required)' : ' (optional)'), type:'select', options:[['', '— none —']].concat(evs.map(function(x){ return [x.id, x.file_name + ' (' + (STAGE_LABEL[x.stage] || x.stage) + ')']; })), value:'' } ],
+      call:function(v){ return { fn:'complete_change_task', args:{ p_task:t.id, p_note:v.note, p_evidence:nul(v.ev) } }; } });
+  }
+  function actCancelTask(t){
+    openModal({ title:'Cancel task', submitText:'Cancel task', successText:'Task cancelled.', changeId:t.change_id, help:'The task stays on record with your reason.',
+      fields:[ { id:'reason', label:'Reason (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'cancel_change_task', args:{ p_task:t.id, p_reason:v.reason } }; } });
+  }
+  function actAddLink(c){
+    var docOpts = [['', '— choose —']].concat(C.docs.map(function(d){ return [d.id, d.document_number + ' — ' + String(d.title || '').slice(0, 70)]; }));
+    var supOpts = [['', '— choose —']].concat((state.suppliers || []).slice().sort(function(a, b){ return String(a.name).localeCompare(String(b.name)); }).map(function(s){ return [s.id, s.name]; }));
+    openModal({ title:'Link a record to ' + c.change_number, submitText:'Link', successText:'Record linked.', changeId:c.id,
+      help:'Choose the type, then fill in only the matching field. The current version of a linked document is recorded at the time you link it.',
+      fields:[ { id:'type', label:'Type', type:'select', options:[['document','Controlled document (SOP, specification, label…)'],['supplier','Supplier'],['equipment','Equipment']], value:'document' },
+        { id:'doc', label:'Document', type:'select', options:docOpts, value:'' }, { id:'sup', label:'Supplier', type:'select', options:supOpts, value:'' }, { id:'eq', label:'Equipment ID or name', value:'' } ],
+      call:function(v){ return { fn:'add_change_link', args:{ p_change:c.id, p_type:v.type, p_ref:v.type === 'document' ? nul(v.doc) : v.type === 'supplier' ? nul(v.sup) : null, p_label:v.type === 'equipment' ? v.eq : null } }; } });
+  }
   async function sha256Hex(buf){ var d = await crypto.subtle.digest('SHA-256', buf); return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
   function defaultStage(st){ return { draft:'assessment', changes_requested:'assessment', under_review:'assessment', approved:'implementation', implemented:'verification', verified:'effectiveness', not_effective:'effectiveness' }[st] || 'assessment'; }
   function actAttach(c){
@@ -20443,6 +20480,8 @@ function showUpdateBanner(){
     if(c.status === 'approved' && c.planned_date && String(c.planned_date) < t) return 'Implementation overdue (planned ' + day(c.planned_date) + ')';
     if(c.status === 'verified' && c.effectiveness_due && String(c.effectiveness_due) <= t) return 'Effectiveness review due (' + day(c.effectiveness_due) + ')';
     if(c.permanence === 'temporary' && c.temp_expiry && String(c.temp_expiry) < t && ['approved','implemented','verified'].indexOf(c.status) !== -1) return 'Temporary change expired ' + day(c.temp_expiry) + ': reverse it or extend formally';
+    var od = C.tasks.filter(function(x){ return x.change_id === c.id && x.status === 'open' && x.due_date && String(x.due_date) < t; }).length;
+    if(od && isOpen(c) && c.status !== 'draft') return od + ' task(s) overdue';
     return '';
   }
   function progress(c){
@@ -20457,6 +20496,32 @@ function showUpdateBanner(){
     var fs = C.evidence.filter(function(x){ return x.change_id === c.id; });
     if(!fs.length) return '<div class="muted-italic" style="font-size:12px;">No evidence files yet.</div>';
     return fs.map(function(f){ return '<div style="font-size:11.5px;margin-top:3px;">📎 <b>' + e(STAGE_LABEL[f.stage] || f.stage) + '</b> · ' + e(f.file_name) + ' · ' + e(nameOf(f.uploaded_by)) + ' · ' + e(stamp(f.uploaded_at)) + ' · SHA-256 ' + e(String(f.content_hash).slice(0, 10)) + '… ' + bt('dl', { id:f.id }, 'Download') + (f.note ? '<div class="muted-italic">' + e(f.note) + '</div>' : '') + '</div>'; }).join('');
+  }
+  function canTouch(c){ var me = myId(); return c.created_by === me || c.owner_id === me || isQm(); }
+  function tasksBlock(c){
+    var ts = C.tasks.filter(function(x){ return x.change_id === c.id; }), t0 = todayStr();
+    var editable = isOpen(c) && ['draft','changes_requested','under_review','approved','implemented','verified','not_effective'].indexOf(c.status) !== -1 && canTouch(c);
+    var live = ['approved','implemented','verified','not_effective'].indexOf(c.status) !== -1;
+    var rows = ts.map(function(x){
+      var tone = x.status === 'done' ? 'green' : x.status === 'cancelled' ? 'neutral' : (String(x.due_date) < t0 ? 'rust' : 'amber');
+      var btn = '';
+      if(x.status === 'open' && live && (x.owner_id === myId() || isQm())) btn += bt('tdone', { id:x.id }, 'Complete', true);
+      if(x.status === 'open' && editable) btn += ' ' + bt('tcancel', { id:x.id }, 'Cancel');
+      return '<div style="font-size:12px;margin-top:5px;padding:5px 0;border-bottom:1px solid var(--line,#eee);"><span class="tag tag-' + tone + '" style="font-size:10px;">' + e(x.status) + '</span> <b>' + e(x.title) + '</b>' +
+        ' <span class="muted-italic">' + e(lbl(TASK_CAT, x.category)) + ' · ' + e(nameOf(x.owner_id)) + ' · due ' + e(day(x.due_date)) + '</span>' +
+        (x.required_before_golive ? ' <span class="tag tag-rust" style="font-size:10px;">before go-live</span>' : '') + (x.needs_evidence ? ' <span class="tag tag-neutral" style="font-size:10px;">evidence</span>' : '') +
+        (x.completed_at ? '<div class="muted-italic">Done by ' + e(nameOf(x.completed_by)) + ', ' + e(stamp(x.completed_at)) + ': ' + e(x.completion_note || '') + (x.evidence_id ? ' 📎' : '') + '</div>' : '') +
+        (x.cancel_reason ? '<div class="muted-italic">Cancelled: ' + e(x.cancel_reason) + '</div>' : '') + (btn ? '<div style="margin-top:4px;">' + btn + '</div>' : '') + '</div>';
+    }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">No tasks yet.' + (c.quality_impact === 'high' || c.safety_impact === 'high' || c.regulatory_impact === 'high' || c.quality_impact === 'medium' || c.safety_impact === 'medium' || c.regulatory_impact === 'medium' ? ' A Medium or High impact change needs at least one before it can be submitted.' : '') + '</div>') +
+      (editable ? '<div style="margin-top:6px;">' + bt('tadd', { id:c.id }, '+ Add task') + '</div>' : '');
+  }
+  function linksBlock(c){
+    var ls = C.links.filter(function(x){ return x.change_id === c.id; });
+    var canEdit = canTouch(c) && ['draft','changes_requested','under_review','approved','implemented','verified'].indexOf(c.status) !== -1;
+    var canRemove = canTouch(c) && ['draft','changes_requested'].indexOf(c.status) !== -1;
+    var rows = ls.map(function(x){ return '<div style="font-size:12px;margin-top:3px;">' + ({ document:'📄', supplier:'🏭', equipment:'⚙️' }[x.link_type] || '•') + ' <b>' + e(x.label) + '</b>' + (x.version_label ? ' <span class="muted-italic">(version ' + e(x.version_label) + ' when linked)</span>' : '') + (canRemove ? ' ' + bt('lrem', { id:x.id }, 'Remove') : '') + '</div>'; }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">Nothing linked yet.</div>') + (canEdit ? '<div style="margin-top:6px;">' + bt('ladd', { id:c.id }, '+ Link a record') + '</div>' : '');
   }
   function kv(k, v){ return v ? '<div style="font-size:12.5px;margin-top:4px;"><b>' + e(k) + ':</b> ' + e(v) + '</div>' : ''; }
   function section(title, inner){ return inner ? '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed var(--line,#ddd);"><b style="font-size:12px;">' + e(title) + '</b>' + inner + '</div>' : ''; }
@@ -20483,6 +20548,11 @@ function showUpdateBanner(){
       case 'reopened': return 'Reopened (cycle ' + d.cycle + '): ' + (d.reason || '');
       case 'cancelled': return 'Cancelled: ' + (d.reason || '');
       case 'temporary_extended': return 'Temporary expiry moved ' + day(d.from) + ' → ' + day(d.to) + ': ' + (d.reason || '');
+      case 'task_added': return 'Task added: ' + (d.title || '') + ' (due ' + day(d.due) + (d.required_before_golive ? ', required before go-live' : '') + ')';
+      case 'task_completed': return 'Task completed: ' + (d.title || '') + ' — ' + (d.note || '');
+      case 'task_cancelled': return 'Task cancelled: ' + (d.title || '') + ' — ' + (d.reason || '');
+      case 'link_added': return 'Linked ' + (d.type || '') + ': ' + (d.label || '') + (d.version ? ' (version ' + d.version + ')' : '');
+      case 'link_removed': return 'Link removed: ' + (d.label || '');
       case 'evidence_added': return 'Evidence attached (' + (STAGE_LABEL[d.stage] || d.stage) + '): ' + (d.file_name || '') + ' [' + (d.sha256 || '') + '…]';
       case 'evidence_downloaded': return 'Evidence downloaded: ' + (d.file_name || '');
       default: return String(ev.event_type).replace(/_/g, ' ');
@@ -20514,7 +20584,7 @@ function showUpdateBanner(){
     return '<div style="border-top:1px solid var(--line2,#eee);padding:12px 14px;">' + progress(c) + (od ? '<div style="color:var(--rust);font-size:12.5px;font-weight:600;">⚠ ' + e(od) + '</div>' : '') +
       '<div style="margin:4px 0;">' + impactTag('Quality', c.quality_impact) + impactTag('Food safety', c.safety_impact) + impactTag('Regulatory', c.regulatory_impact) + '</div>' +
       kv('Type / priority', lbl(TYPE, c.change_type) + ' · ' + lbl(PRIORITY, c.priority)) + kv('Site / process', c.site) + kv('Owner', c.owner_id ? nameOf(c.owner_id) : '') + kv('Requested by', nameOf(c.created_by)) +
-      kv('Source', c.source ? src : '') + kv('Permanent / temporary', c.permanence ? lbl([['permanent','Permanent'],['temporary','Temporary']], c.permanence) + (c.temp_expiry ? ' — expires ' + day(c.temp_expiry) : '') : '') +
+      kv('Source', c.source ? src : '') + kv('Permanent / temporary', c.permanence ? lbl([['permanent','Permanent'],['temporary','Temporary']], c.permanence) + (c.permanence === 'temporary' && c.temp_expiry ? ' — expires ' + day(c.temp_expiry) : '') : '') +
       kv('Reason', c.reason) + kv('Description', c.description) + kv('Current state', c.current_state) + kv('Proposed state', c.proposed_state) + kv('Affected records', c.affected_records) +
       section('Assessment', kv('Impact reasoning', c.impact_reasoning) + yes + (nos ? '<div class="muted-italic" style="font-size:11.5px;margin-top:3px;">' + nos + ' checklist question(s) answered "not affected".</div>' : '') + kv('Risk assessment', c.risk_assessment)) +
       section('Plan', kv('Implementation plan', c.implementation_plan) + kv('Verification method', c.verification_method) + kv('Rollback / contingency', c.rollback_plan) + kv('Planned date', c.planned_date ? day(c.planned_date) : '')) +
@@ -20526,6 +20596,8 @@ function showUpdateBanner(){
       section('Effectiveness', c.effectiveness_at ? (c.effectiveness_result === 'effective' ? '<span class="tag tag-green">Effective</span>' : '<span class="tag tag-rust">Not effective</span>') + kv('Findings', c.effectiveness_summary) + kv('Reviewed by', nameOf(c.effectiveness_by) + ', ' + stamp(c.effectiveness_at)) : '') +
       section('Corrective action / rollback', c.remediation_at ? kv('Action', c.remediation_action === 'rollback' ? 'Rollback' : 'Corrective action') + kv('Plan', c.remediation_plan) + kv('Residual risk', c.residual_risk) + kv('Linked NCR', refLabel(C.ncrs, c.remediation_ncr_id)) + kv('Linked CAPA', refLabel(C.capas, c.remediation_capa_id)) + kv('By', nameOf(c.remediation_by) + ', ' + stamp(c.remediation_at)) : '') +
       (c.status === 'closed' ? section('Closure', kv('Closed by', nameOf(c.closed_by) + ', ' + stamp(c.closed_at))) : '') +
+      '<div style="margin-top:10px;"><b style="font-size:12px;">Tasks</b>' + tasksBlock(c) + '</div>' +
+      '<div style="margin-top:10px;"><b style="font-size:12px;">Linked records</b>' + linksBlock(c) + '</div>' +
       '<div style="margin-top:10px;"><b style="font-size:12px;">Evidence</b>' + evidenceBlock(c) + '</div>' +
       (b.length ? '<div class="flex-wrap" style="gap:6px;margin-top:10px;">' + b.join('') + '</div>' : '') +
       (ev.length ? '<details style="margin-top:10px;"><summary style="font-size:12px;cursor:pointer;">History (' + ev.length + ')</summary>' + ev.map(function(x){ return '<div style="font-size:11.5px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">' + e(stamp(x.created_at)) + ' · ' + e(x.actor_name || '—') + '</span><br>' + e(eventText(x)) + '</div>'; }).join('') + '</details>' : '') + '</div>';
@@ -20569,6 +20641,11 @@ function showUpdateBanner(){
     else if(a === 'toggle'){ C.openId = C.openId === id ? null : id; rerender(); }
     else if(a === 'create') actCreate();
     else if(a === 'dl') download(id);
+    else if(a === 'tdone'){ var tk = taskById(id); if(tk) actCompleteTask(tk); }
+    else if(a === 'tcancel'){ var tk2 = taskById(id); if(tk2) actCancelTask(tk2); }
+    else if(a === 'lrem'){ if(confirm('Remove this link?')) direct('remove_change_link', { p_link:id }, 'Link removed.', (C.links.filter(function(x){ return x.id === id; })[0] || {}).change_id); }
+    else if(c && a === 'tadd') actAddTask(c);
+    else if(c && a === 'ladd') actAddLink(c);
     else if(c){
       if(a === 'edit') actEdit(c); else if(a === 'review') actReview(c); else if(a === 'decide') actDecide(c); else if(a === 'golive') actGolive(c); else if(a === 'impl') actImpl(c);
       else if(a === 'verify') actVerify(c); else if(a === 'effect') actEffect(c); else if(a === 'remed') actRemed(c); else if(a === 'attach') actAttach(c); else if(a === 'extend') actExtend(c);
@@ -20578,7 +20655,7 @@ function showUpdateBanner(){
       else if(a === 'cancel') actReason(c, 'cancel_change', 'Cancel ' + c.change_number, 'A cancelled change stays on record with your reason.', 'Change cancelled.');
     }
   }, true);
-  window.changeControlReset = function(){ C.cases = []; C.evidence = []; C.events = {}; C.eventsLoading = {}; C.eventsDirty = {}; C.people = []; C.ncrs = []; C.capas = []; C.loaded = false; C.loading = false; C.error = ''; C.openId = null; modal = null; mount(); };
+  window.changeControlReset = function(){ C.cases = []; C.evidence = []; C.events = {}; C.eventsLoading = {}; C.eventsDirty = {}; C.people = []; C.ncrs = []; C.capas = []; C.tasks = []; C.links = []; C.docs = []; C.loaded = false; C.loading = false; C.error = ''; C.openId = null; modal = null; mount(); };
 })();
 </script>
 
