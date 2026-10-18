@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset(); if(window.recallReset) window.recallReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset(); if(window.recallReset) window.recallReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -6704,25 +6704,6 @@ function loadDemoData(){
     });
   });
 
-  // Demo Product Recall — mock recall showcasing mass balance + timer
-  const startedAt = new Date(); startedAt.setHours(9,15,0,0);
-  const completedAt = new Date(startedAt.getTime() + (1*3600000 + 52*60000));
-  state.productRecalls.unshift({
-    id: uid(), recallNumber: nextRecallNumber(), recallType:"Mock Recall",
-    productName:"Vanilla Ice Cream 2L Tub", productCode:"IC-VAN-2L", batchLot:"IC-2026-001",
-    mfgDate: today(), expiryDate:"", qtyProduced:10000, qtyWarehouse:2000, qtyCustomers:7500, qtyDestroyed:500,
-    reason:"Other", riskClass:"Class III – Low Risk / Regulatory", status:"Closed",
-    notes:"Annual FSSC 22000 mock recall exercise — demo record.",
-    actionSteps: RECALL_ACTION_STEPS.map(label=>({label, done:true})),
-    commsLog:[{ id: uid(), contact:"Distribution Centre — JHB", date: today(), method:"Phone", response:"Confirmed batch on hold", followUp:"" }],
-    recallStartedAt: startedAt.toISOString(), recallCompletedAt: completedAt.toISOString(), targetHours:4,
-    regulatoryAuthority:"Not Applicable", regulatoryNotifiedDate:"",
-    rootCause:"Process Deviation", investigationSummary:"Annual mock recall exercise to test traceability speed and mass balance reconciliation per FSSC 22000 clause 9.1 verification requirements.",
-    linkedCapaRef:"None / Not linked",
-    approval:{ approvedBy:"Sandiso Mabeka", approverRole:"QA Manager", approvedAt: completedAt.toISOString() },
-    isDemo:true
-  });
-
   ensureStateDefaults();
   persist();
 }
@@ -7267,7 +7248,7 @@ function complaintOptionsList(){
   return ["None / Not linked", ...state.complaintRecords.map(c=>`${c.natureOfComplaint||c.classification||'Complaint'} — ${c.complainantName||'Unnamed'} (${c.dateReceived||''})`)];
 }
 function recallOptionsList(){
-  return ["None / Not applicable", ...state.productRecalls.map(r=>`${r.recallNumber?r.recallNumber+' — ':''}${r.productName} — ${r.status}`)];
+  return ["None / Not applicable", ...(window.recallLinkOptions ? window.recallLinkOptions() : [])];
 }
 function changeControlOptionsList(){
   if(window.changeLinkOptions && window.changeLinkOptions().length) return ["None / Not linked", ...window.changeLinkOptions()];
@@ -8552,50 +8533,6 @@ function renderTraceLotHistory(){
   `;
 }
 
-function renderRecallReports(){
-  const recalls = state.productRecalls;
-  const total = recalls.length;
-  const avgCompletion = total ? Math.round(recalls.reduce((s,r)=>s+recallCompletionPct(r),0)/total) : null;
-  const byClass = {}; RECALL_CLASSES.forEach(c=>byClass[c]=0); recalls.forEach(r=>{ if(r.riskClass) byClass[r.riskClass]=(byClass[r.riskClass]||0)+1; });
-  const byReason = {}; recalls.forEach(r=>{ if(r.reason) byReason[r.reason]=(byReason[r.reason]||0)+1; });
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">🧾 Recall Reports</h2>
-      <button class="btn btn-ghost" data-action="export-recalls-csv">⬇ CSV</button>
-    </div>
-    ${total===0 ? `<p class="muted-italic">No recalls logged yet — reports will populate once you log a Product Recall.</p>` : `
-      <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
-        ${statCard("🚨","Total Recalls",total)}
-        ${statCard("📊","Avg. Completion",avgCompletion+"%")}
-        ${statCard("⏳","Open Recalls", recalls.filter(r=>r.status!=="Closed").length)}
-      </div>
-      <div class="card p4" style="margin-bottom:16px;">
-        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">By Risk Classification</h3>
-        ${RECALL_CLASSES.map(c=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(c)}</span><span class="tag tag-${recallClassTone[c]}">${byClass[c]||0}</span></div>`).join('')}
-      </div>
-      <div class="card p4" style="margin-bottom:16px;">
-        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">By Reason</h3>
-        ${Object.keys(byReason).length ? Object.entries(byReason).sort((a,b)=>b[1]-a[1]).map(([reason,count])=>`<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>${esc(reason)}</span><span class="tag tag-navy">${count}</span></div>`).join('') : `<p class="muted-italic">—</p>`}
-      </div>
-      <div class="card p4">
-        <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Recall Register Summary</h3>
-        ${recalls.map(r=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
-            <div>
-              <div>${esc(r.productName)} <span style="color:var(--muted);font-size:11px;">#${esc(r.recallNumber)}</span></div>
-              <div class="muted-italic" style="font-size:11px;">${esc(r.reason)||'—'} · ${(r.riskClass||'').split(' –')[0]}</div>
-            </div>
-            <div class="flex-wrap">
-              <span style="font-size:12px;color:var(--muted);">${recallCompletionPct(r)}%</span>
-              <span class="tag tag-${statusTone[r.status]||'neutral'}">${esc(r.status)}</span>
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `}
-  `;
-}
-
 function renderLabTrendAnalysis(){
   const micro = state.labResults.filter(r=>r.testType==="Microbiological");
   const chem = state.labResults.filter(r=>r.testType!=="Microbiological");
@@ -9199,7 +9136,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? renderRecalls() : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
@@ -9211,7 +9148,7 @@ function render(){
         : tab==="fs-verification" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="fs-verification"))
         : tab==="trace-lot-history" ? renderTraceLotHistory()
         : tab==="recall-effectiveness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="recall-effectiveness"))
-        : tab==="recall-reports" ? renderRecallReports()
+        : tab==="recall-reports" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallReportsModule) ? window.renderRecallReportsModule() : '<div class="card p4"><p class="muted-italic">Sign in to see recall reports.</p></div>')
         : tab==="lab-microbiology" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-microbiology"))
         : tab==="lab-chemistry" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-chemistry"))
         : tab==="lab-sample-register" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="lab-sample-register"))
@@ -9524,8 +9461,7 @@ function renderDashboard(){
   const trainingScore = totalTraining>0 ? Math.round((trainingInGoodStanding/totalTraining)*1000)/10 : null;
   const activeHaccp = state.haccpPoints.filter(p=>p.status!=="Inactive");
   const haccpScore = activeHaccp.length>0 ? Math.round((activeHaccp.filter(p=>haccpStatus(p)==="Compliant").length/activeHaccp.length)*1000)/10 : null;
-  const totalRecalls = state.productRecalls.length;
-  const recallScore = totalRecalls>0 ? Math.round((state.productRecalls.reduce((sum,r)=>sum+recallCompletionPct(r),0)/totalRecalls)*10)/10 : null;
+  const recallScore = window.recallReadiness ? window.recallReadiness() : null;
   const totalSuppliers = state.suppliers.length;
   const supplierScore = totalSuppliers>0 ? Math.round((state.suppliers.filter(s=>s.approvalStatus==="Approved").length/totalSuppliers)*1000)/10 : null;
   const totalAllergenIncidents = state.allergenIncidents.length;
@@ -9578,7 +9514,7 @@ function renderDashboard(){
     {label:"Document Control", score:documentScore},
     {label:"Training Compliance", score:trainingScore},
     {label:"HACCP Compliance", score:haccpScore},
-    {label:"Product Recall Progress", score:recallScore},
+    {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore},
     {label:"Supplier Approval Rate", score:supplierScore},
     {label:"Allergen Incident Closure", score:allergenScore},
     {label:"CIP Cleaning Compliance", score:cipScore},
@@ -9816,7 +9752,7 @@ function renderDashboard(){
       ])}
       ${kpiGroup("Food Safety", [
         {label:"HACCP Compliance", score:haccpScore, key:"haccp"},
-        {label:"Product Recall Progress", score:recallScore, key:"recall"},
+        {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore, key:"recall"},
         {label:"Allergen Incident Closure", score:allergenScore, key:"allergen"},
         {label:"CIP Cleaning Compliance", score:cipScore, key:"cip"},
         {label:"Sensory Evaluation Pass Rate", score:sensoryScore, key:"sensory"}
@@ -9839,7 +9775,7 @@ function renderDashboard(){
       ${_ncr ? statCard("🚩", "Active NCRs", _ncr.active, "nav-ncr") : ''}
       ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length, "nav-documents")}
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length, "nav-people-training")}
-      ${statCard("🚨", "Active Recalls", state.productRecalls.filter(r=>r.status!=="Closed").length, "nav-trace-recall")}
+      ${statCard("🚨", "Active Recalls", (window.recallActiveCount ? window.recallActiveCount() : 0), "nav-trace-recall")}
       ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length, "nav-trace-batch")}
       ${statCard("🌡️", "Critical Temp Readings", state.tempLogs.filter(l=>tempLogIsCritical(l)).length, "nav-fs-temperature")}
     </div>
@@ -11606,244 +11542,6 @@ function renderHaccpDetail(p){
     </div>
     <div style="display:flex;justify-content:flex-end;">
       <button class="btn btn-danger" data-action="delete-haccp" data-haccp="${p.id}">Delete CCP</button>
-    </div>
-  `;
-}
-
-/* ---------- Product Recall ---------- */
-function recallCompletionPct(r){
-  const steps = r.actionSteps || [];
-  if(steps.length===0) return 0;
-  return Math.round((steps.filter(s=>s.done).length/steps.length)*100);
-}
-
-function recallMassBalance(r){
-  const produced = Number(r.qtyProduced)||0;
-  const parts = [Number(r.qtyWarehouse)||0, Number(r.qtyCustomers)||0, Number(r.qtyDestroyed)||0];
-  const total = parts.reduce((a,b)=>a+b,0);
-  const hasAnyPart = r.qtyWarehouse!=null || r.qtyCustomers!=null || r.qtyDestroyed!=null;
-  const variance = total - produced;
-  return { produced, total, variance, balanced: hasAnyPart && produced>0 && variance===0, hasAnyPart };
-}
-
-function recallDurationMs(r){
-  if(!r.recallStartedAt) return null;
-  const end = r.recallCompletedAt ? new Date(r.recallCompletedAt) : new Date();
-  return end - new Date(r.recallStartedAt);
-}
-
-function formatDuration(ms){
-  if(ms==null || ms<0) return "—";
-  const totalMin = Math.round(ms/60000);
-  const h = Math.floor(totalMin/60);
-  const m = totalMin%60;
-  return h>0 ? `${h} hour${h===1?'':'s'} ${m} minute${m===1?'':'s'}` : `${m} minute${m===1?'':'s'}`;
-}
-
-function recallExceededTarget(r){
-  if(!r.recallStartedAt || !r.targetHours) return false;
-  const ms = recallDurationMs(r);
-  return ms!==null && ms > (Number(r.targetHours)*3600000);
-}
-
-function nextRecallNumber(){
-  return `REC-${new Date().getFullYear()}-${String(state.productRecalls.length+1).padStart(3,'0')}`;
-}
-
-function renderRecalls(){
-  const all = state.productRecalls;
-  const filtered = all.filter(r => recallStatusFilter==="All" || r.status===recallStatusFilter);
-  const activeCount = all.filter(r=>r.status!=="Closed").length;
-  const classICount = all.filter(r=>r.riskClass && r.riskClass.startsWith("Class I –")).length;
-  const avgCompletion = all.length ? Math.round(all.reduce((sum,r)=>sum+recallCompletionPct(r),0)/all.length) : 0;
-  return `
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-      <h2 class="serif" style="font-size:18px;margin:0;">🚨 Product Recall Management</h2>
-      <div class="flex-wrap">
-        <button class="btn btn-ghost" data-action="export-recalls-csv">⬇ CSV</button>
-        <button class="btn btn-primary" data-action="toggle-new-recall">+ New Recall</button>
-      </div>
-    </div>
-    <div class="stats" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px;">
-      ${statCard("🚨", "Active Recalls", activeCount)}
-      ${statCard("🔴", "Class I Recalls", classICount)}
-      ${statCard("📊", "Avg Completion", avgCompletion+"%")}
-    </div>
-    <div class="card p4" style="margin-bottom:16px;">
-      <div class="flex-wrap">
-        <span style="font-size:12px;color:var(--muted);">Filter by Status:</span>
-        ${["All",...RECALL_STATUSES].map(f=>`<button class="status-pill ${recallStatusFilter===f?'active':''}" data-recall-filter="${f}">${f}</button>`).join('')}
-      </div>
-    </div>
-    ${showNewRecall ? renderNewRecallForm() : ''}
-    <div>
-      ${filtered.length===0 ? `<p class="muted-italic">No recalls logged. Hopefully it stays that way.</p>` : filtered.map(r=>renderRecallRow(r)).join('')}
-    </div>
-  `;
-}
-
-function renderNewRecallForm(){
-  return `
-    <div class="card p4 grid2" style="margin-bottom:16px;">
-      <label class="field">Recall Number<input id="nr-number" value="${nextRecallNumber()}" /></label>
-      <label class="field">Recall Type<select id="nr-type">${RECALL_TYPES.map(t=>`<option>${t}</option>`).join('')}</select></label>
-      <label class="field">Product Name<input id="nr-product" placeholder="e.g. Sponge Cake 500g" /></label>
-      <label class="field">Product Code / SKU<input id="nr-code" placeholder="e.g. SC500-1907A" /></label>
-      <label class="field">Batch / Lot Number<input id="nr-batch" placeholder="e.g. WWF-2607" /></label>
-      <label class="field">Manufacturing Date<input type="date" id="nr-mfg-date" /></label>
-      <label class="field">Expiry Date<input type="date" id="nr-expiry-date" /></label>
-      <label class="field">Quantity Produced<input type="number" id="nr-qty-produced" /></label>
-      <label class="field" style="grid-column:1/-1;">Reason for Recall<select id="nr-reason">${RECALL_REASONS.map(r=>`<option>${r}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Risk Classification<select id="nr-class">${RECALL_CLASSES.map(c=>`<option>${c}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Notes<input id="nr-notes" placeholder="Optional notes…" /></label>
-      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
-        <button class="btn btn-ghost" data-action="cancel-new-recall">Cancel</button>
-        <button class="btn btn-primary" data-action="create-recall">Create</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderRecallRow(r){
-  const open = openRecallId === r.id;
-  const pct = recallCompletionPct(r);
-  return `
-    <div class="card" style="margin-bottom:10px;overflow:hidden;">
-      <button class="audit-row" data-toggle-recall="${r.id}">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-          <span style="color:#a39a86;">${open?'▾':'›'}</span>
-          <div style="min-width:0;">
-            <div class="audit-title">${esc(r.recallNumber)} <span style="color:var(--muted);font-weight:400;font-size:11px;">· ${esc(r.productName)}</span></div>
-            <div class="audit-sub">Batch: ${esc(r.batchLot)||'—'} · ${pct}% actions complete</div>
-          </div>
-        </div>
-        <div class="flex-wrap">
-          <span class="tag tag-${recallTypeTone[r.recallType]||'neutral'}">${esc(r.recallType)||'Customer Recall'}</span>
-          <span class="tag tag-${recallClassTone[r.riskClass]||'neutral'}">${(r.riskClass||'').split(' –')[0]}</span>
-          <span class="tag tag-${recallStatusTone[r.status]||'neutral'}">${r.status}</span>
-          ${recallExceededTarget(r) ? `<span class="tag tag-rust">⚠ Exceeded Target</span>` : ''}
-        </div>
-      </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;"><div style="margin-bottom:10px;">${ncrBtn({ title:((r.recallType||'Recall')+' finding: '+(r.productName||'')), description:'Gap found during '+(r.recallType||'recall')+' '+(r.recallNumber||'')+' for '+(r.productName||'product')+'. Describe the gap here.', source:'process_deviation', severity:(String(r.recallType||'').toLowerCase().indexOf('mock')>-1?'Major':'Critical'), area:'Product recall', product_ref:((r.productCode||'')+' '+(r.batchLot||'')).trim(), link_type:'recall', link_reference:((r.recallNumber||'Recall')+' — '+(r.recallType||'')+' '+(r.productName||'')).trim(), record_id:String(r.id) })}</div>${renderRecallDetail(r)}</div>` : ''}
-    </div>
-  `;
-}
-
-function renderRecallDetail(r){
-  const pct = recallCompletionPct(r);
-  const commsRows = (r.commsLog && r.commsLog.length) ?
-    [...r.commsLog].sort((a,b)=>b.date.localeCompare(a.date)).map(c=>`
-      <div style="padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
-        <div style="display:flex;justify-content:space-between;"><strong>${esc(c.contact)}</strong><span class="muted-italic">${c.date}</span></div>
-        <div>${esc(c.method)}${c.response?` — Response: ${esc(c.response)}`:''}${c.followUp?` — Follow-up: ${esc(c.followUp)}`:''}</div>
-        <button class="x-btn" data-action="delete-recall-comm" data-recall="${r.id}" data-comm="${c.id}" style="margin-top:4px;">✕ Remove</button>
-      </div>
-    `).join('') : `<p class="muted-italic">No communications logged yet.</p>`;
-  return `
-    <div class="grid2" style="margin-bottom:12px;">
-      <label class="field">Recall Number<input data-recall-field="${r.id}:recallNumber" value="${esc(r.recallNumber)}" /></label>
-      <label class="field">Recall Type<select data-recall-field="${r.id}:recallType">${RECALL_TYPES.map(x=>`<option ${x===r.recallType?'selected':''}>${x}</option>`).join('')}</select></label>
-      <label class="field">Product Name<input data-recall-field="${r.id}:productName" value="${esc(r.productName)}" /></label>
-      <label class="field">Product Code / SKU<input data-recall-field="${r.id}:productCode" value="${esc(r.productCode)}" /></label>
-      <label class="field">Batch / Lot Number<input data-recall-field="${r.id}:batchLot" value="${esc(r.batchLot)}" /></label>
-      <label class="field">Manufacturing Date<input type="date" data-recall-field="${r.id}:mfgDate" value="${r.mfgDate||''}" /></label>
-      <label class="field">Expiry Date<input type="date" data-recall-field="${r.id}:expiryDate" value="${r.expiryDate||''}" /></label>
-      <label class="field" style="grid-column:1/-1;">Reason for Recall<select data-recall-field="${r.id}:reason">${RECALL_REASONS.map(x=>`<option ${x===r.reason?'selected':''}>${x}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Risk Classification<select data-recall-field="${r.id}:riskClass">${RECALL_CLASSES.map(x=>`<option ${x===r.riskClass?'selected':''}>${x}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Status<select data-recall-field="${r.id}:status">${RECALL_STATUSES.map(x=>`<option ${x===r.status?'selected':''}>${x}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Notes<input data-recall-field="${r.id}:notes" value="${esc(r.notes)}" /></label>
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">⚖️ Mass Balance</h3>
-      ${(() => {
-        const mb = recallMassBalance(r);
-        return `
-          <div class="grid2" style="margin-bottom:10px;">
-            <label class="field">Quantity Produced<input type="number" data-recall-field="${r.id}:qtyProduced" value="${r.qtyProduced??''}" /></label>
-            <div></div>
-            <label class="field">In Warehouse (Recovered)<input type="number" data-recall-field="${r.id}:qtyWarehouse" value="${r.qtyWarehouse??''}" /></label>
-            <label class="field">With Customers (Sold)<input type="number" data-recall-field="${r.id}:qtyCustomers" value="${r.qtyCustomers??''}" /></label>
-            <label class="field">Destroyed / Disposed<input type="number" data-recall-field="${r.id}:qtyDestroyed" value="${r.qtyDestroyed??''}" /></label>
-          </div>
-          <div style="background:var(--line2);border-radius:8px;padding:10px 14px;font-size:13px;">
-            <div style="display:flex;justify-content:space-between;"><span>Produced</span><strong>${mb.produced}</strong></div>
-            <div style="display:flex;justify-content:space-between;"><span>Warehouse + Customers + Destroyed</span><strong>${mb.total}</strong></div>
-            <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid var(--line);">
-              <span>Every unit accounted for?</span>
-              ${!mb.hasAnyPart || !mb.produced ? `<span class="tag tag-neutral">Enter quantities above</span>` : mb.variance===0 ? `<span class="tag tag-green">✓ Balanced</span>` : `<span class="tag tag-rust">⚠ Variance: ${mb.variance>0?'+':''}${mb.variance} units</span>`}
-            </div>
-          </div>
-        `;
-      })()}
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">⏱ Recall Timer</h3>
-      <div class="grid2" style="margin-bottom:10px;">
-        <label class="field">Target Time to Complete (hours)<input type="number" data-recall-field="${r.id}:targetHours" value="${r.targetHours??4}" /></label>
-        <div></div>
-      </div>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;">
-        <div><div class="muted-italic" style="font-size:11px;">RECALL STARTED</div><strong>${r.recallStartedAt ? new Date(r.recallStartedAt).toLocaleString() : '—'}</strong></div>
-        <div><div class="muted-italic" style="font-size:11px;">RECALL COMPLETED</div><strong>${r.recallCompletedAt ? new Date(r.recallCompletedAt).toLocaleString() : '—'}</strong></div>
-        <div><div class="muted-italic" style="font-size:11px;">DURATION</div><strong>${formatDuration(recallDurationMs(r))}</strong></div>
-      </div>
-      ${recallExceededTarget(r) ? `<div class="tag tag-rust" style="margin-bottom:10px;">⚠ Recall exceeded target of ${r.targetHours}h</div>` : ''}
-      <div class="flex-wrap">
-        ${!r.recallStartedAt ? `<button class="btn btn-primary" data-action="start-recall-timer" data-recall="${r.id}">▶ Start Recall Clock</button>` : ''}
-        ${r.recallStartedAt && !r.recallCompletedAt ? `<button class="btn btn-primary" data-action="complete-recall-timer" data-recall="${r.id}">⏹ Mark Recall Complete</button>` : ''}
-        ${r.recallStartedAt ? `<button class="btn btn-ghost" data-action="reset-recall-timer" data-recall="${r.id}">Reset Timer</button>` : ''}
-      </div>
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">🔎 Investigation & Regulatory</h3>
-      <div class="grid2">
-        <label class="field">Root Cause<select data-recall-field="${r.id}:rootCause">${RECALL_ROOT_CAUSES.map(c=>`<option ${c===r.rootCause?'selected':''}>${c||'— Select —'}</option>`).join('')}</select></label>
-        <label class="field">Linked CAPA<select data-recall-field="${r.id}:linkedCapaRef">${capaOptionsList().map(c=>`<option ${c===r.linkedCapaRef?'selected':''}>${esc(c)}</option>`).join('')}</select></label>
-        <label class="field" style="grid-column:1/-1;">Investigation Summary<input data-recall-field="${r.id}:investigationSummary" value="${esc(r.investigationSummary)}" placeholder="What caused this and how was it confirmed…" /></label>
-        <label class="field">Regulatory Authority Notified<select data-recall-field="${r.id}:regulatoryAuthority">${SA_REGULATORY_AUTHORITIES.map(a=>`<option ${a===r.regulatoryAuthority?'selected':''}>${a}</option>`).join('')}</select></label>
-        <label class="field">Date Notified<input type="date" data-recall-field="${r.id}:regulatoryNotifiedDate" value="${r.regulatoryNotifiedDate||''}" /></label>
-      </div>
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Reference: OHS Act 85 of 1993 · Foodstuffs, Cosmetics and Disinfectants Act regulations (R638, where applicable) · POPIA applies to any customer contact data used for recall communications.</p>
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✍ Final Approval</h3>
-      ${r.approval && r.approval.approvedAt ? `
-        <div style="font-size:13px;">✓ Signed by <strong>${esc(r.approval.approvedBy)}</strong>${r.approval.approverRole?`, ${esc(r.approval.approverRole)}`:''}</div>
-        <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">Electronically signed ${new Date(r.approval.approvedAt).toLocaleString()}</div>
-        <button class="btn btn-ghost" style="font-size:12px;" data-action="unsign-recall" data-recall="${r.id}">Unsign</button>
-      ` : `
-        <div class="grid2" style="margin-bottom:8px;">
-          <input placeholder="Type full name to sign" id="sign-recall-name-${r.id}" />
-          <input placeholder="Role / Title (e.g. QA Manager)" id="sign-recall-role-${r.id}" />
-        </div>
-        <button class="btn btn-primary" style="font-size:12px;" data-action="sign-recall" data-recall="${r.id}">✅ Confirm Final Approval</button>
-        <p class="muted-italic" style="font-size:11px;margin:8px 0 0;">Signing captures the date and time automatically and cannot be edited afterward — unsign to make corrections.</p>
-      `}
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✅ Recall Actions — ${pct}% Complete</h3>
-      ${(r.actionSteps||[]).map((s,i)=>`
-        <label style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;">
-          <input type="checkbox" data-recall-step="${r.id}:${i}" ${s.done?'checked':''} style="width:auto;" /> ${esc(s.label)}
-        </label>
-      `).join('')}
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">📞 Communication Log</h3>
-      <div class="grid2">
-        <label class="field">Contact / Party<input id="rc-contact-${r.id}" placeholder="e.g. Customer, Regulator, Supplier" /></label>
-        <label class="field">Date<input type="date" id="rc-date-${r.id}" value="${today()}" /></label>
-        <label class="field">Method<input id="rc-method-${r.id}" placeholder="e.g. Phone, Email, Letter" /></label>
-        <label class="field">Response Received<input id="rc-response-${r.id}" placeholder="Optional" /></label>
-        <label class="field" style="grid-column:1/-1;">Follow-up Action<input id="rc-followup-${r.id}" placeholder="Optional" /></label>
-      </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
-        <button class="btn btn-primary" data-action="add-recall-comm" data-recall="${r.id}">+ Log Communication</button>
-      </div>
-      <div class="top-border">${commsRows}</div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;">
-      <button class="btn btn-danger" data-action="delete-recall" data-recall="${r.id}">Delete Recall Record</button>
     </div>
   `;
 }
@@ -15997,157 +15695,6 @@ function attachHandlers(){
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url; link.download = `aqms-haccp-${today()}.csv`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  /* Product Recall */
-  const toggleNewRecall = document.querySelector('[data-action="toggle-new-recall"]'); if(toggleNewRecall) toggleNewRecall.onclick=()=>{ showNewRecall=!showNewRecall; render(); };
-  const cancelNewRecall = document.querySelector('[data-action="cancel-new-recall"]'); if(cancelNewRecall) cancelNewRecall.onclick=()=>{ showNewRecall=false; render(); };
-  const createRecall = document.querySelector('[data-action="create-recall"]');
-  if(createRecall) createRecall.onclick=()=>{
-    const productName = document.getElementById('nr-product').value.trim();
-    if(!productName) return;
-    const toNum = (v) => v===''||v==null ? null : Number(v);
-    const record = {
-      id: uid(),
-      recallNumber: document.getElementById('nr-number').value || nextRecallNumber(),
-      recallType: document.getElementById('nr-type').value,
-      productName,
-      productCode: document.getElementById('nr-code').value,
-      batchLot: document.getElementById('nr-batch').value,
-      mfgDate: document.getElementById('nr-mfg-date').value,
-      expiryDate: document.getElementById('nr-expiry-date').value,
-      qtyProduced: toNum(document.getElementById('nr-qty-produced').value),
-      qtyWarehouse: null, qtyCustomers: null, qtyDestroyed: null,
-      reason: document.getElementById('nr-reason').value,
-      riskClass: document.getElementById('nr-class').value,
-      status: "Open",
-      notes: document.getElementById('nr-notes').value,
-      actionSteps: RECALL_ACTION_STEPS.map(label=>({label, done:false})),
-      commsLog: [],
-      recallStartedAt: null, recallCompletedAt: null, targetHours: 4,
-      regulatoryAuthority: "Not Applicable", regulatoryNotifiedDate: "",
-      rootCause: "", investigationSummary: "", linkedCapaRef: "None / Not linked",
-      approval: { approvedBy:"", approverRole:"", approvedAt:null }
-    };
-    state.productRecalls.unshift(record);
-    openRecallId = record.id; showNewRecall=false; persist(); render();
-    pushToCloud("productRecalls", record);
-  };
-  document.querySelectorAll('[data-toggle-recall]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.toggleRecall; openRecallId = openRecallId===id ? null : id; render();
-  });
-  document.querySelectorAll('[data-recall-filter]').forEach(el=>el.onclick=()=>{
-    recallStatusFilter = el.dataset.recallFilter; render();
-  });
-  document.querySelectorAll('[data-recall-field]').forEach(el=>{
-    el.onchange = () => {
-      const [id, field] = el.dataset.recallField.split(':');
-      const r = state.productRecalls.find(x=>x.id===id);
-      if(!r) return;
-      r[field] = el.type==="number" ? (el.value===''?null:Number(el.value)) : el.value;
-      persist(); render();
-      pushToCloud("productRecalls", r);
-    };
-  });
-  document.querySelectorAll('[data-recall-step]').forEach(el=>{
-    el.onchange = () => {
-      const [id, idx] = el.dataset.recallStep.split(':');
-      const r = state.productRecalls.find(x=>x.id===id);
-      if(!r || !r.actionSteps[idx]) return;
-      r.actionSteps[idx].done = el.checked;
-      persist(); render();
-      pushToCloud("productRecalls", r);
-    };
-  });
-  document.querySelectorAll('[data-action="start-recall-timer"]').forEach(el=>el.onclick=()=>{
-    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
-    if(!r) return;
-    r.recallStartedAt = new Date().toISOString();
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="complete-recall-timer"]').forEach(el=>el.onclick=()=>{
-    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
-    if(!r) return;
-    r.recallCompletedAt = new Date().toISOString();
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="reset-recall-timer"]').forEach(el=>el.onclick=()=>{
-    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
-    if(!r) return;
-    if(!confirm("Reset the recall timer? This clears the start and complete times.")) return;
-    r.recallStartedAt = null; r.recallCompletedAt = null;
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="sign-recall"]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.recall;
-    const r = state.productRecalls.find(x=>x.id===id);
-    if(!r) return;
-    const name = document.getElementById(`sign-recall-name-${id}`).value.trim();
-    if(!name){ alert("Type your full name to sign."); return; }
-    const role = document.getElementById(`sign-recall-role-${id}`).value.trim();
-    if(!r.approval){ r.approval = { approvedBy:"", approverRole:"", approvedAt:null }; }
-    r.approval.approvedBy = name; r.approval.approverRole = role; r.approval.approvedAt = new Date().toISOString();
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="unsign-recall"]').forEach(el=>el.onclick=()=>{
-    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
-    if(!r) return;
-    r.approval = { approvedBy:"", approverRole:"", approvedAt:null };
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="add-recall-comm"]').forEach(el=>el.onclick=()=>{
-    const id = el.dataset.recall;
-    const r = state.productRecalls.find(x=>x.id===id);
-    if(!r) return;
-    const contact = document.getElementById(`rc-contact-${id}`).value.trim();
-    if(!contact) return;
-    const entry = {
-      id: uid(),
-      contact,
-      date: document.getElementById(`rc-date-${id}`).value || today(),
-      method: document.getElementById(`rc-method-${id}`).value,
-      response: document.getElementById(`rc-response-${id}`).value,
-      followUp: document.getElementById(`rc-followup-${id}`).value
-    };
-    if(!r.commsLog) r.commsLog = [];
-    r.commsLog.unshift(entry);
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="delete-recall-comm"]').forEach(el=>el.onclick=()=>{
-    const r = state.productRecalls.find(x=>x.id===el.dataset.recall);
-    if(!r) return;
-    r.commsLog = r.commsLog.filter(c=>c.id!==el.dataset.comm);
-    persist(); render();
-    pushToCloud("productRecalls", r);
-  });
-  document.querySelectorAll('[data-action="delete-recall"]').forEach(el=>el.onclick=()=>{
-    if(!confirm("Delete this recall record? This cannot be undone.")) return;
-    const deletedId = el.dataset.recall;
-    state.productRecalls = state.productRecalls.filter(r=>r.id!==el.dataset.recall);
-    openRecallId = null; persist(); render();
-    deleteFromCloud("productRecalls", deletedId);
-  });
-  const recallsCsvBtn = document.querySelector('[data-action="export-recalls-csv"]');
-  if(recallsCsvBtn) recallsCsvBtn.onclick=()=>{
-    const headers = ["Recall Number","Recall Type","Product Name","Product Code","Batch/Lot","Mfg Date","Expiry Date","Qty Produced","Qty Warehouse","Qty Customers","Qty Destroyed","Mass Balance Variance","Reason","Risk Class","Status","% Actions Complete","Recall Started","Recall Completed","Duration","Target Hours","Exceeded Target","Root Cause","Linked CAPA","Regulatory Authority","Date Notified","Approved By","Approver Role","Approved At","Notes"];
-    const rows = state.productRecalls.map(r=>{
-      const mb = recallMassBalance(r);
-      return [r.recallNumber, r.recallType||'', r.productName, r.productCode||'', r.batchLot||'', r.mfgDate||'', r.expiryDate||'', r.qtyProduced??'', r.qtyWarehouse??'', r.qtyCustomers??'', r.qtyDestroyed??'', mb.hasAnyPart?mb.variance:'', r.reason||'', r.riskClass||'', r.status, recallCompletionPct(r)+'%', r.recallStartedAt?new Date(r.recallStartedAt).toLocaleString():'', r.recallCompletedAt?new Date(r.recallCompletedAt).toLocaleString():'', formatDuration(recallDurationMs(r)), r.targetHours??'', recallExceededTarget(r)?'Yes':'No', r.rootCause||'', r.linkedCapaRef||'', r.regulatoryAuthority||'', r.regulatoryNotifiedDate||'', (r.approval&&r.approval.approvedBy)||'', (r.approval&&r.approval.approverRole)||'', (r.approval&&r.approval.approvedAt)?new Date(r.approval.approvedAt).toLocaleString():'', r.notes||''];
-    });
-    const csvEscape = (v) => `"${String(v).replace(/"/g,'""')}"`;
-    const csv = [headers.map(csvEscape).join(','), ...rows.map(row=>row.map(csvEscape).join(','))].join('\n');
-    const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url; link.download = `aqms-product-recalls-${today()}.csv`;
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
@@ -20656,6 +20203,890 @@ function showUpdateBanner(){
     }
   }, true);
   window.changeControlReset = function(){ C.cases = []; C.evidence = []; C.events = {}; C.eventsLoading = {}; C.eventsDirty = {}; C.people = []; C.ncrs = []; C.capas = []; C.tasks = []; C.links = []; C.docs = []; C.loaded = false; C.loading = false; C.error = ''; C.openId = null; modal = null; mount(); };
+})();
+</script>
+
+<script>
+/* ===== Product recall (stage 1): controlled recall / mock exercise lifecycle, traceability, consignee recovery, disposition, controlled closure ===== */
+(function(){
+  var R = { actions:[], authority:[], evidence:[], stage2Missing:false, cases:[], batches:[], consignees:[], dispositions:[], comms:[], events:{}, eventsLoading:{}, eventsDirty:{}, people:[], ncrs:[], capas:[], measures:{}, measuresLoading:{}, loaded:false, loading:false, tried:false, error:'', filter:'open', openId:null };
+  var modal = null;
+  var STATUS = { assessment:['Assessment','neutral'], active:['Recall active','rust'], recovery_complete:['Recovery complete','amber'], closed:['Closed','green'], cancelled:['Cancelled','neutral'] };
+  var STEPS = [['assessment','Assessment'],['active','Active'],['recovery_complete','Recovery complete'],['closed','Closed']];
+  var MODE = [['mock','Mock exercise'],['live','Live event']];
+  var SCOPE = [['internal_hold','Internal stock hold'],['supply_chain','Supply-chain withdrawal'],['consumer','Consumer recall']];
+  var CLASS = [['class_1','Class I – serious health risk'],['class_2','Class II – temporary / reversible risk'],['class_3','Class III – low risk / regulatory']];
+  var CLASS_TONE = { class_1:'rust', class_2:'amber', class_3:'navy' };
+  var UNIT = [['units','Units'],['cases','Cases'],['kg','Kilograms'],['litres','Litres']];
+  var REASONS = ['Microbiological contamination','Allergen mislabelling / undeclared allergen','Foreign object contamination','Incorrect packaging information','Chemical contamination','Temperature abuse','Supplier issue','Other'];
+  var ROOT = ['Poor housekeeping','Equipment failure','Human error','Supplier issue','Process deviation','Labelling error','Design / specification','Other'];
+  var SOURCE = ['Customer complaint','Internal incident','NCR','Audit finding','Supplier notification','Regulator notification','Test result','Scheduled mock exercise','Other'];
+  var METHOD = [['destroyed','Destroyed'],['reworked','Reworked'],['returned_to_supplier','Returned to supplier'],['other','Other (describe)']];
+  var PARTY = [['customer','Customer'],['consumer','Consumer / public'],['supplier','Supplier'],['internal','Internal'],['other','Other']];
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function stamp(d){ if(!d) return '—'; var x = new Date(d); return isNaN(x.getTime()) ? '—' : x.toLocaleString(); }
+  function day(d){ return d ? String(d).slice(0, 10) : '—'; }
+  function todayStr(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function myId(){ try{ return currentProfile ? currentProfile.id : null; }catch(_){ return null; } }
+  function canSee(){ return ['admin','quality manager','approver','department manager','auditor'].indexOf(myRole()) !== -1; }
+  function canRaise(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function isPriv(){ return ['admin','quality manager','approver'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function canWork(c){ var me = myId(); return isPriv() || (me && (c.coordinator_id === me || c.deputy_id === me)) || (c.status === 'assessment' && c.created_by === me); }
+  function nameOf(id){ for(var i = 0; i < R.people.length; i++){ if(R.people[i].id === id) return R.people[i].full_name || 'Unnamed'; } return id ? String(id).slice(0, 8) : '—'; }
+  function byId(id){ return R.cases.filter(function(c){ return c.id === id; })[0]; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function num(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : Number(v); }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function fmt(n){ if(n == null || n === '') return '—'; var x = Number(n); return isNaN(x) ? String(n) : x.toLocaleString('en-ZA'); }
+  function isOpen(c){ return ['closed','cancelled'].indexOf(c.status) === -1; }
+  function isMock(c){ return c.mode === 'mock'; }
+  function batchesOf(id){ return R.batches.filter(function(x){ return x.recall_id === id; }); }
+  function consOf(id){ return R.consignees.filter(function(x){ return x.recall_id === id; }); }
+  function dispOf(id){ return R.dispositions.filter(function(x){ return x.recall_id === id; }); }
+  function commsOf(id){ return R.comms.filter(function(x){ return x.recall_id === id; }); }
+  function refLabel(list, id){ for(var i = 0; i < list.length; i++){ if(list[i].id === id) return (list[i].reference_number || '') + ' — ' + (list[i].title || ''); } return ''; }
+  function dur(ms){ if(ms == null || ms < 0) return '—'; var m = Math.round(ms / 60000), h = Math.floor(m / 60); return h > 0 ? h + ' h ' + (m % 60) + ' min' : m + ' min'; }
+  function elapsedMs(c){ if(!c.activated_at) return null; var end = c.recovery_completed_at ? new Date(c.recovery_completed_at) : (c.status === 'cancelled' && c.closed_at ? new Date(c.closed_at) : new Date()); return end - new Date(c.activated_at); }
+  function overTarget(c){ var ms = elapsedMs(c); return ms != null && ms > Number(c.target_hours) * 3600000; }
+
+  async function load(){
+    if(R.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    R.loading = true; R.tried = true; R.error = '';
+    try{
+      var a = await fetchAllRows('recall_cases', function(q){ return q.order('created_at', { ascending:false }); });
+      var b = await fetchAllRows('recall_batches', function(q){ return q.order('added_at', { ascending:true }); });
+      var k = await fetchAllRows('recall_consignees', function(q){ return q.order('created_at', { ascending:true }); });
+      var d = await fetchAllRows('recall_dispositions', function(q){ return q.order('recorded_at', { ascending:true }); });
+      var m = await fetchAllRows('recall_comms', function(q){ return q.order('recorded_at', { ascending:false }); });
+      var p = await supabaseClient.rpc('audit_people');
+      var s2a = await fetchAllRows('recall_actions', function(q){ return q.order('due_at', { ascending:true }); });
+      var s2b = await fetchAllRows('recall_authority', function(q){ return q.order('notified_at', { ascending:true }); });
+      var s2c = await fetchAllRows('recall_evidence', function(q){ return q.order('uploaded_at', { ascending:true }); });
+      var s2err = s2a.error || s2b.error || s2c.error;
+      R.stage2Missing = !!(s2err && /does not exist|schema cache|relation/i.test(s2err.message || ''));
+      var n = await supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500);
+      var cp = await supabaseClient.from('capas').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500);
+      var err = a.error || b.error || k.error || d.error || m.error || (s2err && !R.stage2Missing ? s2err : null);
+      if(err) R.error = /does not exist|schema cache|relation/i.test(err.message || '') ? 'The recall tables are not installed yet. Run recall_stage1_run_this.sql in Supabase.' : err.message;
+      else { R.cases = a.data; R.batches = b.data; R.consignees = k.data; R.dispositions = d.data; R.comms = m.data; R.actions = R.stage2Missing ? [] : (s2a.data || []); R.authority = R.stage2Missing ? [] : (s2b.data || []); R.evidence = R.stage2Missing ? [] : (s2c.data || []); R.people = p.data || []; R.ncrs = (n && n.data) || []; R.capas = (cp && cp.data) || []; R.loaded = true; }
+    }catch(err2){ R.error = (err2 && err2.message) || String(err2); }
+    R.loading = false; rerender();
+  }
+  async function loadEvents(id, force){
+    if(R.eventsLoading[id]){ if(force) R.eventsDirty[id] = true; return; }
+    if(R.events[id] && !force) return;
+    R.eventsLoading[id] = true;
+    try{
+      var r = await supabaseClient.from('recall_events').select('*').eq('recall_id', id).order('created_at', { ascending:false }).limit(120);
+      if(!r.error) R.events[id] = r.data || [];
+    }catch(_){}
+    R.eventsLoading[id] = false;
+    if(R.eventsDirty[id]){ R.eventsDirty[id] = false; return loadEvents(id, true); }
+    rerender();
+  }
+  async function loadMeasures(id){
+    if(R.measuresLoading[id]) return;
+    R.measuresLoading[id] = true;
+    try{
+      var b = await supabaseClient.rpc('recall_balance', { p_id:id });
+      var r1 = await supabaseClient.rpc('recall_recovery_blockers', { p_id:id });
+      var r2 = await supabaseClient.rpc('recall_closure_blockers', { p_id:id });
+      if(!b.error) R.measures[id] = { bal:b.data || {}, recovery:r1.data || [], closure:r2.data || [] };
+    }catch(_){}
+    R.measuresLoading[id] = false; rerender();
+  }
+  async function refresh(id){ R.loading = false; if(id){ delete R.measures[id]; } await load(); if(id){ await loadEvents(id, true); } }
+
+  /* ----- generic modal ----- */
+  function mount(){
+    var host = document.getElementById('rc-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'rc-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'rcf-' + x.id, ctl;
+      if(x.type === 'heading') return '<div style="grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd);font-size:12.5px;font-weight:700;color:var(--navy);">' + e(x.label) + (x.help ? '<div style="font-weight:400;color:var(--muted);font-size:11.5px;">' + e(x.help) + '</div>' : '') + '</div>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'datetime') ctl = '<input type="datetime-local" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'number') ctl = '<input type="number" min="0" step="any" id="' + id + '" value="' + e(x.value == null ? '' : x.value) + '" />';
+      else if(x.type === 'file') ctl = '<input type="file" id="' + id + '" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-rc-modal="overlay"><div class="modal-card" style="max-width:620px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-rc-modal="cancel">Cancel</button><button class="btn btn-primary" data-rc-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {}, files = {};
+    modal.fields.forEach(function(x){ if(x.type === 'heading') return; var el = document.getElementById('rcf-' + x.id); if(!el) return; if(x.type === 'file') files[x.id] = el.files && el.files[0]; else v[x.id] = String(el.value || '').trim(); });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id] && !files[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount();
+    var cfg = modal;
+    try{
+      var extra = cfg.prepare ? await cfg.prepare(v, files) : null;
+      var call = cfg.call(v, extra);
+      var r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      modal = null; mount(); toast(cfg.successText || 'Saved.');
+      var newId = (typeof r.data === 'string' && r.data.length > 20 && cfg.isCase) ? r.data : null;
+      await refresh(cfg.recallId || newId);
+      if(newId && !cfg.recallId) R.openId = newId;
+      rerender();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+  async function direct(fn, args, ok, id){
+    var r = await supabaseClient.rpc(fn, args);
+    if(r.error){ toast(r.error.message, 'error'); return; }
+    toast(ok); await refresh(id);
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  function localInput(iso){ if(!iso) return ''; var d = new Date(iso); if(isNaN(d.getTime())) return ''; d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); }
+  function toIso(v){ if(!v) return ''; var d = new Date(v); return isNaN(d.getTime()) ? '' : d.toISOString(); }
+
+  /* ----- forms ----- */
+  function peopleOptions(){ return [['', '— choose —']].concat(R.people.map(function(p){ return [p.id, (p.full_name || 'Unnamed') + (p.role ? ' · ' + p.role : '')]; })); }
+  function refOptions(list, none){ return [['', none]].concat(list.map(function(x){ return [x.id, (x.reference_number || '') + ' — ' + String(x.title || '').slice(0, 70)]; })); }
+  function choose(list){ return [['', '— choose —']].concat(list); }
+  function plain(list){ return list.map(function(x){ return [x, x]; }); }
+  function caseFields(c){
+    c = c || {}; var creating = !c.id;
+    var f = [];
+    if(creating) f.push({ id:'mode', label:'What is this? (cannot be changed later)', type:'select', options:choose(MODE), value:'', required:true });
+    f = f.concat([
+      { id:'title', label:'Title', value:c.title || '', required:true, placeholder:'e.g. Glass fragments in apricot jam 450g' },
+      { id:'scope', label:'Scope of action', type:'select', options:choose(SCOPE), value:c.scope || '' },
+      { id:'source_type', label:'What triggered it?', type:'select', options:choose(plain(SOURCE)), value:c.source_type || '' },
+      { id:'source_note', label:'Trigger detail (complaint reference, test result, finding…)', value:c.source_note || '' },
+      { type:'heading', label:'Product and hazard' },
+      { id:'product_name', label:'Product', value:c.product_name || '' },
+      { id:'reason', label:'Reason for the recall', type:'select', options:choose(plain(REASONS)), value:c.reason || '' },
+      { id:'hazard_description', label:'Hazard description (what could harm whom)', type:'textarea', value:c.hazard_description || '' },
+      { id:'classification', label:'Classification (your selected scheme: this is not an authority’s formal classification)', type:'select', options:choose(CLASS), value:c.classification || '' },
+      { id:'classification_basis', label:'Basis for the classification', type:'textarea', value:c.classification_basis || '' },
+      { id:'vulnerable_consumers', label:'Are vulnerable consumers affected (infants, elderly, immunocompromised, allergic)?', type:'select', options:[['false','No'],['true','Yes']], value:c.vulnerable_consumers ? 'true' : 'false' },
+      { id:'vulnerable_note', label:'If yes: who, and the added risk', type:'textarea', rows:2, value:c.vulnerable_note || '' },
+      { type:'heading', label:'Scope of the affected product', help:'Add the affected batches after saving. Several batches or SKUs can be added.' },
+      { id:'unit', label:'Unit of measure for every quantity in this recall', type:'select', options:choose(UNIT), value:c.unit || '' },
+      { id:'site', label:'Manufacturing site', value:c.site || '' },
+      { id:'production_line', label:'Production line / area', value:c.production_line || '' },
+      { id:'prod_from', label:'Production from (date and time)', type:'datetime', value:localInput(c.prod_from) },
+      { id:'prod_to', label:'Production to (date and time)', type:'datetime', value:localInput(c.prod_to) },
+      { id:'scope_rationale', label:'How was the scope decided? (traceability back to ingredients and packaging, and forward to customers)', type:'textarea', value:c.scope_rationale || '' },
+      { type:'heading', label:'Recall team' },
+      { id:'coordinator_id', label:'Recall coordinator', type:'select', options:peopleOptions(), value:c.coordinator_id || '' },
+      { id:'decision_maker_id', label:'Decision-maker (Admin, Quality Manager or Approver)', type:'select', options:peopleOptions(), value:c.decision_maker_id || '' },
+      { id:'deputy_id', label:'Deputy coordinator', type:'select', options:peopleOptions(), value:c.deputy_id || '' },
+      { id:'emergency_contact', label:'Emergency contact details (24 hours)', type:'textarea', rows:2, value:c.emergency_contact || '' },
+      { id:'target_hours', label:'Target time to complete recovery (hours)', type:'number', value:c.target_hours != null ? c.target_hours : 4 } ]);
+    if(creating || isMock(c)){
+      f = f.concat([{ type:'heading', label:'Mock exercise only', help:'Ignored for live events.' },
+        { id:'exercise_objectives', label:'Exercise objectives and pass criteria', type:'textarea', value:c.exercise_objectives || '' },
+        { id:'exercise_participants', label:'Participants', type:'textarea', rows:2, value:c.exercise_participants || '' }]);
+    }
+    return f;
+  }
+  function caseArgs(v){
+    var f = {}; ['mode','title','scope','source_type','source_note','product_name','reason','hazard_description','classification','classification_basis','vulnerable_note','unit','site','production_line','scope_rationale',
+      'coordinator_id','decision_maker_id','deputy_id','emergency_contact','target_hours','exercise_objectives','exercise_participants'].forEach(function(k){ if(v[k] !== undefined) f[k] = v[k] || ''; });
+    f.vulnerable_consumers = v.vulnerable_consumers === 'true'; f.prod_from = toIso(v.prod_from); f.prod_to = toIso(v.prod_to); return f;
+  }
+  function actCreate(){
+    openModal({ title:'Raise a recall or mock exercise', submitText:'Save assessment', successText:'Saved as an assessment. The clock has not started.', isCase:true, fields:caseFields(),
+      help:'Only the mode and title are needed to save. The database checks everything else when the recall is activated. Mock exercises and live events are kept apart and never mix in the figures.',
+      call:function(v){ return { fn:'recall_save', args:{ p_id:null, p_f:caseArgs(v) } }; } });
+  }
+  function actEdit(c){
+    openModal({ title:'Edit ' + c.recall_number, submitText:'Save', successText:'Assessment saved.', recallId:c.id, isCase:true, fields:caseFields(c),
+      call:function(v){ return { fn:'recall_save', args:{ p_id:c.id, p_f:caseArgs(v) } }; } });
+  }
+  function actBatch(c, b){
+    b = b || {}; var active = c.status === 'active';
+    var f = [
+      { id:'batch_lot', label:'Batch / lot number', value:b.batch_lot || '', required:true }, { id:'sku', label:'SKU / product code', value:b.sku || '' },
+      { id:'product_name', label:'Product description', value:b.product_name || c.product_name || '' },
+      { id:'mfg_date', label:'Manufacturing date', type:'date', value:b.mfg_date || '' }, { id:'expiry_date', label:'Expiry / best-before date', type:'date', value:b.expiry_date || '' },
+      { id:'qty_produced', label:'Quantity produced (' + lbl(UNIT, c.unit).toLowerCase() + ')', type:'number', value:b.qty_produced },
+      { id:'included', label:'In the recall scope?', type:'select', options:[['yes','Yes: affected'],['no','No: excluded (a reason and the evidence are required)']], value:b.id && !b.included ? 'no' : 'yes' },
+      { id:'rationale', label:'Why it is in or out of scope, and the evidence (required for an excluded batch)', type:'textarea', value:b.rationale || '' },
+      { id:'ingredient_lots', label:'Ingredient and packaging lots used', type:'textarea', rows:2, value:b.ingredient_lots || '' },
+      { id:'supplier_ref', label:'Supplier reference(s)', value:b.supplier_ref || '' }, { id:'site', label:'Site', value:b.site || c.site || '' }, { id:'production_line', label:'Line', value:b.production_line || c.production_line || '' } ];
+    if(active) f.push({ id:'change_reason', label:'The recall is active: why is the scope changing? (at least 15 characters)', type:'textarea', rows:2, required:true });
+    openModal({ title:b.id ? 'Edit batch ' + b.batch_lot : 'Add an affected batch', submitText:'Save batch', successText:'Batch saved.', recallId:c.id, fields:f,
+      help:active ? 'Changing scope after activation creates a new scope version and is recorded with your reason.' : '',
+      call:function(v){ return { fn:'recall_batch_save', args:{ p_recall:c.id, p_id:b.id || null, p_f:{ batch_lot:v.batch_lot, sku:v.sku, product_name:v.product_name, mfg_date:v.mfg_date, expiry_date:v.expiry_date, qty_produced:v.qty_produced,
+        included:v.included === 'yes', rationale:v.rationale, ingredient_lots:v.ingredient_lots, supplier_ref:v.supplier_ref, site:v.site, production_line:v.production_line, change_reason:v.change_reason || '' } } }; } });
+  }
+  function actStock(c){
+    openModal({ title:'Stock on our premises', submitText:'Save', successText:'Stock saved.', recallId:c.id,
+      help:'On-site stock that is blocked or quarantined, plus any affected quantity accounted for in another way (retained samples, production loss). Distributed stock goes in the customer register, not here.',
+      fields:[ { id:'onsite', label:'Blocked / quarantined on site', type:'number', value:c.qty_onsite_held, required:true }, { id:'loc', label:'Where is it held?', value:c.onsite_location || '' },
+        { id:'other', label:'Other accounted quantity', type:'number', value:c.qty_other_accounted, required:true }, { id:'note', label:'Explain the other accounted quantity', type:'textarea', rows:2, value:c.other_accounted_note || '' } ],
+      call:function(v){ return { fn:'recall_stock_save', args:{ p_recall:c.id, p_onsite:num(v.onsite), p_location:nul(v.loc), p_other:num(v.other), p_other_note:nul(v.note) } }; } });
+  }
+  function actConsignee(c, k){
+    k = k || {}; var bs = batchesOf(c.id).filter(function(b){ return b.included; });
+    openModal({ title:k.id ? 'Edit ' + k.name : 'Add a customer / consignee', submitText:'Save', successText:'Saved.', recallId:c.id,
+      help:'One row per customer or destination that received affected product. Add onward customers (distributors, retailers, sites) as further rows with a deeper distribution level.',
+      fields:[ { id:'name', label:'Customer / destination', value:k.name || '', required:true }, { id:'location', label:'Address / branch', value:k.location || '' },
+        { id:'depth', label:'Distribution level (1 = direct customer, 2 = their customer, …)', type:'select', options:[1,2,3,4,5].map(function(n){ return [String(n), String(n)]; }), value:String(k.depth || 1) },
+        { id:'batch_id', label:'Batch supplied (optional)', type:'select', options:[['', '— not specified —']].concat(bs.map(function(b){ return [b.id, b.batch_lot + (b.sku ? ' · ' + b.sku : '')]; })), value:k.batch_id || '' },
+        { id:'delivery_ref', label:'Delivery / invoice reference', value:k.delivery_ref || '' }, { id:'delivery_date', label:'Delivery date', type:'date', value:k.delivery_date || '' },
+        { id:'qty_supplied', label:'Quantity supplied', type:'number', value:k.qty_supplied, required:true }, { id:'qty_sold_onward', label:'Quantity sold onward (known)', type:'number', value:k.qty_sold_onward || 0 },
+        { id:'contact_name', label:'Contact person', value:k.contact_name || '' }, { id:'contact_phone', label:'Contact phone', value:k.contact_phone || '' }, { id:'contact_email', label:'Contact email', value:k.contact_email || '' } ],
+      call:function(v){ return { fn:'recall_consignee_save', args:{ p_recall:c.id, p_id:k.id || null, p_f:{ name:v.name, location:v.location, depth:v.depth, batch_id:v.batch_id, delivery_ref:v.delivery_ref, delivery_date:v.delivery_date,
+        qty_supplied:v.qty_supplied, qty_sold_onward:v.qty_sold_onward, contact_name:v.contact_name, contact_phone:v.contact_phone, contact_email:v.contact_email } } }; } });
+  }
+  function consById(id){ return R.consignees.filter(function(x){ return x.id === id; })[0]; }
+  function actNotify(k){
+    openModal({ title:'Notify ' + k.name, submitText:'Record notification', successText:'Notification recorded.', recallId:k.recall_id,
+      help:'The time comes from the server. You are recording that you told them; the effectiveness check records whether they acted.',
+      fields:[ { id:'method', label:'How was the customer notified?', type:'select', options:choose(plain(['Phone call','Email','Letter / courier','In person','Customer portal','Other'])), value:'', required:true }, { id:'note', label:'What was said / sent', type:'textarea', rows:2 } ],
+      call:function(v){ return { fn:'recall_consignee_notify', args:{ p_id:k.id, p_method:v.method, p_note:nul(v.note) } }; } });
+  }
+  function actRecovery(k){
+    openModal({ title:'Recovery at ' + k.name, submitText:'Save quantities', successText:'Recovery saved.', recallId:k.recall_id,
+      help:'Supplied: ' + fmt(k.qty_supplied) + '. Returned stock goes into our quarantine; "controlled at customer" means the customer has confirmed it is blocked on their premises. Anything not accounted for stays as outstanding and must be explained before recovery can be completed.',
+      fields:[ { id:'ret', label:'Returned to us', type:'number', value:k.qty_returned, required:true }, { id:'ctl', label:'Confirmed blocked / controlled at the customer', type:'number', value:k.qty_controlled, required:true },
+        { id:'des', label:'Destroyed at the customer (with their confirmation)', type:'number', value:k.qty_destroyed, required:true },
+        { id:'why', label:'If any quantity is still outstanding: where it went and what has been done (sold on, consumed, unknown)', type:'textarea', rows:2, value:k.outstanding_explanation || '' } ],
+      call:function(v){ return { fn:'recall_consignee_recovery', args:{ p_id:k.id, p_returned:num(v.ret), p_controlled:num(v.ctl), p_destroyed:num(v.des), p_explanation:nul(v.why) } }; } });
+  }
+  function actCheck(k){
+    openModal({ title:'Effectiveness check: ' + k.name, submitText:'Record check', successText:'Check recorded.', recallId:k.recall_id,
+      help:'A recall is effective only when the customer received the message and acted on it. Contact them and confirm.',
+      fields:[ { id:'ack', label:'Did they acknowledge the notice?', type:'select', options:[['yes','Yes'],['no','No']], value:k.acknowledged === false ? 'no' : 'yes' }, { id:'by', label:'Who acknowledged (name and role)', value:k.acknowledged_by_name || '' },
+        { id:'fol', label:'Did they follow the instruction (stock found, blocked, returned or destroyed)?', type:'select', options:[['yes','Yes: confirmed'],['no','No / not confirmed']], value:k.instructions_followed === false ? 'no' : 'yes' },
+        { id:'note', label:'What you confirmed with them', type:'textarea', value:k.check_note || '', required:true }, { id:'fu', label:'Follow-up date (required if anything is not confirmed)', type:'date', value:k.follow_up_due || '' } ],
+      call:function(v){ return { fn:'recall_consignee_check', args:{ p_id:k.id, p_acknowledged:v.ack === 'yes', p_ack_by:nul(v.by), p_followed:v.fol === 'yes', p_note:v.note, p_follow_up:nul(v.fu) } }; } });
+  }
+  function actVoid(k){
+    openModal({ title:'Void ' + k.name, submitText:'Void row', successText:'Row voided.', recallId:k.recall_id, help:'Only for a row entered in error or duplicated, and only if no recovery has been recorded. The row and your reason stay on record.',
+      fields:[ { id:'reason', label:'Reason (at least 15 characters)', type:'textarea', required:true } ], call:function(v){ return { fn:'recall_consignee_void', args:{ p_id:k.id, p_reason:v.reason } }; } });
+  }
+  function actDisp(c){
+    openModal({ title:'Record disposition of stock', submitText:'Record', successText:'Disposition recorded.', recallId:c.id,
+      help:'Stock under our control is the blocked on-site stock plus stock returned by customers. It stays counted until you record what was done with it. Records cannot be edited afterwards.',
+      fields:[ { id:'method', label:'What was done', type:'select', options:METHOD, value:'destroyed' }, { id:'qty', label:'Quantity', type:'number', required:true }, { id:'date', label:'Date', type:'date', value:todayStr(), required:true },
+        { id:'loc', label:'Where (site, waste contractor, supplier)', value:'' }, { id:'wit', label:'Witnessed by', required:true }, { id:'note', label:'Notes / waste certificate number', type:'textarea', rows:2 } ],
+      call:function(v){ return { fn:'recall_disposition_add', args:{ p_recall:c.id, p_method:v.method, p_qty:num(v.qty), p_date:nul(v.date), p_location:nul(v.loc), p_witness:v.wit, p_note:nul(v.note) } }; } });
+  }
+  function actComm(c){
+    openModal({ title:'Log a communication', submitText:'Log', successText:'Logged.', recallId:c.id,
+      help:isMock(c) ? 'This is a mock exercise: every contact is recorded as a TEST contact. Do not contact real customers or authorities.' : 'Entries cannot be edited. To correct one, add a new entry. Authority contacts are recorded in the authority notification section.',
+      fields:[ { id:'type', label:'Who', type:'select', options:PARTY, value:'customer' }, { id:'party', label:'Name / organisation', required:true }, { id:'method', label:'Method', value:'' },
+        { id:'summary', label:'What was communicated', type:'textarea', required:true }, { id:'resp', label:'Response received', type:'textarea', rows:2 }, { id:'fu', label:'Follow-up needed', value:'' }, { id:'fud', label:'Follow-up date', type:'date' } ],
+      call:function(v){ return { fn:'recall_comm_add', args:{ p_recall:c.id, p_party_type:v.type, p_party:v.party, p_method:nul(v.method), p_summary:v.summary, p_response:nul(v.resp), p_follow_up:nul(v.fu), p_follow_up_due:nul(v.fud) } }; } });
+  }
+  function actInvestigation(c){
+    var f = [ { id:'rc', label:'Root cause category', type:'select', options:choose(plain(ROOT)), value:c.root_cause || '' },
+      { id:'sum', label:'Investigation summary: what caused it and how it was confirmed', type:'textarea', rows:4, value:c.investigation_summary || '' },
+      { id:'ncr', label:'Linked NCR', type:'select', options:refOptions(R.ncrs, '— none —'), value:c.linked_ncr_id || '' }, { id:'capa', label:'Linked CAPA (corrective action)', type:'select', options:refOptions(R.capas, '— none —'), value:c.linked_capa_id || '' },
+      { id:'fnd', label:'Linked audit finding (reference, e.g. FIND-2026-001)', value:c.linked_finding_ref || '' }, { id:'cmp', label:'Linked complaint / incident (reference)', value:c.linked_complaint_ref || '' } ];
+    if(isMock(c)) f = f.concat([{ id:'res', label:'Exercise result against the objectives (time, traceability %, gaps)', type:'textarea', value:c.exercise_result || '' }, { id:'les', label:'Lessons learned and improvements', type:'textarea', value:c.lessons_learned || '' }]);
+    openModal({ title:'Investigation and follow-up', submitText:'Save', successText:'Saved.', recallId:c.id, help:'A live recall can only be closed once a root cause is recorded and an NCR or CAPA carries the corrective action.', fields:f,
+      call:function(v){ return { fn:'recall_investigation_save', args:{ p_id:c.id, p_f:{ root_cause:v.rc, investigation_summary:v.sum, linked_ncr_id:v.ncr, linked_capa_id:v.capa, linked_finding_ref:v.fnd || '', linked_complaint_ref:v.cmp || '', exercise_result:v.res || '', lessons_learned:v.les || '' } } }; } });
+  }
+  function actReclass(c){
+    openModal({ title:'Change the classification of ' + c.recall_number, submitText:'Save', successText:'Classification saved.', recallId:c.id,
+      fields:[ { id:'cls', label:'Classification', type:'select', options:choose(CLASS), value:c.classification || '' }, { id:'basis', label:'Basis', type:'textarea', value:c.classification_basis || '' },
+        { id:'vul', label:'Vulnerable consumers affected?', type:'select', options:[['false','No'],['true','Yes']], value:c.vulnerable_consumers ? 'true' : 'false' }, { id:'vn', label:'If yes: who, and the added risk', type:'textarea', rows:2, value:c.vulnerable_note || '' },
+        { id:'why', label:'Why is it being changed? (required once the recall has started)', type:'textarea', rows:2 } ],
+      call:function(v){ return { fn:'reclassify_recall', args:{ p_id:c.id, p_class:v.cls, p_basis:v.basis, p_vulnerable:v.vul === 'true', p_vulnerable_note:nul(v.vn), p_reason:nul(v.why) } }; } });
+  }
+  function actContacts(c){
+    openModal({ title:'Recall team of ' + c.recall_number, submitText:'Save', successText:'Team saved.', recallId:c.id,
+      fields:[ { id:'co', label:'Coordinator', type:'select', options:peopleOptions(), value:c.coordinator_id || '' }, { id:'dm', label:'Decision-maker', type:'select', options:peopleOptions(), value:c.decision_maker_id || '' },
+        { id:'dp', label:'Deputy', type:'select', options:peopleOptions(), value:c.deputy_id || '' }, { id:'em', label:'Emergency contact', type:'textarea', rows:2, value:c.emergency_contact || '' }, { id:'why', label:'Why is the team changing? (required once started)', type:'textarea', rows:2 } ],
+      call:function(v){ return { fn:'recall_update_contacts', args:{ p_id:c.id, p_coordinator:nul(v.co), p_decision_maker:nul(v.dm), p_deputy:nul(v.dp), p_emergency:v.em, p_reason:nul(v.why) } }; } });
+  }
+  function actActivate(c){
+    openModal({ title:'Activate ' + c.recall_number, submitText:'Activate and start the clock', successText:'Recall activated. The clock is running.', recallId:c.id,
+      help:(isMock(c) ? 'This starts a MOCK EXERCISE. No real customer or authority should be contacted.' : 'This is a LIVE recall decision.') + ' Activation starts the recall clock from the server time and cannot be undone or reset. It is a signature: your password is checked.',
+      fields:[ { id:'note', label:'Decision note (who decided, on what information)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Activating a recall is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'activate_recall', args:{ p_id:c.id, p_note:v.note } }; } });
+  }
+  function actComplete(c){
+    openModal({ title:'Complete operational recovery of ' + c.recall_number, submitText:'Complete recovery', successText:'Recovery completed. The clock has stopped.', recallId:c.id,
+      help:'This stops the clock. It is allowed only when the quantities reconcile, every customer was notified and checked, and any outstanding quantity is explained. It does not close the recall: root cause, disposition and follow-up come next.',
+      fields:[ { id:'note', label:'Your conclusion on the recovery', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Completing recovery is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'complete_recall_recovery', args:{ p_id:c.id, p_note:v.note } }; } });
+  }
+  function actClose(c){
+    openModal({ title:'Close ' + c.recall_number, submitText:'Close', successText:'Closed.', recallId:c.id,
+      help:'Closure is the final decision. You cannot close a recall you coordinated unless you are the organisation’s only eligible approver (which is recorded). This is a signature.',
+      fields:[ { id:'sum', label:'Closure summary (outcome, residual risk, lessons)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Closing a recall is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'close_recall', args:{ p_id:c.id, p_summary:v.sum } }; } });
+  }
+  function actReason(c, fn, title, help, ok, min){
+    openModal({ title:title, submitText:'Confirm', successText:ok, recallId:c.id, help:help, fields:[ { id:'reason', label:'Reason (at least ' + (min || 20) + ' characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:fn, args:{ p_id:c.id, p_reason:v.reason } }; } });
+  }
+  function actClock(c){
+    openModal({ title:'Correct the recall start time', submitText:'Correct', successText:'Start time corrected.', recallId:c.id,
+      help:'Use only if the clock started at the wrong time. The original time (' + stamp(c.original_activated_at) + '), the new time and your reason stay on record permanently, and the recall is flagged as corrected.',
+      fields:[ { id:'t', label:'Correct start time', type:'datetime', value:localInput(c.activated_at), required:true }, { id:'why', label:'Reason (at least 20 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'correct_recall_activation', args:{ p_id:c.id, p_time:toIso(v.t), p_reason:v.why } }; } });
+  }
+
+  /* ----- render ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-rc="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function kv(k, v){ return v ? '<div style="font-size:12.5px;margin-top:4px;"><b>' + e(k) + ':</b> ' + e(v) + '</div>' : ''; }
+  function section(title, inner, extra){ return '<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--line,#ddd);"><b style="font-size:12.5px;">' + e(title) + '</b>' + (extra || '') + inner + '</div>'; }
+  function banner(c){
+    return isMock(c) ? '<div style="background:#fff4d6;border:2px dashed #b8860b;color:#6b4e00;font-weight:700;text-align:center;padding:6px;border-radius:6px;font-size:12.5px;margin-bottom:8px;">EXERCISE ONLY — NOT A LIVE RECALL. Do not contact real customers or authorities.</div>'
+      : '<div style="background:#fdeaea;border:1px solid #b33;color:#7a1f1f;font-weight:700;text-align:center;padding:4px;border-radius:6px;font-size:12px;margin-bottom:8px;">LIVE EVENT</div>';
+  }
+  function progress(c){
+    if(c.status === 'cancelled') return '<div class="muted-italic" style="font-size:12px;">Cancelled: ' + e(c.close_reason || '') + '</div>';
+    var idx = 0; STEPS.forEach(function(s, i){ if(s[0] === c.status) idx = i; });
+    return '<div class="flex-wrap" style="gap:4px;margin:6px 0;">' + STEPS.map(function(s, i){
+      var on = i <= idx; return '<span style="font-size:10.5px;padding:2px 7px;border-radius:10px;border:1px solid ' + (on ? 'var(--navy)' : 'var(--line,#ddd)') + ';background:' + (on ? 'var(--navy)' : 'transparent') + ';color:' + (on ? '#fff' : 'var(--muted)') + ';">' + e(s[1]) + '</span>'; }).join('') +
+      (c.cycle > 1 ? '<span class="tag tag-amber" style="font-size:10px;">Cycle ' + c.cycle + '</span>' : '') + '</div>';
+  }
+  function clockBlock(c){
+    if(!c.activated_at) return '<div class="muted-italic" style="font-size:12.5px;">The clock has not started. It starts, from the server time, when the recall is activated.</div>';
+    var ms = elapsedMs(c), over = overTarget(c);
+    return '<div style="display:flex;gap:18px;flex-wrap:wrap;font-size:13px;"><div><div class="muted-italic" style="font-size:11px;">STARTED</div><b>' + e(stamp(c.activated_at)) + '</b></div>' +
+      '<div><div class="muted-italic" style="font-size:11px;">' + (c.recovery_completed_at ? 'RECOVERY COMPLETED' : 'RUNNING') + '</div><b>' + e(c.recovery_completed_at ? stamp(c.recovery_completed_at) : 'now') + '</b></div>' +
+      '<div><div class="muted-italic" style="font-size:11px;">ELAPSED</div><b style="color:' + (over ? 'var(--rust)' : 'inherit') + ';">' + e(dur(ms)) + '</b></div><div><div class="muted-italic" style="font-size:11px;">TARGET</div><b>' + e(c.target_hours) + ' h</b></div></div>' +
+      (over ? '<div class="tag tag-rust" style="margin-top:6px;">⚠ Target of ' + e(c.target_hours) + ' h exceeded</div>' : '') +
+      (c.activation_corrected ? '<div class="tag tag-amber" style="margin-top:6px;">Start time was corrected (original ' + e(stamp(c.original_activated_at)) + '): see history</div>' : '');
+  }
+  function mcard(title, rows, tag){
+    return '<div style="flex:1 1 230px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:4px;">' + e(title) + (tag ? ' ' + tag : '') + '</div>' +
+      rows.map(function(r){ return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:1px 0;' + (r[2] ? 'font-weight:700;border-top:1px solid var(--line,#eee);margin-top:2px;' : '') + '"><span>' + e(r[0]) + '</span><span>' + e(r[1]) + '</span></div>'; }).join('') + '</div>';
+  }
+  function measuresBlock(c, M){
+    if(!M) return '<div class="muted-italic" style="font-size:12px;">Loading quantities…</div>';
+    var b = M.bal, u = lbl(UNIT, c.unit).toLowerCase(), gap = Number(b.traced_gap), out = Number(b.outstanding), dist = Number(b.distributed);
+    var tag1 = gap === 0 ? '<span class="tag tag-green" style="font-size:10px;">Reconciled</span>' : '<span class="tag tag-rust" style="font-size:10px;">' + (gap > 0 ? fmt(gap) + ' not located' : fmt(-gap) + ' over-accounted') + '</span>';
+    var pct = dist > 0 ? Math.round(((dist - out) / dist) * 100) : null;
+    var tag2 = dist === 0 ? '' : out === 0 ? '<span class="tag tag-green" style="font-size:10px;">Nothing outstanding</span>' : '<span class="tag tag-rust" style="font-size:10px;">' + fmt(out) + ' outstanding</span>';
+    var pool = Number(b.stock_under_control);
+    return '<div class="flex-wrap" style="gap:8px;align-items:stretch;">' +
+      mcard('1 · Traceability (where did it go?)', [['Affected (batches in scope)', fmt(b.affected)], ['On our premises, blocked', fmt(b.onsite_held)], ['Other accounted', fmt(b.other_accounted)], ['Distributed to customers', fmt(b.distributed)], ['Not yet located', fmt(gap), true]], tag1) +
+      mcard('2 · Recovery of distributed stock', [['Distributed', fmt(b.distributed)], ['Returned to us', fmt(b.returned)], ['Confirmed controlled at customer', fmt(b.controlled_at_customer)], ['Destroyed at customer', fmt(b.destroyed_at_customer)], ['Outstanding', fmt(out), true]], tag2) +
+      mcard('3 · Stock under our control', [['Blocked on site', fmt(b.onsite_held)], ['+ Returned by customers', fmt(b.returned)], ['− Disposed of (recorded)', fmt(b.disposed)], ['Still to be disposed of', fmt(pool), true]], pool === 0 ? '<span class="tag tag-green" style="font-size:10px;">Nil</span>' : '') + '</div>' +
+      '<div class="muted-italic" style="font-size:11.5px;margin-top:6px;">Unit: ' + e(u) + '. Balanced traceability means every unit has been located; it does not mean it has been recovered. Recovery' + (pct != null ? ' so far: ' + pct + '% of distributed stock is returned, controlled or destroyed' : '') + (Number(b.sold_onward) > 0 ? '; ' + fmt(b.sold_onward) + ' reported sold onward' : '') + '.</div>';
+  }
+  function batchesBlock(c){
+    var bs = batchesOf(c.id), editable = canWork(c) && ['assessment', 'active'].indexOf(c.status) !== -1;
+    var rows = bs.map(function(b){
+      return '<div style="font-size:12px;padding:5px 0;border-bottom:1px solid var(--line,#eee);"><span class="tag tag-' + (b.included ? 'rust' : 'neutral') + '" style="font-size:10px;">' + (b.included ? 'In scope' : 'Excluded') + '</span> <b>' + e(b.batch_lot) + '</b>' + (b.sku ? ' · ' + e(b.sku) : '') + ' · ' + e(fmt(b.qty_produced)) +
+        (b.mfg_date ? ' · made ' + e(day(b.mfg_date)) : '') + (b.expiry_date ? ' · exp ' + e(day(b.expiry_date)) : '') + (b.scope_version > 1 ? ' <span class="muted-italic">(scope v' + b.scope_version + ')</span>' : '') +
+        (b.rationale ? '<div class="muted-italic">' + e(b.rationale) + '</div>' : '') + (b.ingredient_lots ? '<div class="muted-italic">Ingredient / packaging lots: ' + e(b.ingredient_lots) + '</div>' : '') +
+        (editable ? '<div style="margin-top:3px;">' + bt('bedit', { id:b.id }, 'Edit') + (c.status === 'assessment' ? ' ' + bt('brem', { id:b.id }, 'Remove') : '') + '</div>' : '') + '</div>'; }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">No batch added yet.</div>') + (editable ? '<div style="margin-top:6px;">' + bt('badd', { id:c.id }, '+ Add batch / SKU', true) + '</div>' : '');
+  }
+  function consBlock(c){
+    var ks = consOf(c.id), editable = canWork(c) && ['assessment', 'active'].indexOf(c.status) !== -1, live = c.status === 'active' && canWork(c);
+    var rows = ks.map(function(k){
+      var out = Number(k.qty_supplied) - Number(k.qty_returned) - Number(k.qty_controlled) - Number(k.qty_destroyed);
+      var tone = k.voided ? 'neutral' : !k.notified_at ? 'amber' : !k.checked_at ? 'amber' : (k.instructions_followed ? 'green' : 'rust');
+      var state = k.voided ? 'Voided' : !k.notified_at ? 'Not notified' : !k.checked_at ? 'Notified, not checked' : (k.instructions_followed ? 'Checked: instruction followed' : 'Checked: NOT confirmed');
+      var btns = '';
+      if(!k.voided){
+        if(live) btns += (k.notified_at ? '' : bt('knot', { id:k.id }, 'Notify', true)) + (k.notified_at ? ' ' + bt('kchk', { id:k.id }, k.checked_at ? 'Re-check' : 'Effectiveness check', !k.checked_at) : '') + ' ' + bt('krec', { id:k.id }, 'Recovery quantities');
+        if(editable) btns += ' ' + bt('kedit', { id:k.id }, 'Edit') + ' ' + bt('kvoid', { id:k.id }, 'Void');
+      }
+      return '<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--line,#eee);' + (k.voided ? 'opacity:.55;' : '') + '"><span class="tag tag-' + tone + '" style="font-size:10px;">' + e(state) + '</span> <b>' + e(k.name) + '</b>' +
+        (k.depth > 1 ? ' <span class="muted-italic">level ' + k.depth + '</span>' : '') + (k.is_test_contact ? ' <span class="tag tag-navy" style="font-size:10px;">TEST contact</span>' : '') + (k.location ? ' · ' + e(k.location) : '') +
+        '<div>Supplied ' + e(fmt(k.qty_supplied)) + ' · returned ' + e(fmt(k.qty_returned)) + ' · controlled ' + e(fmt(k.qty_controlled)) + ' · destroyed ' + e(fmt(k.qty_destroyed)) + ' · <b style="color:' + (out > 0 && !k.voided ? 'var(--rust)' : 'inherit') + ';">outstanding ' + e(fmt(out)) + '</b>' +
+        (Number(k.qty_sold_onward) > 0 ? ' · sold onward ' + e(fmt(k.qty_sold_onward)) : '') + '</div>' +
+        (k.delivery_ref || k.delivery_date ? '<div class="muted-italic">Delivery ' + e(k.delivery_ref || '') + ' ' + e(day(k.delivery_date)) + '</div>' : '') +
+        (k.notified_at ? '<div class="muted-italic">Notified ' + e(stamp(k.notified_at)) + ' by ' + e(nameOf(k.notified_by)) + ' (' + e(k.notify_method || '') + ')</div>' : '') +
+        (k.checked_at ? '<div class="muted-italic">Checked ' + e(stamp(k.checked_at)) + ' by ' + e(nameOf(k.checked_by)) + (k.acknowledged_by_name ? ' · ack. by ' + e(k.acknowledged_by_name) : '') + ': ' + e(k.check_note || '') + (k.follow_up_due ? ' · follow up ' + e(day(k.follow_up_due)) : '') + '</div>' : '') +
+        (out > 0 && k.outstanding_explanation ? '<div class="muted-italic">Outstanding explained: ' + e(k.outstanding_explanation) + '</div>' : '') + (k.void_reason ? '<div class="muted-italic">Voided: ' + e(k.void_reason) + '</div>' : '') +
+        (btns ? '<div style="margin-top:4px;">' + btns + '</div>' : '') + '</div>'; }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">No customers recorded.' + (c.scope === 'internal_hold' ? ' (An internal hold may have none.)' : '') + '</div>') + (editable ? '<div style="margin-top:6px;">' + bt('kadd', { id:c.id }, '+ Add customer / consignee', true) + (ks.length ? ' ' + bt('kcsv', { id:c.id }, '⬇ CSV') : '') + '</div>' : (ks.length ? '<div style="margin-top:6px;">' + bt('kcsv', { id:c.id }, '⬇ CSV') + '</div>' : ''));
+  }
+  function dispBlock(c){
+    var ds = dispOf(c.id), can = isPriv() && ['active', 'recovery_complete'].indexOf(c.status) !== -1;
+    var rows = ds.map(function(d){ return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><b>' + e(lbl(METHOD, d.method)) + '</b> ' + e(fmt(d.qty)) + ' · ' + e(day(d.done_on)) + (d.location ? ' · ' + e(d.location) : '') + ' · witnessed by ' + e(d.witness) + ' · recorded by ' + e(nameOf(d.recorded_by)) + (d.note ? '<div class="muted-italic">' + e(d.note) + '</div>' : '') + '</div>'; }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">Nothing disposed of yet.</div>') + (can ? '<div style="margin-top:6px;">' + bt('dadd', { id:c.id }, '+ Record disposition') + '</div>' : '');
+  }
+  function commsBlock(c){
+    var ms = commsOf(c.id), can = canWork(c) && ['assessment', 'active', 'recovery_complete'].indexOf(c.status) !== -1;
+    var rows = ms.map(function(m){ return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">' + e(stamp(m.recorded_at)) + ' · ' + e(nameOf(m.recorded_by)) + '</span> ' + (m.is_test ? '<span class="tag tag-navy" style="font-size:10px;">TEST</span> ' : '') + '<b>' + e(m.party) + '</b> (' + e(lbl(PARTY, m.party_type)) + (m.method ? ', ' + e(m.method) : '') + '): ' + e(m.summary) +
+      (m.response ? '<div class="muted-italic">Response: ' + e(m.response) + '</div>' : '') + (m.follow_up ? '<div class="muted-italic">Follow-up: ' + e(m.follow_up) + (m.follow_up_due ? ' by ' + e(day(m.follow_up_due)) : '') + '</div>' : '') + '</div>'; }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">No communications logged.</div>') + (can ? '<div style="margin-top:6px;">' + bt('cadd', { id:c.id }, '+ Log communication') + '</div>' : '');
+  }
+  function listHtml(items, tone){ return '<ul style="margin:4px 0 0 18px;padding:0;font-size:12px;color:' + (tone === 'bad' ? 'var(--rust)' : 'inherit') + ';">' + items.map(function(x){ return '<li>' + e(x) + '</li>'; }).join('') + '</ul>'; }
+  function closureBlock(c, M){
+    if(!M) return '<div class="muted-italic" style="font-size:12px;">Checking…</div>';
+    var h = '';
+    if(c.status === 'active'){
+      h += M.recovery.length ? '<div style="font-size:12px;"><b>Before recovery can be completed:</b>' + listHtml(M.recovery, 'bad') + '</div>' : '<div style="font-size:12px;color:var(--green,#2a7);"><b>✓ Recovery can be completed:</b> quantities reconcile, every customer was notified and checked, outstanding quantities are explained.</div>';
+    }
+    if(c.status === 'recovery_complete'){
+      h += M.closure.length ? '<div style="font-size:12px;"><b>Before the recall can be closed:</b>' + listHtml(M.closure, 'bad') + '</div>' : '<div style="font-size:12px;color:var(--green,#2a7);"><b>✓ The recall can be closed.</b></div>';
+    }
+    if(c.status === 'closed') h += kv('Closed by', nameOf(c.closed_by) + ', ' + stamp(c.closed_at) + (c.close_self ? ' (sole eligible approver: recorded)' : '')) + kv('Closure summary', c.close_summary);
+    if(c.recovery_completed_at) h += kv('Recovery completed', nameOf(c.recovery_completed_by) + ', ' + stamp(c.recovery_completed_at) + ' — ' + (c.recovery_note || ''));
+    return h;
+  }
+  function eventText(ev){
+    var d = ev.detail || {};
+    switch(ev.event_type){
+      case 'created': return 'Raised (' + (d.number || '') + ', ' + lbl(MODE, d.mode) + ')';
+      case 'assessment_saved': return 'Assessment edited';
+      case 'batch_saved': return (d['new'] ? 'Batch added: ' : 'Batch edited: ') + (d.batch_lot || '') + (d.included === false ? ' (excluded)' : '') + (d.qty != null ? ' — ' + fmt(d.qty) : '');
+      case 'scope_changed': return 'Scope changed (version ' + d.scope_version + '): batch ' + (d.batch_lot || '') + (d.included === false ? ' excluded' : ' in scope') + ' — ' + (d.reason || '');
+      case 'batch_removed': return 'Batch removed during assessment: ' + (d.batch_lot || '');
+      case 'activated': return 'ACTIVATED — clock started (target ' + d.target_hours + ' h). ' + (d.note || '');
+      case 'activation_corrected': return 'Start time corrected from ' + stamp(d.from) + ' to ' + stamp(d.to) + ': ' + (d.reason || '');
+      case 'reclassified': return 'Classification ' + lbl(CLASS, d.from) + ' → ' + lbl(CLASS, d.to) + (d.reason ? ' — ' + d.reason : '');
+      case 'contacts_changed': return 'Recall team changed' + (d.reason ? ': ' + d.reason : '');
+      case 'stock_saved': return 'On-site stock set: blocked ' + fmt(d.onsite_held) + ' (was ' + fmt(d.previous_onsite) + '), other accounted ' + fmt(d.other_accounted) + (d.note ? ' — ' + d.note : '');
+      case 'consignee_saved': return (d['new'] ? 'Customer added: ' : 'Customer edited: ') + (d.name || '') + ' — supplied ' + fmt(d.qty_supplied) + (d.previous_qty != null && Number(d.previous_qty) !== Number(d.qty_supplied) ? ' (was ' + fmt(d.previous_qty) + ')' : '');
+      case 'consignee_notified': return 'Customer notified: ' + (d.name || '') + ' by ' + (d.method || '') + (d.test ? ' (TEST contact)' : '');
+      case 'consignee_recovery': return 'Recovery at ' + (d.name || '') + ': returned ' + fmt(d.returned) + ', controlled ' + fmt(d.controlled) + ', destroyed ' + fmt(d.destroyed) + ', outstanding ' + fmt(d.outstanding) + (d.explanation ? ' — ' + d.explanation : '');
+      case 'effectiveness_checked': return 'Effectiveness check at ' + (d.name || '') + ': ' + (d.acknowledged ? 'acknowledged' : 'NOT acknowledged') + ', ' + (d.followed ? 'instruction followed' : 'instruction NOT confirmed') + ' — ' + (d.note || '');
+      case 'consignee_voided': return 'Customer row voided: ' + (d.name || '') + ' — ' + (d.reason || '');
+      case 'disposition_recorded': return 'Disposition: ' + lbl(METHOD, d.method) + ' ' + fmt(d.qty) + ' on ' + day(d.on) + ', witnessed by ' + (d.witness || '');
+      case 'communication_logged': return 'Communication logged: ' + (d.party || '') + (d.test ? ' (TEST)' : '');
+      case 'investigation_saved': return 'Investigation updated' + (d.root_cause ? ': ' + d.root_cause : '');
+      case 'recovery_completed': return 'RECOVERY COMPLETED in ' + dur(Number(d.minutes) * 60000) + (d.exceeded_target ? ' — target EXCEEDED' : ' — within target') + '. ' + (d.note || '');
+      case 'closed': return 'Closed' + (d.self_closed_sole_approver ? ' (sole eligible approver)' : '') + ': ' + (d.summary || '');
+      case 'reopened': return 'Reopened (cycle ' + d.cycle + '): ' + (d.reason || '');
+      case 'cancelled': return 'Cancelled: ' + (d.reason || '');
+      case 'action_added': return 'Action added: ' + (d.title || '') + ' (' + lbl(PHASE, d.phase) + ', owner ' + nameOf(d.owner) + ', due ' + stamp(d.due) + ')';
+      case 'action_updated': return 'Action changed: ' + (d.title || '') + ' (owner ' + nameOf(d.owner) + ', due ' + stamp(d.due) + ')' + (d.reason ? ' — ' + d.reason : '');
+      case 'action_completed': return 'Action completed' + (d.late ? ' (LATE)' : '') + ': ' + (d.title || '') + ' — ' + (d.note || '');
+      case 'action_verified': return 'Action verified' + (d.self_verified_sole_approver ? ' (sole eligible approver)' : '') + ': ' + (d.title || '') + ' — ' + (d.note || '');
+      case 'action_returned': return 'Action returned: ' + (d.title || '') + ' — ' + (d.reason || '');
+      case 'action_not_applicable': return 'Action not applicable: ' + (d.title || '') + ' — ' + (d.reason || '');
+      case 'authority_added': return 'Authority notified: ' + (d.authority || '') + ' at ' + stamp(d.notified_at) + (d.reference ? ' (ref ' + d.reference + ')' : '');
+      case 'authority_updated': return 'Authority notification updated: ' + (d.authority || '') + (d.acknowledged_at ? ' — acknowledged ' + stamp(d.acknowledged_at) : '') + (d.instructions ? ' — ' + d.instructions : '');
+      case 'authority_closed': return 'Authority notification closed: ' + (d.authority || '') + ' — ' + (d.note || '');
+      case 'authority_decision': return d.decision === 'not_required' ? 'Decision recorded: no authority notification required — ' + (d.reason || '') : 'Authority decision withdrawn — ' + (d.reason || '');
+      case 'evidence_added': return 'Evidence attached: ' + (d.file_name || '') + ' (' + lbl(EV_CAT, d.category) + ') [' + (d.sha256 || '') + '…]';
+      case 'evidence_downloaded': return 'Evidence downloaded: ' + (d.file_name || '');
+      default: return String(ev.event_type).replace(/_/g, ' ');
+    }
+  }
+  function detail(c){
+    if(!R.events[c.id] && !R.eventsLoading[c.id]) setTimeout(function(){ loadEvents(c.id); }, 0);
+    if(!R.measures[c.id] && !R.measuresLoading[c.id]) setTimeout(function(){ loadMeasures(c.id); }, 0);
+    var ev = R.events[c.id] || [], M = R.measures[c.id], st = c.status, b = [], me = myId();
+    if(st === 'assessment'){
+      if(canWork(c)) b.push(bt('edit', { id:c.id }, 'Edit assessment'));
+      if(isPriv()) b.push(bt('activate', { id:c.id }, isMock(c) ? '▶ Activate exercise (start clock)' : '▶ Activate recall (start clock)', true));
+      if(isQm() || c.created_by === me) b.push(bt('cancel', { id:c.id }, 'Cancel'));
+    }
+    if(st === 'active'){
+      if(isPriv()) b.push(bt('complete', { id:c.id }, '⏹ Complete operational recovery', true));
+      if(isPriv()) b.push(bt('reclass', { id:c.id }, 'Change classification'));
+      if(isPriv()) b.push(bt('team', { id:c.id }, 'Change team'));
+      if(isQm()){ b.push(bt('clock', { id:c.id }, 'Correct start time')); b.push(bt('cancel', { id:c.id }, 'Cancel (full explanation)')); }
+    }
+    if(st === 'recovery_complete'){
+      if(isPriv()) b.push(bt('close', { id:c.id }, 'Close recall', true));
+      if(isQm()){ b.push(bt('reopen', { id:c.id }, 'Reopen recovery')); b.push(bt('clock', { id:c.id }, 'Correct start time')); b.push(bt('cancel', { id:c.id }, 'Cancel (full explanation)')); }
+    }
+    if(st === 'closed' && isQm()) b.push(bt('reopen', { id:c.id }, 'Reopen'));
+    if(['active', 'recovery_complete'].indexOf(st) !== -1 && canWork(c)) b.push(bt('inv', { id:c.id }, 'Investigation / follow-up'));
+    if(['assessment', 'active', 'recovery_complete'].indexOf(st) !== -1 && canWork(c)) b.push(bt('stock', { id:c.id }, 'On-site stock'));
+    var ncrB = ''; try{ if(typeof ncrBtn === 'function' && st !== 'cancelled') ncrB = ncrBtn({ title:(isMock(c) ? 'Mock recall finding: ' : 'Recall: ') + (c.product_name || c.title), description:'Gap or failure found during ' + c.recall_number + '. Describe it here.', source:'process_deviation', severity:isMock(c) ? 'Major' : 'Critical', area:'Product recall', product_ref:(c.product_name || ''), link_type:'recall', link_reference:c.recall_number + ' — ' + c.title, record_id:String(c.id) }); }catch(_){}
+    b.push(bt('pack', { id:c.id }, '🧾 Evidence pack'));
+    if(st !== 'cancelled') b.push(bt('notice', { id:c.id }, '✉ Draft customer notice'));
+    var bal = M && M.bal;
+    return '<div style="border-top:1px solid var(--line2,#eee);padding:12px 14px;">' + banner(c) + progress(c) +
+      '<div style="margin:6px 0;">' + (c.classification ? '<span class="tag tag-' + CLASS_TONE[c.classification] + '">' + e(lbl(CLASS, c.classification)) + '</span> ' : '') + (c.vulnerable_consumers ? '<span class="tag tag-rust">Vulnerable consumers affected</span> ' : '') + '<span class="tag tag-neutral">' + e(lbl(SCOPE, c.scope)) + '</span></div>' +
+      section('Recall clock', clockBlock(c)) +
+      section('Actions: owners, deadlines and independent verification', actionsBlock(c)) +
+      section('Assessment', kv('Product', c.product_name) + kv('Reason', c.reason) + kv('Hazard', c.hazard_description) + kv('Classification basis', c.classification_basis) + kv('Vulnerable consumers', c.vulnerable_consumers ? c.vulnerable_note : '') +
+        kv('Trigger', (c.source_type || '') + (c.source_note ? ' — ' + c.source_note : '')) + kv('Site / line', [c.site, c.production_line].filter(Boolean).join(' · ')) +
+        kv('Production range', c.prod_from || c.prod_to ? stamp(c.prod_from) + ' → ' + stamp(c.prod_to) : '') + kv('How the scope was decided', c.scope_rationale) + kv('Scope version', c.scope_version > 1 ? String(c.scope_version) : '') +
+        kv('Coordinator', c.coordinator_id ? nameOf(c.coordinator_id) : '') + kv('Decision-maker', c.decision_maker_id ? nameOf(c.decision_maker_id) : '') + kv('Deputy', c.deputy_id ? nameOf(c.deputy_id) : '') + kv('Emergency contact', c.emergency_contact) +
+        (isMock(c) ? kv('Exercise objectives', c.exercise_objectives) + kv('Participants', c.exercise_participants) : '') + kv('Activation note', c.activation_note)) +
+      section('Affected batches / SKUs', batchesBlock(c)) +
+      section('Quantities', measuresBlock(c, M) + (c.onsite_location ? kv('On-site stock held at', c.onsite_location) : '') + kv('Other accounted', c.other_accounted_note)) +
+      section('Customers / consignees: notification, recovery and effectiveness checks', consBlock(c)) +
+      section('Disposition of stock under our control', dispBlock(c)) +
+      section('Investigation and follow-up', kv('Root cause', c.root_cause) + kv('Investigation', c.investigation_summary) + kv('Linked NCR', refLabel(R.ncrs, c.linked_ncr_id)) + kv('Linked CAPA', refLabel(R.capas, c.linked_capa_id)) + kv('Linked audit finding', c.linked_finding_ref) + kv('Linked complaint / incident', c.linked_complaint_ref) +
+        (isMock(c) ? kv('Exercise result', c.exercise_result) + kv('Lessons learned', c.lessons_learned) : '') + (c.root_cause || c.investigation_summary ? '' : '<div class="muted-italic" style="font-size:12px;">Not recorded yet.</div>')) +
+      section('Authority notifications', authorityBlock(c)) +
+      section('Communication log', commsBlock(c)) +
+      section('Evidence files', evidenceBlock(c)) +
+      section('Recovery and closure', closureBlock(c, M)) +
+      (ncrB ? '<div style="margin-top:10px;">' + ncrB + '</div>' : '') +
+      (b.length ? '<div class="flex-wrap" style="gap:6px;margin-top:10px;">' + b.join('') + '</div>' : '') +
+      (ev.length ? '<details style="margin-top:10px;"><summary style="font-size:12px;cursor:pointer;">History (' + ev.length + ')</summary>' + ev.map(function(x){ return '<div style="font-size:11.5px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">' + e(stamp(x.created_at)) + ' · ' + e(x.actor_name || '—') + '</span><br>' + e(eventText(x)) + '</div>'; }).join('') + '</details>' : '') + '</div>';
+  }
+  function filtered(){
+    return R.cases.filter(function(c){ var f = R.filter; return f === 'all' ? true : f === 'open' ? isOpen(c) : f === 'live' ? c.mode === 'live' : f === 'mock' ? c.mode === 'mock' : ['closed', 'cancelled'].indexOf(c.status) !== -1; });
+  }
+  window.renderRecallModule = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>';
+      if(!canSee()) return '<div class="card p4"><h2 class="serif" style="font-size:18px;margin:0 0 6px;">🚨 Product Recall Management</h2><p class="muted-italic">Recalls are visible to Admin, Quality Manager, Approver, Department Manager and Auditor roles.</p></div>';
+      if(!R.loaded && !R.loading && !R.tried) setTimeout(load, 0);
+      var open = R.cases.filter(isOpen), live = open.filter(function(c){ return c.mode === 'live'; }), ex = open.filter(function(c){ return c.mode === 'mock'; });
+      var late = open.filter(function(c){ return c.status === 'active' && overTarget(c); });
+      var lateActs = open.reduce(function(n, c){ return n + overdueActions(c); }, 0);
+      function stat(n, l, tone){ return '<div style="flex:1 1 110px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+      var chips = [['open', 'Open'], ['live', 'Live events'], ['mock', 'Mock exercises'], ['closed', 'Finished'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (R.filter === x[0] ? 'active' : '') + '" data-rc="filter" data-f="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+      var rows = filtered().map(function(c){
+        var st = STATUS[c.status] || [c.status, 'neutral'], op = R.openId === c.id, ms = elapsedMs(c);
+        return '<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-rc="toggle" data-id="' + e(c.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (op ? '▾' : '›') + '</span><div style="min-width:0;">' +
+          '<div class="audit-title">' + e(c.recall_number) + ' · ' + e(c.title) + '</div><div class="audit-sub">' + e(c.product_name || '—') + ' · ' + e(lbl(SCOPE, c.scope)) + (ms != null ? ' · ' + (c.recovery_completed_at ? 'recovered in ' : 'running ') + e(dur(ms)) + ' of ' + e(c.target_hours) + ' h' : '') + '</div></div></div>' +
+          '<div class="flex-wrap"><span class="tag tag-' + (c.mode === 'mock' ? 'navy' : 'rust') + '">' + (c.mode === 'mock' ? 'EXERCISE' : 'LIVE') + '</span>' + (c.classification ? '<span class="tag tag-' + CLASS_TONE[c.classification] + '">' + e(String(lbl(CLASS, c.classification)).split(' –')[0]) + '</span>' : '') +
+          '<span class="tag tag-' + st[1] + '">' + e(st[0]) + '</span>' + (c.status === 'active' && overTarget(c) ? '<span class="tag tag-rust">Over target</span>' : '') + (overdueActions(c) ? '<span class="tag tag-rust">' + overdueActions(c) + ' action(s) overdue</span>' : '') + '</div></button>' + (op ? detail(c) : '') + '</div>';
+      }).join('');
+      return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;"><h2 class="serif" style="font-size:18px;margin:0;">🚨 Product Recall Management</h2><div class="flex-wrap">' +
+        bt('reload', {}, '↻ Refresh') + (R.cases.length ? bt('regcsv', {}, '⬇ Register CSV') : '') + (canRaise() ? bt('create', {}, '+ New recall / exercise', true) : '') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">🔒 Visible to Admin, Quality Manager, Approver, Department Manager and Auditor roles in your organisation. The recall clock is set by the server and cannot be reset. Quantities are tracked in three separate measures (traceability, recovery, stock under control). Every step records who and when and cannot be edited afterwards. Exercises and live events are kept apart.</p>' +
+        (R.error ? '<p style="color:var(--rust);font-size:12px;">' + e(R.error) + '</p>' : '') +
+        '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + stat(live.length, 'live events open', live.length ? 'rust' : '') + stat(ex.length, 'exercises open') + stat(late.length, 'over target time', late.length ? 'rust' : '') + stat(lateActs, 'actions overdue', lateActs ? 'rust' : '') + '</div>' +
+        '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + chips + '</div>' +
+        (R.loading && !R.loaded ? '<p class="muted-italic">Loading…</p>' : (rows || '<p class="muted-italic">' + (R.cases.length ? 'Nothing in this view.' : 'No recalls or exercises recorded yet. Hopefully the live list stays empty; run a mock exercise at least once a year.') + '</p>'));
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Recall page error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+
+  /* ===== stage 2: actions, authority notifications, evidence files, evidence pack ===== */
+  var PHASE = [['containment','Containment'],['communication','Communication'],['recovery','Recovery'],['investigation','Investigation'],['corrective','Corrective action']];
+  var EV_CAT = [['decision','Recall decision / risk assessment'],['distribution','Distribution list / delivery records'],['customer_notice','Customer notice'],['consumer_notice','Consumer notice'],
+    ['authority','Authority correspondence'],['recovery','Recovery / return records'],['disposition','Destruction / rework / supplier return evidence'],['effectiveness','Effectiveness check results'],
+    ['exercise_report','Exercise report'],['other','Other']];
+  var AUTHORITIES = ['National Consumer Commission','Local environmental health practitioner / inspector','Department of Health: Food Control','NRCS','Department of Agriculture','Other (type the name below)'];
+  var FILE_TYPES = { pdf:'application/pdf', doc:'application/msword', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls:'application/vnd.ms-excel',
+    xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', txt:'text/plain' };
+  function actionsOf(id){ return R.actions.filter(function(x){ return x.recall_id === id; }).sort(function(a, b){ return new Date(a.due_at) - new Date(b.due_at); }); }
+  function authOf(id){ return R.authority.filter(function(x){ return x.recall_id === id; }).sort(function(a, b){ return new Date(a.notified_at) - new Date(b.notified_at); }); }
+  function evOf(id){ return R.evidence.filter(function(x){ return x.recall_id === id; }); }
+  function evById(id){ return R.evidence.filter(function(x){ return x.id === id; })[0]; }
+  function actById(id){ return R.actions.filter(function(x){ return x.id === id; })[0]; }
+  function authById(id){ return R.authority.filter(function(x){ return x.id === id; })[0]; }
+  function isLate(a){ return a.status === 'open' && new Date(a.due_at).getTime() < Date.now(); }
+  function overdueActions(c){ return isOpen(c) && c.status !== 'assessment' ? actionsOf(c.id).filter(isLate).length : 0; }
+  function canEvidence(c){ return canRaise() && ['assessment', 'active', 'recovery_complete'].indexOf(c.status) !== -1; }
+  function ownerOptions(){ return [['', '— choose —']].concat(R.people.filter(function(p){ return ['admin', 'quality manager', 'approver', 'department manager'].indexOf(String(p.role || '').toLowerCase()) !== -1; }).map(function(p){ return [p.id, (p.full_name || 'Unnamed') + (p.role ? ' · ' + p.role : '')]; })); }
+  function evOptions(c, none){ return [['', none]].concat(evOf(c.id).map(function(x){ return [x.id, x.file_name + ' (' + lbl(EV_CAT, x.category) + ')']; })); }
+  async function sha256Hex(buf){ var d = await crypto.subtle.digest('SHA-256', buf); return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
+
+  function actAction(c, a){
+    a = a || {}; var started = c.status !== 'assessment';
+    var f = [ { id:'phase', label:'Type of action', type:'select', options:PHASE, value:a.phase || 'containment' }, { id:'title', label:'Action', value:a.title || '', required:true },
+      { id:'detail', label:'Details (optional)', type:'textarea', rows:2, value:a.detail || '' }, { id:'owner', label:'Owner', type:'select', options:ownerOptions(), value:a.owner_id || '', required:true },
+      { id:'due', label:'Deadline (date and time)', type:'datetime', value:localInput(a.due_at), required:true },
+      { id:'ev', label:'Evidence file required to complete it?', type:'select', options:[['false', 'No'], ['true', 'Yes']], value:a.needs_evidence ? 'true' : 'false' } ];
+    if(a.id && started) f.push({ id:'why', label:'If you change the owner or the deadline: why? (at least 10 characters)', type:'textarea', rows:2 });
+    openModal({ title:a.id ? 'Edit action' : 'Add an action', submitText:'Save', successText:'Action saved.', recallId:c.id,
+      help:'Every action needs an owner and a deadline. Containment (stopping distribution, blocking stock) never waits for the investigation.', fields:f,
+      call:function(v){
+        var p = { phase:v.phase, title:v.title, detail:v.detail, owner_id:v.owner, due_at:toIso(v.due), needs_evidence:v.ev === 'true' };
+        return a.id ? { fn:'recall_action_update', args:{ p_id:a.id, p_f:Object.assign(p, { reason:v.why || '' }) } } : { fn:'recall_action_add', args:{ p_recall:c.id, p_f:p } };
+      } });
+  }
+  function actActionDone(a){
+    var c = byId(a.recall_id);
+    openModal({ title:'Complete action', submitText:'Mark done', successText:'Action completed. It now needs independent verification.', recallId:a.recall_id,
+      help:a.needs_evidence ? 'This action needs an evidence file. Use "Attach evidence" on the recall first, then choose the file below.' : 'Say what was done. You may link an evidence file already attached to the recall.',
+      fields:[ { id:'note', label:'What was done', type:'textarea', required:true }, { id:'ev', label:'Evidence file' + (a.needs_evidence ? ' (required)' : ' (optional)'), type:'select', options:evOptions(c, '— none —'), value:'' } ],
+      call:function(v){ return { fn:'recall_action_complete', args:{ p_id:a.id, p_note:v.note, p_evidence:nul(v.ev) } }; } });
+  }
+  function actActionVerify(a){
+    openModal({ title:'Verify action', submitText:'Verify', successText:'Action verified.', recallId:a.recall_id,
+      help:'Independent check that the action was really done. You cannot verify an action you completed yourself, unless you are the organisation’s only eligible approver (which is recorded). This is a signature.',
+      fields:[ { id:'note', label:'What did you check? (at least 10 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Verifying an action is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'recall_action_verify', args:{ p_id:a.id, p_note:v.note } }; } });
+  }
+  function actActionReturn(a){
+    openModal({ title:'Return action as not done properly', submitText:'Return', successText:'Action returned to open.', recallId:a.recall_id, help:'The earlier completion stays in the history.',
+      fields:[ { id:'why', label:'What is missing or wrong? (at least 15 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'recall_action_return', args:{ p_id:a.id, p_reason:v.why } }; } });
+  }
+  function actActionNa(a){
+    openModal({ title:'Mark action not applicable', submitText:'Confirm', successText:'Marked not applicable.', recallId:a.recall_id, help:'Only an Admin, Quality Manager or Approver can do this. Your reason stays on record.',
+      fields:[ { id:'why', label:'Why does it not apply? (at least 15 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'recall_action_na', args:{ p_id:a.id, p_reason:v.why } }; } });
+  }
+  function actAuthority(c, u){
+    u = u || {}; var editing = !!u.id;
+    var f = editing ? [] : [ { id:'auth', label:'Authority', type:'select', options:AUTHORITIES.map(function(x){ return [x, x]; }), value:AUTHORITIES[0] }, { id:'other', label:'If other: name of the authority', value:'' },
+      { id:'contact', label:'Contact person / office / email / phone', value:'' }, { id:'method', label:'How was it notified? (email, online form, phone, in person)', value:'' },
+      { id:'when', label:'Date and time notified', type:'datetime', value:localInput(new Date().toISOString()), required:true },
+      { id:'summary', label:'What was reported (at least 15 characters)', type:'textarea', required:true } ];
+    if(editing) f = f.concat([ { id:'ref', label:'Reference number given by the authority', value:u.reference_number || '' },
+      { id:'ack', label:'Acknowledged on (date and time)', type:'datetime', value:localInput(u.acknowledged_at) }, { id:'ackref', label:'Acknowledgement reference', value:u.ack_reference || '' },
+      { id:'instr', label:'Instructions received from the authority', type:'textarea', rows:2, value:u.instructions_received || '' } ]);
+    else f.push({ id:'ref', label:'Reference number (if any)', value:'' });
+    f = f.concat([ { id:'next', label:'Next update due', type:'date', value:u.next_update_due ? day(u.next_update_due) : '' },
+      { id:'evid', label:'Submitted document / correspondence (attach it to the recall first)', type:'select', options:evOptions(c, '— none —'), value:u.evidence_id || '' } ]);
+    openModal({ title:editing ? 'Update: ' + u.authority : 'Record an authority notification', submitText:'Save', successText:'Saved.', recallId:c.id,
+      help:'Record every authority contact as it happens. For a South African food business this normally includes the local environmental health practitioner and the Department of Health: Food Control, and may include the National Consumer Commission, depending on the product and the situation. The platform does not decide who must be told.', fields:f,
+      call:function(v){
+        if(editing) return { fn:'recall_authority_update', args:{ p_id:u.id, p_f:{ reference_number:v.ref || '', acknowledged_at:toIso(v.ack), ack_reference:v.ackref || '', instructions_received:v.instr || '', next_update_due:v.next || '', evidence_id:v.evid || '' } } };
+        var name = v.auth.indexOf('Other') === 0 ? v.other : v.auth;
+        return { fn:'recall_authority_add', args:{ p_recall:c.id, p_f:{ authority:name, contact:v.contact, method:v.method, notified_at:toIso(v.when), summary:v.summary, reference_number:v.ref || '', next_update_due:v.next || '', evidence_id:v.evid || '' } } };
+      } });
+  }
+  function actAuthClose(u){
+    openModal({ title:'Close: ' + u.authority, submitText:'Close', successText:'Notification closed.', recallId:u.recall_id, help:'Close it once the authority has no further instruction. The final position stays on record.',
+      fields:[ { id:'note', label:'The authority’s final position (at least 15 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'recall_authority_close', args:{ p_id:u.id, p_note:v.note } }; } });
+  }
+  function actAuthDecision(c){
+    openModal({ title:c.authority_decision ? 'Withdraw the “no notification required” decision' : 'Decide: no authority notification required', submitText:'Save', successText:'Decision saved.', recallId:c.id,
+      help:c.authority_decision ? 'Withdrawing it lets you record authority notifications. The earlier decision stays in the history.' : 'Use only when you have assessed that no authority has to be told. Give the full basis. It is a permanent record and part of the closure checks.',
+      fields:[ { id:'why', label:c.authority_decision ? 'Why is it withdrawn? (at least 15 characters)' : 'Basis for the decision (at least 30 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ if(!c.authority_decision) await signed('This decision is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'recall_authority_decision', args:{ p_recall:c.id, p_decision:c.authority_decision ? '' : 'not_required', p_reason:v.why } }; } });
+  }
+  function actAttach(c){
+    openModal({ title:'Attach evidence to ' + c.recall_number, submitText:'Attach', successText:'File attached.', recallId:c.id,
+      help:'Photo, PDF, Word, Excel or text, up to 25 MB. A fingerprint (SHA-256) is recorded and checked on every download. Files cannot be replaced or deleted once attached.',
+      fields:[ { id:'file', label:'File', type:'file', required:true }, { id:'cat', label:'What is it?', type:'select', options:EV_CAT, value:'other' }, { id:'note', label:'What does it show? (optional)' } ],
+      prepare:async function(v, files){
+        var file = files.file; if(!file) throw new Error('Choose a file first.');
+        if(file.size < 1) throw new Error('The file is empty.'); if(file.size > 26214400) throw new Error('The file is larger than 25 MB.');
+        var ext = (file.name.split('.').pop() || '').toLowerCase(); var mime = FILE_TYPES[ext]; if(!mime) throw new Error('This file type is not allowed.');
+        var hash = await sha256Hex(await file.arrayBuffer());
+        var rand = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+        var path = ((currentProfile && currentProfile.organization_id) || '') + '/' + c.id + '/' + rand + '.' + ext;
+        var up = await supabaseClient.storage.from('recall-evidence').upload(path, file, { contentType:mime, upsert:false });
+        if(up.error) throw new Error('Upload failed: ' + up.error.message);
+        return { path:path, name:file.name, mime:mime, size:file.size, hash:hash };
+      },
+      call:function(v, x){ return { fn:'attach_recall_evidence', args:{ p_recall:c.id, p_category:v.cat, p_path:x.path, p_file_name:x.name, p_mime_type:x.mime, p_file_size:x.size, p_content_hash:x.hash, p_note:nul(v.note) } }; } });
+  }
+  async function downloadEvidence(evId){
+    try{
+      var x = evById(evId); if(!x) throw new Error('File not found.');
+      var lg = await supabaseClient.rpc('log_recall_evidence_download', { p_evidence:evId }); if(lg.error) throw new Error(lg.error.message);
+      var dl = await supabaseClient.storage.from('recall-evidence').download(x.storage_path);
+      if(dl.error || !dl.data) throw new Error((dl.error && dl.error.message) || 'Could not download the file.');
+      var hash = await sha256Hex(await dl.data.arrayBuffer());
+      if(hash !== x.content_hash) toast('Warning: this file does not match its recorded fingerprint. Do not rely on it.', 'error');
+      var url = URL.createObjectURL(dl.data), l = document.createElement('a'); l.href = url; l.download = x.file_name; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+      if(hash === x.content_hash) toast('Downloaded. Fingerprint verified.');
+      loadEvents(x.recall_id, true);
+    }catch(err){ toast((err && err.message) || String(err), 'error'); }
+  }
+
+  function actionsBlock(c){
+    var as = actionsOf(c.id), me = myId(), started = ['active', 'recovery_complete'].indexOf(c.status) !== -1;
+    var rows = as.map(function(a){
+      var late = isLate(a) && started;
+      var st = a.status === 'not_applicable' ? ['Not applicable', 'neutral'] : a.status === 'open' ? (late ? ['OVERDUE', 'rust'] : ['Open', 'amber']) : a.verified_at ? ['Verified', 'green'] : ['Done: awaiting verification', 'amber'];
+      var btns = '';
+      if(a.status === 'open' && started && (isPriv() || me === a.owner_id || me === c.coordinator_id || me === c.deputy_id)) btns += bt('adone', { id:a.id }, 'Complete', true) + ' ';
+      if(a.status === 'done' && !a.verified_at && started && isPriv()) btns += bt('aver', { id:a.id }, 'Verify', true) + ' ' + bt('aret', { id:a.id }, 'Return') + ' ';
+      if(a.status === 'open' && canWork(c) && c.status !== 'closed') btns += bt('aedit', { id:a.id }, 'Edit') + ' ';
+      if(a.status === 'open' && isPriv()) btns += bt('ana', { id:a.id }, 'Not applicable');
+      return '<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--line,#eee);' + (a.status === 'not_applicable' ? 'opacity:.6;' : '') + '"><span class="tag tag-' + st[1] + '" style="font-size:10px;">' + e(st[0]) + '</span> ' +
+        '<span class="tag tag-neutral" style="font-size:10px;">' + e(lbl(PHASE, a.phase)) + '</span> <b>' + e(a.title) + '</b>' + (a.needs_evidence ? ' <span class="muted-italic">(evidence required)</span>' : '') +
+        '<div class="muted-italic">Owner ' + e(nameOf(a.owner_id)) + ' · due ' + e(stamp(a.due_at)) + '</div>' + (a.detail ? '<div class="muted-italic">' + e(a.detail) + '</div>' : '') +
+        (a.done_at ? '<div class="muted-italic">Done ' + e(stamp(a.done_at)) + ' by ' + e(nameOf(a.done_by)) + (a.done_at && new Date(a.done_at) > new Date(a.due_at) ? ' (late)' : '') + ': ' + e(a.done_note || '') + (a.evidence_id && evById(a.evidence_id) ? ' · evidence: ' + e(evById(a.evidence_id).file_name) : '') + '</div>' : '') +
+        (a.verified_at ? '<div class="muted-italic">Verified ' + e(stamp(a.verified_at)) + ' by ' + e(nameOf(a.verified_by)) + (a.verify_self ? ' (sole eligible approver: recorded)' : '') + ': ' + e(a.verify_note || '') + '</div>' : '') +
+        (a.status === 'not_applicable' ? '<div class="muted-italic">Not applicable: ' + e(a.na_reason || '') + ' (' + e(nameOf(a.na_by)) + ')</div>' : '') +
+        (btns ? '<div style="margin-top:4px;">' + btns + '</div>' : '') + '</div>';
+    }).join('');
+    var add = canWork(c) && ['assessment', 'active', 'recovery_complete'].indexOf(c.status) !== -1;
+    return (R.stage2Missing ? '<p style="color:var(--rust);font-size:12px;">The stage 2 tables are not installed yet. Run recall_stage2_run_this.sql in Supabase.</p>' : '') +
+      (rows || '<div class="muted-italic" style="font-size:12px;">' + (c.status === 'assessment' ? 'The standard containment actions are created when the recall is activated. You can add your own now.' : 'No actions yet.') + '</div>') +
+      (add ? '<div style="margin-top:6px;">' + bt('aadd', { id:c.id }, '+ Add action', true) + '</div>' : '');
+  }
+  function authorityBlock(c){
+    if(isMock(c)) return '<div class="muted-italic" style="font-size:12px;">This is a mock exercise. Real authorities are never contacted or recorded here.</div>';
+    var us = authOf(c.id), can = canWork(c) && ['assessment', 'active', 'recovery_complete'].indexOf(c.status) !== -1, t = todayStr();
+    var rows = us.map(function(u){
+      var late = u.status === 'open' && u.next_update_due && String(u.next_update_due) < t;
+      var btns = u.status === 'open' ? ((can ? bt('auedit', { id:u.id }, 'Update') + ' ' : '') + (isPriv() && c.status !== 'assessment' ? bt('auclose', { id:u.id }, 'Close') : '')) : '';
+      return '<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--line,#eee);"><span class="tag tag-' + (u.status === 'closed' ? 'green' : late ? 'rust' : 'amber') + '" style="font-size:10px;">' + (u.status === 'closed' ? 'Closed' : late ? 'Update overdue' : 'Open') + '</span> <b>' + e(u.authority) + '</b>' +
+        '<div class="muted-italic">Notified ' + e(stamp(u.notified_at)) + (u.method ? ' by ' + e(u.method) : '') + (u.contact ? ' · ' + e(u.contact) : '') + (u.reference_number ? ' · ref ' + e(u.reference_number) : '') + ' · recorded by ' + e(nameOf(u.recorded_by)) + '</div>' +
+        '<div>' + e(u.summary) + '</div>' + (u.acknowledged_at ? '<div class="muted-italic">Acknowledged ' + e(stamp(u.acknowledged_at)) + (u.ack_reference ? ' · ' + e(u.ack_reference) : '') + '</div>' : '<div class="muted-italic">Not yet acknowledged.</div>') +
+        (u.instructions_received ? '<div class="muted-italic">Instructions: ' + e(u.instructions_received) + '</div>' : '') + (u.next_update_due ? '<div class="muted-italic">Next update due ' + e(day(u.next_update_due)) + '</div>' : '') +
+        (u.evidence_id && evById(u.evidence_id) ? '<div class="muted-italic">Document: ' + e(evById(u.evidence_id).file_name) + '</div>' : '') + (u.closed_note ? '<div class="muted-italic">Closed ' + e(stamp(u.closed_at)) + ': ' + e(u.closed_note) + '</div>' : '') +
+        (btns ? '<div style="margin-top:4px;">' + btns + '</div>' : '') + '</div>'; }).join('');
+    var dec = c.authority_decision ? '<div style="font-size:12px;padding:6px 0;"><span class="tag tag-navy" style="font-size:10px;">Decision: no notification required</span><div class="muted-italic">' + e(nameOf(c.authority_decision_by)) + ', ' + e(stamp(c.authority_decision_at)) + ': ' + e(c.authority_decision_reason || '') + '</div>' + (isPriv() ? '<div style="margin-top:4px;">' + bt('audec', { id:c.id }, 'Withdraw decision') + '</div>' : '') + '</div>' : '';
+    var btns2 = (can && !c.authority_decision ? bt('auadd', { id:c.id }, '+ Record authority notification', true) + ' ' : '') + (isPriv() && !c.authority_decision && !us.length && c.status !== 'closed' ? bt('audec', { id:c.id }, 'Decide: none required') : '');
+    return (rows || dec || '<div class="muted-italic" style="font-size:12px;">No authority notification recorded. A live recall cannot be closed until the authorities are recorded as notified, or a decision that none is required is recorded with its reason.</div>') + (rows && dec ? dec : '') + (btns2 ? '<div style="margin-top:6px;">' + btns2 + '</div>' : '');
+  }
+  function evidenceBlock(c){
+    var xs = evOf(c.id);
+    var rows = xs.map(function(x){
+      return '<div style="font-size:12px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><b>' + e(x.file_name) + '</b> <span class="tag tag-neutral" style="font-size:10px;">' + e(lbl(EV_CAT, x.category)) + '</span> ' + bt('evdl', { id:x.id }, 'Download') +
+        '<div class="muted-italic">' + e(stamp(x.uploaded_at)) + ' · ' + e(nameOf(x.uploaded_by)) + ' · ' + e(Math.round(x.file_size / 1024)) + ' KB · SHA-256 ' + e(String(x.content_hash).slice(0, 16)) + '…' + (x.note ? ' · ' + e(x.note) : '') + '</div></div>'; }).join('');
+    return (rows || '<div class="muted-italic" style="font-size:12px;">No evidence attached.</div>') + (canEvidence(c) ? '<div style="margin-top:6px;">' + bt('evadd', { id:c.id }, '📎 Attach evidence', true) + '</div>' : '');
+  }
+
+  /* ----- evidence pack and customer notice ----- */
+  function fileSave(name, text, type){ var blob = new Blob([text], { type:type || 'text/plain' }), url = URL.createObjectURL(blob), l = document.createElement('a'); l.href = url; l.download = name; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 10000); }
+  function noticeText(c){
+    var bs = batchesOf(c.id).filter(function(b){ return b.included; });
+    var L = [];
+    if(isMock(c)) L.push('*** EXERCISE ONLY — THIS IS A MOCK RECALL. DO NOT SEND THIS TO REAL CUSTOMERS. ***', '');
+    L.push('DRAFT — review, edit and approve before use. Complete every [bracketed] item.', '', 'PRODUCT RECALL NOTICE', 'Reference: ' + c.recall_number, 'Date and time: [date and time]', 'To: [customer name and contact]', 'From: [company name], [contact person, phone, email]', '',
+      'Product: ' + (c.product_name || '[product]'));
+    bs.forEach(function(b){ L.push('  Batch / lot: ' + b.batch_lot + (b.sku ? ' · SKU ' + b.sku : '') + (b.mfg_date ? ' · made ' + day(b.mfg_date) : '') + (b.expiry_date ? ' · expiry ' + day(b.expiry_date) : '')); });
+    L.push('', 'Why we are contacting you: ' + (c.reason || '[reason]'), 'The risk: ' + (c.hazard_description || '[hazard]'), '', 'What we ask you to do now:',
+      '1. Stop selling, using and distributing the product and batches listed above.', '2. Separate and clearly mark all affected stock so that it cannot be sold or used.',
+      '3. Tell us today how much of each affected batch you received, sold on, and still hold: [reply by date and time].', '4. Pass this notice on immediately to any customer you supplied with the affected batches.',
+      '5. Do not destroy or return stock until we confirm how it must be handled: [instructions].', '6. Reply to confirm you have received this notice and what you have done.', '',
+      'Contact us immediately: ' + (c.emergency_contact || '[24-hour contact]'), '', 'Signed: [name, position]');
+    return L.join('\n');
+  }
+  async function evidencePack(c){
+    try{
+      toast('Preparing the evidence pack…');
+      var evs = R.events[c.id];
+      if(!evs){ var r = await supabaseClient.from('recall_events').select('*').eq('recall_id', c.id).order('created_at', { ascending:true }).limit(1000); evs = (r.data || []).slice().reverse(); }
+      var M = R.measures[c.id]; if(!M){ var b = await supabaseClient.rpc('recall_balance', { p_id:c.id }); M = { bal:b.data || {} }; }
+      var bal = M.bal || {}, who = (currentProfile && (currentProfile.full_name || currentProfile.email)) || '';
+      function tbl(head, rows){ return '<table><thead><tr>' + head.map(function(h){ return '<th>' + e(h) + '</th>'; }).join('') + '</tr></thead><tbody>' + (rows.length ? rows.map(function(r){ return '<tr>' + r.map(function(x){ return '<td>' + e(x) + '</td>'; }).join('') + '</tr>'; }).join('') : '<tr><td colspan="' + head.length + '"><i>None recorded.</i></td></tr>') + '</tbody></table>'; }
+      function kvr(k, v){ return v ? '<tr><th>' + e(k) + '</th><td>' + e(v) + '</td></tr>' : ''; }
+      var h = '<!doctype html><html><head><meta charset="utf-8"><title>' + e(c.recall_number) + ' evidence pack</title><style>body{font:13px/1.45 Arial,sans-serif;color:#1a1a1a;margin:24px;max-width:1000px}h1{font-size:20px;margin:0 0 4px}h2{font-size:15px;border-bottom:2px solid #1f3a5f;padding-bottom:3px;margin:22px 0 8px;color:#1f3a5f}table{border-collapse:collapse;width:100%;margin:4px 0 8px}th,td{border:1px solid #bbb;padding:4px 6px;text-align:left;vertical-align:top;font-size:12px}th{background:#eef1f5}.banner{padding:8px;text-align:center;font-weight:bold;margin:8px 0}.mock{background:#fff4d6;border:2px dashed #b8860b}.live{background:#fdeaea;border:1px solid #b33}.note{font-size:11.5px;color:#555}button{padding:6px 12px;margin:0 6px 12px 0}@media print{button{display:none}}</style></head><body>' +
+        '<button onclick="window.print()">Print / Save as PDF</button>' +
+        '<h1>Recall evidence pack: ' + e(c.recall_number) + '</h1><div>' + e(c.title) + '</div>' +
+        '<div class="banner ' + (isMock(c) ? 'mock' : 'live') + '">' + (isMock(c) ? 'EXERCISE ONLY — NOT A LIVE RECALL' : 'LIVE EVENT') + ' · Status: ' + e(String((STATUS[c.status] || [c.status])[0])) + '</div>' +
+        '<p class="note">Generated ' + e(new Date().toLocaleString()) + (who ? ' by ' + e(who) : '') + '. This pack lists the records held in AuditQMS Pro Suite. Evidence files are listed with their SHA-256 fingerprints; the files themselves are downloaded separately from the recall. The classification below is the organisation’s own, not an authority’s formal classification.</p>' +
+        '<h2>1. Decision and assessment</h2><table>' + kvr('Mode', lbl(MODE, c.mode)) + kvr('Scope of action', lbl(SCOPE, c.scope)) + kvr('Product', c.product_name) + kvr('Reason', c.reason) + kvr('Hazard', c.hazard_description) +
+        kvr('Internal classification', lbl(CLASS, c.classification)) + kvr('Basis for the classification', c.classification_basis) + kvr('Vulnerable consumers', c.vulnerable_consumers ? 'Yes: ' + (c.vulnerable_note || '') : 'No') +
+        kvr('Trigger', (c.source_type || '') + (c.source_note ? ' — ' + c.source_note : '')) + kvr('Linked complaint / incident', c.linked_complaint_ref) + kvr('Site / line', [c.site, c.production_line].filter(Boolean).join(' · ')) +
+        kvr('Production range', c.prod_from || c.prod_to ? stamp(c.prod_from) + ' to ' + stamp(c.prod_to) : '') + kvr('How the scope was decided', c.scope_rationale) + kvr('Scope version', String(c.scope_version)) +
+        kvr('Coordinator', c.coordinator_id ? nameOf(c.coordinator_id) : '') + kvr('Decision-maker', c.decision_maker_id ? nameOf(c.decision_maker_id) : '') + kvr('Deputy', c.deputy_id ? nameOf(c.deputy_id) : '') + kvr('Emergency contact', c.emergency_contact) +
+        (isMock(c) ? kvr('Exercise objectives', c.exercise_objectives) + kvr('Participants', c.exercise_participants) : '') + '</table>' +
+        '<h2>2. Recall clock</h2><table>' + kvr('Activated (server time)', c.activated_at ? stamp(c.activated_at) : 'Not activated') + kvr('Activated by', c.activated_by ? nameOf(c.activated_by) : '') + kvr('Start time corrected', c.activation_corrected ? 'Yes. Original: ' + stamp(c.original_activated_at) : '') +
+        kvr('Target', c.target_hours + ' hours') + kvr('Operational recovery completed', c.recovery_completed_at ? stamp(c.recovery_completed_at) + ' by ' + nameOf(c.recovery_completed_by) : '') + kvr('Elapsed', elapsedMs(c) != null ? dur(elapsedMs(c)) + (overTarget(c) ? ' (target exceeded)' : ' (within target)') : '') + kvr('Recovery conclusion', c.recovery_note) + '</table>' +
+        '<h2>3. Affected batches / SKUs</h2>' + tbl(['Batch / lot', 'SKU', 'Product', 'Made', 'Expiry', 'Quantity', 'In scope', 'Scope v', 'Reason / evidence'], batchesOf(c.id).map(function(b){ return [b.batch_lot, b.sku || '', b.product_name || '', day(b.mfg_date), day(b.expiry_date), fmt(b.qty_produced), b.included ? 'Yes' : 'No', b.scope_version, b.rationale || '']; })) +
+        '<h2>4. Quantities (' + e(lbl(UNIT, c.unit)) + ')</h2><table>' + kvr('Affected (batches in scope)', fmt(bal.affected)) + kvr('Blocked on our premises', fmt(bal.onsite_held) + (c.onsite_location ? ' at ' + c.onsite_location : '')) + kvr('Other accounted', fmt(bal.other_accounted) + (c.other_accounted_note ? ' — ' + c.other_accounted_note : '')) +
+        kvr('Distributed to customers', fmt(bal.distributed)) + kvr('Not yet located', fmt(bal.traced_gap)) + kvr('Returned', fmt(bal.returned)) + kvr('Confirmed controlled at customers', fmt(bal.controlled_at_customer)) + kvr('Destroyed at customers', fmt(bal.destroyed_at_customer)) + kvr('Outstanding', fmt(bal.outstanding)) +
+        kvr('Disposed of under our control', fmt(bal.disposed)) + kvr('Still to be disposed of', fmt(bal.stock_under_control)) + '</table>' +
+        '<h2>5. Customers / consignees</h2>' + tbl(['Customer', 'Level', 'Supplied', 'Returned', 'Controlled', 'Destroyed', 'Outstanding', 'Notified', 'Effectiveness check'], consOf(c.id).filter(function(k){ return !k.voided; }).map(function(k){
+          return [k.name + (k.is_test_contact ? ' (TEST)' : ''), k.depth, fmt(k.qty_supplied), fmt(k.qty_returned), fmt(k.qty_controlled), fmt(k.qty_destroyed), fmt(Number(k.qty_supplied) - Number(k.qty_returned) - Number(k.qty_controlled) - Number(k.qty_destroyed)),
+            k.notified_at ? stamp(k.notified_at) + ' (' + (k.notify_method || '') + ')' : 'No', k.checked_at ? stamp(k.checked_at) + ': ' + (k.instructions_followed ? 'followed' : 'NOT confirmed') + (k.check_note ? ' — ' + k.check_note : '') : 'Not done']; })) +
+        '<h2>6. Disposition</h2>' + tbl(['Method', 'Quantity', 'Date', 'Where', 'Witness', 'Recorded by', 'Notes'], dispOf(c.id).map(function(d){ return [lbl(METHOD, d.method), fmt(d.qty), day(d.done_on), d.location || '', d.witness, nameOf(d.recorded_by), d.note || '']; })) +
+        '<h2>7. Actions</h2>' + tbl(['Type', 'Action', 'Owner', 'Due', 'Status', 'Done', 'Verified / reason'], actionsOf(c.id).map(function(a){
+          return [lbl(PHASE, a.phase), a.title, nameOf(a.owner_id), stamp(a.due_at), a.status === 'not_applicable' ? 'Not applicable' : a.status === 'done' ? (a.verified_at ? 'Verified' : 'Done, not verified') : 'Open', a.done_at ? stamp(a.done_at) + ' by ' + nameOf(a.done_by) + ': ' + (a.done_note || '') : '',
+            a.verified_at ? stamp(a.verified_at) + ' by ' + nameOf(a.verified_by) + ': ' + (a.verify_note || '') + (a.verify_self ? ' (sole eligible approver)' : '') : a.status === 'not_applicable' ? (a.na_reason || '') + ' (' + nameOf(a.na_by) + ')' : '']; })) +
+        '<h2>8. Authority notifications</h2>' + (isMock(c) ? '<p>Exercise: no authority was contacted.</p>' : (c.authority_decision ? '<p><b>Decision: no authority notification required.</b> ' + e(nameOf(c.authority_decision_by)) + ', ' + e(stamp(c.authority_decision_at)) + ': ' + e(c.authority_decision_reason || '') + '</p>' : '') +
+          tbl(['Authority', 'Notified', 'Reference', 'Reported', 'Acknowledged', 'Instructions', 'Next update', 'Status'], authOf(c.id).map(function(u){ return [u.authority, stamp(u.notified_at) + (u.method ? ' (' + u.method + ')' : ''), u.reference_number || '', u.summary, u.acknowledged_at ? stamp(u.acknowledged_at) + (u.ack_reference ? ' · ' + u.ack_reference : '') : 'Not yet', u.instructions_received || '', u.next_update_due ? day(u.next_update_due) : '', u.status === 'closed' ? 'Closed: ' + (u.closed_note || '') : 'Open']; }))) +
+        '<h2>9. Communication log</h2>' + tbl(['When', 'Who', 'Method', 'Summary', 'Response', 'Follow-up'], commsOf(c.id).map(function(m){ return [stamp(m.recorded_at) + (m.is_test ? ' (TEST)' : ''), m.party + ' (' + m.party_type + ')', m.method || '', m.summary, m.response || '', (m.follow_up || '') + (m.follow_up_due ? ' by ' + day(m.follow_up_due) : '')]; })) +
+        '<h2>10. Investigation and follow-up</h2><table>' + kvr('Root cause', c.root_cause) + kvr('Investigation', c.investigation_summary) + kvr('Linked NCR', refLabel(R.ncrs, c.linked_ncr_id)) + kvr('Linked CAPA', refLabel(R.capas, c.linked_capa_id)) + kvr('Linked audit finding', c.linked_finding_ref) +
+        (isMock(c) ? kvr('Exercise result', c.exercise_result) + kvr('Lessons learned', c.lessons_learned) : '') + kvr('Closed', c.closed_at && c.status === 'closed' ? stamp(c.closed_at) + ' by ' + nameOf(c.closed_by) + (c.close_self ? ' (sole eligible approver)' : '') : '') + kvr('Closure summary', c.close_summary) + '</table>' +
+        '<h2>11. Evidence files</h2>' + tbl(['File', 'Type', 'Uploaded', 'By', 'Size', 'SHA-256 fingerprint', 'Note'], evOf(c.id).map(function(x){ return [x.file_name, lbl(EV_CAT, x.category), stamp(x.uploaded_at), nameOf(x.uploaded_by), Math.round(x.file_size / 1024) + ' KB', x.content_hash, x.note || '']; })) +
+        '<h2>12. History (cannot be edited)</h2>' + tbl(['When', 'Who', 'Event'], evs.slice().sort(function(a, b2){ return new Date(a.created_at) - new Date(b2.created_at); }).map(function(x){ return [stamp(x.created_at), x.actor_name || '—', eventText(x)]; })) +
+        '</body></html>';
+      var w = window.open('', '_blank');
+      if(w && w.document){ w.document.open(); w.document.write(h); w.document.close(); }
+      else { fileSave('aqms-' + c.recall_number + '-evidence-pack-' + todayStr() + '.html', h, 'text/html'); toast('Pop-ups are blocked, so the pack was downloaded. Open it and print or save as PDF.'); }
+    }catch(err){ toast('Could not build the pack: ' + ((err && err.message) || String(err)), 'error'); }
+  }
+
+  /* reports: honest figures from completed exercises and live events */
+  window.renderRecallReportsModule = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to see recall reports.</p></div>';
+      if(!canSee()) return '<div class="card p4"><p class="muted-italic">Recall reports are visible to Admin, Quality Manager, Approver, Department Manager and Auditor roles.</p></div>';
+      if(!R.loaded && !R.loading && !R.tried) setTimeout(load, 0);
+      var all = R.cases.filter(function(c){ return c.status !== 'cancelled'; }), live = all.filter(function(c){ return c.mode === 'live'; }), ex = all.filter(function(c){ return c.mode === 'mock'; });
+      var done = ex.filter(function(c){ return c.recovery_completed_at; });
+      var within = done.filter(function(c){ return !overTarget(c); });
+      var byClass = {}; live.forEach(function(c){ if(c.classification) byClass[c.classification] = (byClass[c.classification] || 0) + 1; });
+      var byReason = {}; live.forEach(function(c){ if(c.reason) byReason[c.reason] = (byReason[c.reason] || 0) + 1; });
+      function row(a, b2){ return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;"><span>' + a + '</span><span>' + b2 + '</span></div>'; }
+      return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:16px;"><h2 class="serif" style="font-size:18px;margin:0;">🧾 Recall Reports</h2>' + bt('regcsv', {}, '⬇ Register CSV') + '</div>' +
+        (R.error ? '<p style="color:var(--rust);font-size:12px;">' + e(R.error) + '</p>' : '') +
+        '<div class="card p4" style="margin-bottom:16px;"><h3 class="serif" style="font-size:15px;margin:0 0 10px;">Mock exercises (kept separate from live events)</h3>' +
+          (done.length ? row('Exercises with recovery completed', done.length) + row('Completed within target time', within.length + ' of ' + done.length + ' (' + Math.round(within.length / done.length * 100) + '%)') +
+            done.map(function(c){ return row(e(c.recall_number) + ' · ' + e(c.product_name || c.title) + ' <span class="muted-italic" style="font-size:11px;">' + e(day(c.activated_at)) + '</span>', e(dur(elapsedMs(c))) + ' of ' + e(c.target_hours) + ' h ' + (overTarget(c) ? '<span class="tag tag-rust">over</span>' : '<span class="tag tag-green">within</span>')); }).join('')
+            : '<p class="muted-italic">No completed exercise yet. There is not enough data to say how ready the business is.</p>') + '</div>' +
+        '<div class="card p4" style="margin-bottom:16px;"><h3 class="serif" style="font-size:15px;margin:0 0 10px;">Live events</h3>' +
+          (live.length ? row('Total live events', live.length) + CLASS.map(function(x){ return row(e(x[1]), byClass[x[0]] || 0); }).join('') + Object.keys(byReason).sort(function(a, b2){ return byReason[b2] - byReason[a]; }).map(function(k){ return row(e(k), byReason[k]); }).join('') : '<p class="muted-italic">No live events recorded.</p>') + '</div>' +
+        '<div class="card p4"><h3 class="serif" style="font-size:15px;margin:0 0 10px;">Register</h3>' + (all.length ? all.map(function(c){ var st = STATUS[c.status] || [c.status, 'neutral']; return row('<b>' + e(c.recall_number) + '</b> ' + e(c.title) + ' <span class="tag tag-' + (c.mode === 'mock' ? 'navy' : 'rust') + '" style="font-size:10px;">' + (c.mode === 'mock' ? 'EXERCISE' : 'LIVE') + '</span>', '<span class="tag tag-' + st[1] + '">' + e(st[0]) + '</span>'); }).join('') : '<p class="muted-italic">Nothing recorded.</p>') + '</div>';
+    }catch(err){ return '<div class="card p4"><p style="color:var(--rust);">Recall reports error: ' + e(err && err.message || err) + '</p></div>'; }
+  };
+  /* feeds for the dashboard / compliance score / link lists */
+  window.recallActiveCount = function(){ if(!R.loaded && !R.loading && !R.tried && typeof cloudReady === 'function' && cloudReady() && canSee()) setTimeout(load, 0); return R.cases.filter(function(c){ return c.mode === 'live' && isOpen(c); }).length; };
+  window.recallReadiness = function(){
+    var cut = Date.now() - 365 * 86400000;
+    var done = R.cases.filter(function(c){ return c.mode === 'mock' && c.recovery_completed_at && new Date(c.recovery_completed_at).getTime() >= cut; });
+    if(!done.length) return null;
+    return Math.round(done.filter(function(c){ return !overTarget(c); }).length / done.length * 1000) / 10;
+  };
+  window.recallLinkOptions = function(){ return R.cases.filter(function(c){ return c.status !== 'cancelled'; }).map(function(c){ return c.recall_number + ' — ' + c.title + ' (' + (STATUS[c.status] ? STATUS[c.status][0] : c.status) + (c.mode === 'mock' ? ', exercise' : '') + ')'; }); };
+
+  function csv(rows){ return rows.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n'); }
+  function saveCsv(name, text){ var blob = new Blob([text], { type:'text/csv' }), url = URL.createObjectURL(blob), l = document.createElement('a'); l.href = url; l.download = name; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 10000); }
+  function registerCsv(){
+    var rows = [['Number','Mode','Title','Scope','Product','Reason','Classification','Vulnerable consumers','Status','Activated','Recovery completed','Elapsed (min)','Target (h)','Over target','Root cause','Coordinator','Closed']];
+    R.cases.forEach(function(c){ var ms = elapsedMs(c); rows.push([c.recall_number, lbl(MODE, c.mode), c.title, lbl(SCOPE, c.scope), c.product_name, c.reason, lbl(CLASS, c.classification), c.vulnerable_consumers ? 'Yes' : 'No', c.status, c.activated_at, c.recovery_completed_at, ms != null ? Math.round(ms / 60000) : '', c.target_hours, ms != null ? (overTarget(c) ? 'Yes' : 'No') : '', c.root_cause, c.coordinator_id ? nameOf(c.coordinator_id) : '', c.closed_at]); });
+    saveCsv('aqms-recall-register-' + todayStr() + '.csv', csv(rows));
+  }
+  function consCsv(c){
+    var rows = [['Recall','Customer','Level','Location','Contact','Phone','Email','Delivery ref','Delivery date','Supplied','Sold onward','Returned','Controlled at customer','Destroyed at customer','Outstanding','Outstanding explanation','Notified','Method','Checked','Acknowledged','Instruction followed','Check note','Follow-up','Test contact','Voided']];
+    consOf(c.id).forEach(function(k){ rows.push([c.recall_number, k.name, k.depth, k.location, k.contact_name, k.contact_phone, k.contact_email, k.delivery_ref, k.delivery_date, k.qty_supplied, k.qty_sold_onward, k.qty_returned, k.qty_controlled, k.qty_destroyed, Number(k.qty_supplied) - Number(k.qty_returned) - Number(k.qty_controlled) - Number(k.qty_destroyed), k.outstanding_explanation, k.notified_at, k.notify_method, k.checked_at, k.acknowledged == null ? '' : (k.acknowledged ? 'Yes' : 'No'), k.instructions_followed == null ? '' : (k.instructions_followed ? 'Yes' : 'No'), k.check_note, k.follow_up_due, k.is_test_contact ? 'Yes' : 'No', k.voided ? 'Yes' : 'No']); });
+    saveCsv('aqms-' + c.recall_number + '-distribution-' + todayStr() + '.csv', csv(rows));
+  }
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-rc-modal]');
+    if(m){ var k = m.getAttribute('data-rc-modal');
+      if(k === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-rc]'); if(!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var a = el.getAttribute('data-rc'), id = el.getAttribute('data-id'), c = id ? byId(id) : null;
+    if(a === 'reload'){ R.loading = false; R.tried = false; R.events = {}; R.measures = {}; load(); }
+    else if(a === 'filter'){ R.filter = el.getAttribute('data-f'); rerender(); }
+    else if(a === 'toggle'){ R.openId = R.openId === id ? null : id; rerender(); }
+    else if(a === 'create') actCreate();
+    else if(a === 'regcsv') registerCsv();
+    else if(a === 'bedit'){ var b1 = R.batches.filter(function(x){ return x.id === id; })[0]; if(b1) actBatch(byId(b1.recall_id), b1); }
+    else if(a === 'brem'){ var b2 = R.batches.filter(function(x){ return x.id === id; })[0]; if(b2 && confirm('Remove this batch from the assessment?')) direct('recall_batch_remove', { p_id:id }, 'Batch removed.', b2.recall_id); }
+    else if(a === 'knot'){ var k1 = consById(id); if(k1) actNotify(k1); }
+    else if(a === 'kchk'){ var k2 = consById(id); if(k2) actCheck(k2); }
+    else if(a === 'krec'){ var k3 = consById(id); if(k3) actRecovery(k3); }
+    else if(a === 'kvoid'){ var k4 = consById(id); if(k4) actVoid(k4); }
+    else if(a === 'kedit'){ var k5 = consById(id); if(k5) actConsignee(byId(k5.recall_id), k5); }
+    else if(a === 'adone'){ var a1 = actById(id); if(a1) actActionDone(a1); }
+    else if(a === 'aver'){ var a2 = actById(id); if(a2) actActionVerify(a2); }
+    else if(a === 'aret'){ var a3 = actById(id); if(a3) actActionReturn(a3); }
+    else if(a === 'ana'){ var a4 = actById(id); if(a4) actActionNa(a4); }
+    else if(a === 'aedit'){ var a5 = actById(id); if(a5) actAction(byId(a5.recall_id), a5); }
+    else if(a === 'auedit'){ var u1 = authById(id); if(u1) actAuthority(byId(u1.recall_id), u1); }
+    else if(a === 'auclose'){ var u2 = authById(id); if(u2) actAuthClose(u2); }
+    else if(a === 'evdl') downloadEvidence(id);
+    else if(c){
+      if(a === 'edit') actEdit(c); else if(a === 'badd') actBatch(c); else if(a === 'kadd') actConsignee(c); else if(a === 'kcsv') consCsv(c); else if(a === 'dadd') actDisp(c);
+      else if(a === 'aadd') actAction(c); else if(a === 'auadd') actAuthority(c); else if(a === 'audec') actAuthDecision(c); else if(a === 'evadd') actAttach(c); else if(a === 'pack') evidencePack(c);
+      else if(a === 'notice') fileSave('aqms-' + c.recall_number + '-customer-notice-DRAFT-' + todayStr() + '.txt', noticeText(c));
+      else if(a === 'cadd') actComm(c); else if(a === 'inv') actInvestigation(c); else if(a === 'stock') actStock(c); else if(a === 'reclass') actReclass(c); else if(a === 'team') actContacts(c);
+      else if(a === 'activate') actActivate(c); else if(a === 'complete') actComplete(c); else if(a === 'close') actClose(c); else if(a === 'clock') actClock(c);
+      else if(a === 'reopen') actReason(c, 'reopen_recall', 'Reopen ' + c.recall_number, 'Returns the recall to the active stage for further recovery work. The recall clock is not restarted. The reason is kept in the history.', 'Reopened.', 20);
+      else if(a === 'cancel') actReason(c, 'cancel_recall', 'Cancel ' + c.recall_number, c.status === 'assessment' ? 'A cancelled record stays on file with your reason.' : 'An activated recall is cancelled only with a full explanation. The record stays on file.', 'Cancelled.', c.status === 'assessment' ? 15 : 30);
+    }
+  }, true);
+  window.recallReset = function(){ R.cases = []; R.batches = []; R.consignees = []; R.dispositions = []; R.comms = []; R.actions = []; R.authority = []; R.evidence = []; R.stage2Missing = false; R.events = {}; R.eventsLoading = {}; R.eventsDirty = {}; R.measures = {}; R.measuresLoading = {}; R.people = []; R.ncrs = []; R.capas = []; R.loaded = false; R.loading = false; R.tried = false; R.error = ''; R.openId = null; modal = null; mount(); };
 })();
 </script>
 
