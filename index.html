@@ -19101,7 +19101,7 @@ function showUpdateBanner(){
     if(!modal) return '';
     var f = modal.fields.map(function(x){
       var id = 'rpf-' + x.id, ctl;
-      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" style="width:100%;box-sizing:border-box;" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
       else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (o[0] === x.value ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
       else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
@@ -19445,7 +19445,7 @@ function showUpdateBanner(){
     if(!modal) return '';
     var f = modal.fields.map(function(x){
       var id = 'scf-' + x.id, ctl;
-      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" style="width:100%;box-sizing:border-box;" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
       else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
       else if(x.type === 'file') ctl = '<input type="file" id="' + id + '" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />';
@@ -19794,7 +19794,7 @@ function showUpdateBanner(){
     var f = modal.fields.map(function(x){
       var id = 'chf-' + x.id, ctl;
       if(x.type === 'heading') return '<div style="grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd);font-size:12.5px;font-weight:700;color:var(--navy);">' + e(x.label) + (x.help ? '<div style="font-weight:400;color:var(--muted);font-size:11.5px;">' + e(x.help) + '</div>' : '') + '</div>';
-      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" style="width:100%;box-sizing:border-box;" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
       else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
       else if(x.type === 'file') ctl = '<input type="file" id="' + id + '" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />';
@@ -20324,7 +20324,7 @@ function showUpdateBanner(){
     var f = modal.fields.map(function(x){
       var id = 'rcf-' + x.id, ctl;
       if(x.type === 'heading') return '<div style="grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd);font-size:12.5px;font-weight:700;color:var(--navy);">' + e(x.label) + (x.help ? '<div style="font-weight:400;color:var(--muted);font-size:11.5px;">' + e(x.help) + '</div>' : '') + '</div>';
-      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" style="width:100%;box-sizing:border-box;" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
       else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
       else if(x.type === 'datetime') ctl = '<input type="datetime-local" id="' + id + '" value="' + e(x.value || '') + '" />';
@@ -21266,12 +21266,12 @@ function showUpdateBanner(){
       var id = 'tpf-' + x.id, ctl;
       if(x.type === 'heading') return '<div style="grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd);font-size:12.5px;font-weight:700;color:var(--navy);">' + e(x.label) + (x.help ? '<div style="font-weight:400;color:var(--muted);font-size:11.5px;">' + e(x.help) + '</div>' : '') + '</div>';
       if(x.type === 'note') return '<div style="grid-column:1/-1;font-size:12px;background:var(--cream,#f7f3ea);border-radius:6px;padding:8px 10px;white-space:pre-wrap;">' + e(x.label) + '</div>';
-      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" style="width:100%;box-sizing:border-box;" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
       else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
       else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
       else if(x.type === 'number') ctl = '<input type="number" min="0" step="any" id="' + id + '" value="' + e(x.value == null ? '' : x.value) + '" />';
       else if(x.type === 'file') ctl = '<input type="file" id="' + id + '" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />';
-      else if(x.type === 'multi') ctl = '<div id="' + id + '" style="max-height:190px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;">' + ((x.items || []).length ? (x.items || []).map(function(o){ return '<label style="display:flex;gap:6px;align-items:flex-start;font-size:12.5px;padding:2px 0;"><input type="checkbox" value="' + e(o[0]) + '"' + (o[2] ? ' checked' : '') + ' style="margin-top:2px;" /><span>' + e(o[1]) + '</span></label>'; }).join('') : '<span class="muted-italic" style="font-size:12px;">Nothing to choose from.</span>') + '</div>';
+      else if(x.type === 'multi') ctl = '<div id="' + id + '" style="max-height:190px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;">' + ((x.items || []).length ? (x.items || []).map(function(o){ return '<label style="display:flex;gap:8px;align-items:flex-start;justify-content:flex-start;text-align:left;font-size:12.5px;padding:4px 0;cursor:pointer;"><input type="checkbox" value="' + e(o[0]) + '"' + (o[2] ? ' checked' : '') + ' style="margin:2px 0 0;width:18px;height:18px;flex:0 0 18px;" /><span>' + e(o[1]) + '</span></label>'; }).join('') : '<span class="muted-italic" style="font-size:12px;">Nothing to choose from.</span>') + '</div>';
       else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
       return '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
     }).join('');
