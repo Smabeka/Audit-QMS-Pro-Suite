@@ -656,7 +656,7 @@ async function cloudSignIn(email, password){
   currentCloudUser = data.user;
   cloudStatus = "";
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset(); if(window.recallReset) window.recallReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset(); if(window.recallReset) window.recallReset(); if(window.trainingReset) window.trainingReset();
   render();
   await fetchMyProfile();
   if(!currentProfile){
@@ -714,7 +714,7 @@ async function cloudSignOut(){
   unsyncAllGenericCloudModules();
   unsubscribeAllCustomModuleRealtime();
   if(window.controlledDocsReset) window.controlledDocsReset();
-  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset(); if(window.recallReset) window.recallReset();
+  if(window.ncrReset) window.ncrReset(); supplierEventsCache = {}; supplierEventsLoading = {}; if(window.auditProgrammeReset) window.auditProgrammeReset(); if(window.auditTeamReset) window.auditTeamReset(); if(window.auditExecutionReset) window.auditExecutionReset(); if(window.auditReportReset) window.auditReportReset(); if(window.auditMetricsReset) window.auditMetricsReset(); if(window.supplierScarReset) window.supplierScarReset(); if(window.changeControlReset) window.changeControlReset(); if(window.recallReset) window.recallReset(); if(window.trainingReset) window.trainingReset();
   await supabaseClient.auth.signOut();
   currentCloudUser = null;
   currentProfile = null;
@@ -7380,6 +7380,7 @@ function renderGenericRow(cfg, r){
   `;
 }
 function renderGenericModule(cfg){
+  if(window.trainingEnsureLoaded && cfg.fields && cfg.fields.some(f=>f.personPick)) window.trainingEnsureLoaded();
   const rawArr = state[cfg.stateArr] || [];
   const arr = cfg.filterFn ? rawArr.filter(cfg.filterFn) : rawArr;
   const sorted = cfg.sortField ? [...arr].sort((a,b)=>String(b[cfg.sortField]||'').localeCompare(String(a[cfg.sortField]||''))) : arr;
@@ -7415,7 +7416,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"competency_records",
     sortField:"assessedDate",
     fields:[
-      {id:"employee", label:"Employee Name", required:true},
+      {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"skill", label:"Skill / Competency", required:true},
       {id:"level", label:"Proficiency Level", type:"select", options:["Not Assessed","Basic","Competent","Proficient","Expert"]},
       {id:"assessedDate", label:"Assessed Date", type:"date", default:"today"},
@@ -7430,7 +7431,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"medical_surveillance_records",
     sortField:"examDate",
     fields:[
-      {id:"employee", label:"Employee Name", required:true},
+      {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"examType", label:"Exam Type", type:"select", options:["Pre-Employment","Annual","Exit","Audiometric","Spirometry","Vision"]},
       {id:"examDate", label:"Exam Date", type:"date", default:"today"},
       {id:"result", label:"Result", type:"select", options:["Fit","Fit with Restriction","Unfit","Pending"]},
@@ -7445,7 +7446,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"medical_cert_records",
     sortField:"expiryDate",
     fields:[
-      {id:"employee", label:"Employee Name", required:true},
+      {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"certType", label:"Certificate Type", placeholder:"e.g. Food Handler Medical Certificate"},
       {id:"issueDate", label:"Issue Date", type:"date"},
       {id:"expiryDate", label:"Expiry Date", type:"date", required:true}
@@ -7465,7 +7466,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"food_handler_declarations",
     sortField:"date",
     fields:[
-      {id:"employee", label:"Employee Name", required:true},
+      {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"date", label:"Date", type:"date", default:"today"},
       {id:"fitForDuty", label:"Fit for Duty?", type:"select", options:["Yes","No"]},
       {id:"symptoms", label:"Symptoms Noted", placeholder:"None / describe"}
@@ -7479,7 +7480,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"ppe_issue_logs",
     sortField:"issueDate",
     fields:[
-      {id:"employee", label:"Employee Name", required:true},
+      {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"ppeItem", label:"PPE Item(s)", placeholder:"e.g. Hairnet, Apron, Gloves"},
       {id:"issueDate", label:"Issue Date", type:"date", default:"today"},
       {id:"condition", label:"Condition", type:"select", options:["New","Good","Needs Replacement"]}
@@ -7493,7 +7494,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"ohs_appointments",
     sortField:"appointmentDate",
     fields:[
-      {id:"employee", label:"Appointee Name", required:true},
+      {id:"employee", label:"Appointee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"role", label:"Appointment Type", type:"select", required:true, options:["Employer / CEO (Section 16(1))","16(2) Assignee","GMR 2(1) Health & Safety Manager","Health & Safety Committee Chair","Health & Safety Representative","First Aider","Fire Marshal / Fire Fighting Team","Incident Investigator","Risk Assessor","Chemical/Hazardous Substances Officer","Machinery/Equipment Supervisor","Construction Supervisor (CR8)","Other"]},
       {id:"department", label:"Department / Area"},
       {id:"appointmentDate", label:"Appointment Date", type:"date", default:"today"},
@@ -7518,7 +7519,7 @@ const GENERIC_MODULES = [
     cloudSynced:true, supabaseTable:"ohs_medical_fitness",
     sortField:"expiryDate",
     fields:[
-      {id:"employee", label:"Employee Name", required:true},
+      {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"occupation", label:"Occupation / Job Title", required:true},
       {id:"exposures", label:"Occupational Exposures", placeholder:"e.g. Noise, Dust, Chemicals, Heights, Confined Space", full:true},
       {id:"ppeRequired", label:"PPE Required", placeholder:"e.g. Hearing protection, Respirator, Harness", full:true},
@@ -8608,8 +8609,10 @@ const NAV_MODULES = [
     ]
   },
   { id:"nav-people", icon:"👥", label:"People Compliance", children:[
-      { id:"nav-people-training", label:"Employee Training", isActive(){ return tab==="training"; }, action(){ tab="training"; } },
-      { id:"nav-people-competency", label:"Competency Matrix", isActive(){ return tab==="people-competency"; }, action(){ tab="people-competency"; } },
+      { id:"nav-people-training", label:"Training Matrix", isActive(){ return tab==="training"; }, action(){ tab="training"; window.__tpView="matrix"; } },
+      { id:"nav-people-directory", label:"Employee Directory", isActive(){ return tab==="people-directory"; }, action(){ tab="people-directory"; window.__tpView="people"; } },
+      { id:"nav-people-skills", label:"Skills & Requirements", isActive(){ return tab==="training-skills"; }, action(){ tab="training-skills"; window.__tpView="skills"; } },
+      { id:"nav-people-competency", label:"Competence Register", isActive(){ return tab==="people-competency"; }, action(){ tab="people-competency"; window.__tpView="competence"; } },
       { id:"nav-people-medsurv", label:"Medical Surveillance", isActive(){ return tab==="people-medsurv"; }, action(){ tab="people-medsurv"; } },
       { id:"nav-people-medexpiry", label:"Medical Certificate Expiry", isActive(){ return tab==="people-medexpiry"; }, action(){ tab="people-medexpiry"; } },
       { id:"nav-people-foodhandler", label:"Food Handler Declarations", isActive(){ return tab==="people-foodhandler"; }, action(){ tab="people-foodhandler"; } },
@@ -9136,10 +9139,9 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" ? renderTraining() : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
-        : tab==="people-competency" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-competency"))
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
         : tab==="people-medexpiry" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medexpiry"))
         : tab==="people-foodhandler" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-foodhandler"))
@@ -13999,6 +14001,13 @@ function attachHandlers(){
     });
     if(cfg.presetValues) Object.assign(record, cfg.presetValues);
     if(!valid) return;
+    const pickField = cfg.fields.find(f=>f.personPick);
+    if(pickField && window.trainingFindPerson){
+      if(!window.trainingDirectoryLoaded()){ alert("The employee directory is still loading. Please try again in a moment."); if(window.trainingEnsureLoaded) window.trainingEnsureLoaded(); return; }
+      const person = window.trainingFindPerson(record[pickField.id]);
+      if(!person){ alert("Choose the person from the employee directory. If they are not listed, add them first under People Compliance → Employee Directory."); return; }
+      record.personId = person.id; record[pickField.id] = person.full_name;
+    }
     if(k==="quality-objectives"){
       if(!record.objectiveCode || !record.objectiveCode.trim()){
         record.objectiveCode = nextSeqCode(state.qualityObjectives, "objectiveCode", "QO");
@@ -21087,6 +21096,598 @@ function showUpdateBanner(){
     }
   }, true);
   window.recallReset = function(){ R.cases = []; R.batches = []; R.consignees = []; R.dispositions = []; R.comms = []; R.actions = []; R.authority = []; R.evidence = []; R.stage2Missing = false; R.events = {}; R.eventsLoading = {}; R.eventsDirty = {}; R.measures = {}; R.measuresLoading = {}; R.people = []; R.ncrs = []; R.capas = []; R.loaded = false; R.loading = false; R.tried = false; R.error = ''; R.openId = null; modal = null; mount(); };
+})();
+</script>
+
+<script>
+/* ===== Training and People (stage 1): employee directory, skills and requirements, assignments, training sessions, signed competence assessments, evidence ===== */
+(function(){
+  if(window.__trainingInstalled) return;
+  window.__trainingInstalled = true;
+  var T = { people:[], skills:[], assignments:[], sessions:[], attendance:[], assessments:[], evidence:[], profiles:[], loaded:false, loading:false, tried:false, error:'',
+            view:'matrix', filter:'all', q:'', dept:'', skillId:'', openKey:null, showInactive:false };
+  var modal = null;
+  var METHOD = [['classroom','Classroom'],['toolbox_talk','Toolbox talk'],['practical_demo','Practical demonstration'],['on_the_job','Supervised on-the-job'],['coaching','Coaching'],['external_course','External course'],['online','Online / e-learning'],['read_and_acknowledge','Read and acknowledge']];
+  var AMETHOD = [['observation','Observation of the task'],['practical_demo','Practical demonstration'],['quiz','Quiz / test'],['interview','Interview'],['evidence_review','Evidence review (education, experience)'],['experience','Established through experience']];
+  var AMETHOD_SKILL = [['observation','Observation of the task'],['practical_demo','Practical demonstration'],['quiz','Quiz / test'],['interview','Interview'],['evidence_review','Evidence review']];
+  var RESULT = [['competent','Competent'],['supervised_only','Supervised work only'],['not_yet_competent','Not yet competent']];
+  var REASON = [['induction','Induction'],['refresher','Refresher'],['sop_change','Procedure (SOP) change'],['capa','CAPA'],['ncr','NCR'],['change_control','Change control'],['role_change','Role change'],['audit','Audit finding'],['recall','Recall exercise'],['other','Other']];
+  var REASON_ALL = REASON.concat([['session','Recorded at a session']]);
+  var EMP = [['permanent','Permanent'],['fixed_term','Fixed term'],['temporary','Temporary'],['contractor','Contractor']];
+  var RISK = [['low','Low'],['medium','Medium'],['high','High']];
+  var EV_CAT = [['attendance_sheet','Attendance sheet'],['certificate','Certificate'],['assessment_checklist','Assessment checklist'],['practical_record','Practical record'],['training_material','Training material'],['other','Other']];
+  var FILE_TYPES = { pdf:'application/pdf', doc:'application/msword', docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xls:'application/vnd.ms-excel', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', txt:'text/plain' };
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function fmtDate(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function todayStr(){ return fmtDate(new Date()); }
+  function plusDays(n){ var d = new Date(); d.setDate(d.getDate() + n); return fmtDate(d); }
+  function addMonths(iso, m){ if(!iso) return ''; var p = String(iso).slice(0, 10).split('-'); var d = new Date(Number(p[0]), Number(p[1]) - 1 + m, Number(p[2])); return fmtDate(d); }
+  function day(d){ return d ? String(d).slice(0, 10) : '—'; }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function myId(){ try{ return currentProfile ? currentProfile.id : null; }catch(_){ return null; } }
+  function canSee(){ return ['admin','quality manager','approver','department manager','auditor'].indexOf(myRole()) !== -1; }
+  function canWork(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function canAssess(){ return canSee(); }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())); }
+  function pById(id){ for(var i = 0; i < T.people.length; i++){ if(T.people[i].id === id) return T.people[i]; } return null; }
+  function sById(id){ for(var i = 0; i < T.skills.length; i++){ if(T.skills[i].id === id) return T.skills[i]; } return null; }
+  function userName(id){ for(var i = 0; i < T.profiles.length; i++){ if(T.profiles[i].id === id) return T.profiles[i].full_name || 'Unnamed'; } return id ? String(id).slice(0, 8) : '—'; }
+  function pName(id){ var p = pById(id); return p ? p.full_name : '—'; }
+  function choose(list){ return [['', '— choose —']].concat(list); }
+  async function sha256Hex(buf){ var d = await crypto.subtle.digest('SHA-256', buf); return Array.prototype.map.call(new Uint8Array(d), function(b){ return ('0' + b.toString(16)).slice(-2); }).join(''); }
+
+  async function load(){
+    if(T.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    T.loading = true; T.tried = true; T.error = '';
+    try{
+      var res = await Promise.all([
+        fetchAllRows('people', function(q){ return q.order('full_name', { ascending:true }); }),
+        fetchAllRows('training_skills', function(q){ return q.order('title', { ascending:true }); }),
+        fetchAllRows('training_assignments', function(q){ return q.order('due_date', { ascending:true }); }),
+        fetchAllRows('training_sessions', function(q){ return q.order('session_date', { ascending:false }); }),
+        fetchAllRows('training_attendance', function(q){ return q.order('id', { ascending:true }); }),
+        fetchAllRows('competence_assessments', function(q){ return q.order('assessed_on', { ascending:false }); }),
+        fetchAllRows('training_evidence', function(q){ return q.order('uploaded_at', { ascending:false }); }),
+        supabaseClient.rpc('audit_people')
+      ]);
+      var err = null; for(var i = 0; i < 7; i++){ if(res[i].error){ err = res[i].error; break; } }
+      if(err) T.error = /does not exist|schema cache|relation/i.test(err.message || '') ? 'The training tables are not installed yet. Run people_stage1_run_this.sql in Supabase.' : err.message;
+      else { T.people = res[0].data || []; T.skills = res[1].data || []; T.assignments = res[2].data || []; T.sessions = res[3].data || []; T.attendance = res[4].data || []; T.assessments = res[5].data || []; T.evidence = res[6].data || []; T.profiles = (res[7] && res[7].data) || []; T.loaded = true; }
+    }catch(err2){ T.error = (err2 && err2.message) || String(err2); }
+    T.loading = false; rerender();
+  }
+  async function refresh(){ T.loading = false; await load(); }
+
+  /* ----- derived status ----- */
+  function isRequired(p, s){
+    var d = String(p.department || '').toLowerCase(), j = String(p.job_title || '').toLowerCase();
+    return (s.required_departments || []).some(function(x){ return String(x).toLowerCase() === d && d; }) || (s.required_job_titles || []).some(function(x){ return String(x).toLowerCase() === j && j; });
+  }
+  function asgOf(pid, sid){ return T.assignments.filter(function(a){ return a.person_id === pid && a.skill_id === sid; }); }
+  function isOpenA(a){ return ['assigned','scheduled','in_progress'].indexOf(a.status) !== -1; }
+  function lastAssessment(pid, sid){
+    var l = T.assessments.filter(function(a){ return a.person_id === pid && a.skill_id === sid && a.status === 'active'; });
+    l.sort(function(a, b){ return a.assessed_on < b.assessed_on ? 1 : a.assessed_on > b.assessed_on ? -1 : b.attempt_no - a.attempt_no; });
+    return l[0] || null;
+  }
+  function trainingState(s, list){
+    var open = list.filter(isOpenA).sort(function(a, b){ return a.due_date < b.due_date ? -1 : 1; })[0];
+    var done = list.filter(function(a){ return a.status === 'completed'; }).sort(function(a, b){ return String(a.completed_on) < String(b.completed_on) ? 1 : -1; })[0];
+    var waived = list.filter(function(a){ return a.status === 'waived'; })[0];
+    var t = todayStr();
+    if(open){
+      var od = open.due_date < t, nm = { assigned:'Assigned', scheduled:'Scheduled', in_progress:'In progress' }[open.status];
+      return { k: od ? 'overdue' : 'open', label: od ? 'Overdue (due ' + open.due_date + ')' : nm + ' · due ' + open.due_date, tone: od ? 'rust' : 'amber', a:open, done:done };
+    }
+    if(done){
+      if(s.refresher_months && addMonths(done.completed_on, s.refresher_months) < t) return { k:'refresher', label:'Refresher due', tone:'amber', a:done, done:done };
+      return { k:'trained', label:'Trained ' + day(done.completed_on), tone:'green', a:done, done:done };
+    }
+    if(waived) return { k:'waived', label:'Waived', tone:'neutral', a:waived };
+    return { k:'none', label:'Not assigned', tone:'rust', a:null };
+  }
+  function competenceState(s, la, tk){
+    if(!la){
+      if(!s.requires_assessment) return { k:'na', label:'No assessment required', tone:'neutral' };
+      if(tk === 'trained' || tk === 'refresher') return { k:'pending', label:'Assessment pending', tone:'amber' };
+      return { k:'notassessed', label:'Not assessed', tone:'neutral' };
+    }
+    if(la.result === 'not_yet_competent') return { k:'notyet', label:'Not yet competent', tone:'rust', la:la };
+    if(la.result === 'supervised_only') return { k:'supervised', label:'Supervised work only', tone:'amber', la:la };
+    var due = la.reassessment_due, t = todayStr();
+    if(due && due < t) return { k:'reassess_overdue', label:'Reassessment overdue', tone:'rust', la:la };
+    if(due && due <= plusDays(30)) return { k:'reassess_due', label:'Competent · reassess by ' + due, tone:'amber', la:la };
+    return { k:'competent', label:'Competent' + (due ? ' · until ' + due : ''), tone:'green', la:la };
+  }
+  function rows(){
+    var out = [];
+    T.people.forEach(function(p){
+      if(p.status !== 'active') return;
+      T.skills.forEach(function(s){
+        if(s.status !== 'active') return;
+        var list = asgOf(p.id, s.id), la = lastAssessment(p.id, s.id), req = isRequired(p, s);
+        if(!req && !list.length && !la) return;
+        var tr = trainingState(s, list), co = competenceState(s, la, tr.k);
+        out.push({ key:p.id + '|' + s.id, p:p, s:s, list:list, tr:tr, co:co, la:la, req:req });
+      });
+    });
+    return out;
+  }
+  function matchFilter(r){
+    var f = T.filter;
+    if(f === 'outstanding') return ['none','open','overdue','refresher'].indexOf(r.tr.k) !== -1;
+    if(f === 'overdue') return r.tr.k === 'overdue';
+    if(f === 'unassigned') return r.tr.k === 'none';
+    if(f === 'pending') return r.co.k === 'pending';
+    if(f === 'reassess') return r.co.k === 'reassess_due' || r.co.k === 'reassess_overdue';
+    if(f === 'supervised') return r.co.k === 'supervised' || r.co.k === 'notyet';
+    if(f === 'complete') return (r.tr.k === 'trained' || r.tr.k === 'waived') && (r.co.k === 'competent' || r.co.k === 'na');
+    return true;
+  }
+  function filteredRows(){
+    var q = T.q.trim().toLowerCase();
+    return rows().filter(function(r){
+      if(T.dept && String(r.p.department || '') !== T.dept) return false;
+      if(T.skillId && r.s.id !== T.skillId) return false;
+      if(q && (r.p.full_name + ' ' + (r.p.job_title || '') + ' ' + r.s.title).toLowerCase().indexOf(q) === -1) return false;
+      return matchFilter(r);
+    });
+  }
+  function stats(all){
+    var cnt = function(fn){ return all.filter(fn).length; };
+    var persons = {}; all.forEach(function(r){ if(r.co.k === 'supervised' || r.co.k === 'notyet') persons[r.p.id] = 1; });
+    return { total:all.length,
+      outstanding:cnt(function(r){ return ['none','open','overdue','refresher'].indexOf(r.tr.k) !== -1; }),
+      unassigned:cnt(function(r){ return r.tr.k === 'none'; }),
+      overdue:cnt(function(r){ return r.tr.k === 'overdue'; }),
+      pending:cnt(function(r){ return r.co.k === 'pending'; }),
+      reassess:cnt(function(r){ return r.co.k === 'reassess_due' || r.co.k === 'reassess_overdue'; }),
+      supervised:Object.keys(persons).length };
+  }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('tp-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'tp-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'tpf-' + x.id, ctl;
+      if(x.type === 'heading') return '<div style="grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px solid var(--line,#ddd);font-size:12.5px;font-weight:700;color:var(--navy);">' + e(x.label) + (x.help ? '<div style="font-weight:400;color:var(--muted);font-size:11.5px;">' + e(x.help) + '</div>' : '') + '</div>';
+      if(x.type === 'note') return '<div style="grid-column:1/-1;font-size:12px;background:var(--cream,#f7f3ea);border-radius:6px;padding:8px 10px;white-space:pre-wrap;">' + e(x.label) + '</div>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') ctl = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'number') ctl = '<input type="number" min="0" step="any" id="' + id + '" value="' + e(x.value == null ? '' : x.value) + '" />';
+      else if(x.type === 'file') ctl = '<input type="file" id="' + id + '" accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.txt" />';
+      else if(x.type === 'multi') ctl = '<div id="' + id + '" style="max-height:190px;overflow:auto;border:1px solid var(--line,#ddd);border-radius:6px;padding:6px 8px;">' + ((x.items || []).length ? (x.items || []).map(function(o){ return '<label style="display:flex;gap:6px;align-items:flex-start;font-size:12.5px;padding:2px 0;"><input type="checkbox" value="' + e(o[0]) + '"' + (o[2] ? ' checked' : '') + ' style="margin-top:2px;" /><span>' + e(o[1]) + '</span></label>'; }).join('') : '<span class="muted-italic" style="font-size:12px;">Nothing to choose from.</span>') + '</div>';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div style="grid-column:1/-1;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-tp-modal="overlay"><div class="modal-card" style="max-width:620px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + '<div class="grid2">' + f + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-tp-modal="cancel">Cancel</button><button class="btn btn-primary" data-tp-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {}, files = {};
+    modal.fields.forEach(function(x){
+      if(x.type === 'heading' || x.type === 'note') return;
+      var el = document.getElementById('tpf-' + x.id); if(!el) return;
+      if(x.type === 'file') files[x.id] = el.files && el.files[0];
+      else if(x.type === 'multi') v[x.id] = Array.prototype.map.call(el.querySelectorAll('input[type=checkbox]:checked'), function(c){ return c.value; });
+      else v[x.id] = String(el.value || '').trim();
+    });
+    for(var i = 0; i < modal.fields.length; i++){
+      var x = modal.fields[i]; if(!x.required) continue;
+      if(x.type === 'multi'){ if(!v[x.id].length){ toast('Please choose at least one: ' + x.label, 'error'); return; } }
+      else if(!v[x.id] && !files[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; }
+    }
+    modal.busy = true; mount();
+    var cfg = modal;
+    try{
+      var extra = cfg.prepare ? await cfg.prepare(v, files) : null;
+      var call = cfg.call ? cfg.call(v, extra) : null, r = { data:null };
+      if(call){ r = await supabaseClient.rpc(call.fn, call.args); if(r.error) throw new Error(r.error.message); }
+      var note = '';
+      if(cfg.after){ try{ await cfg.after(v, files, r.data); }catch(e2){ note = ' Saved, but the file could not be attached: ' + ((e2 && e2.message) || e2); } }
+      modal = null; mount(); toast((cfg.successText || 'Saved.') + note, note ? 'error' : undefined);
+      await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+  async function direct(fn, args, ok){
+    var r = await supabaseClient.rpc(fn, args);
+    if(r.error){ toast(r.error.message, 'error'); return; }
+    toast(ok); await refresh();
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function uploadFor(personId, file){
+    if(!file) throw new Error('Choose a file first.');
+    if(file.size < 1) throw new Error('The file is empty.'); if(file.size > 26214400) throw new Error('The file is larger than 25 MB.');
+    var ext = (file.name.split('.').pop() || '').toLowerCase(); var mime = FILE_TYPES[ext]; if(!mime) throw new Error('This file type is not allowed.');
+    var hash = await sha256Hex(await file.arrayBuffer());
+    var rand = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
+    var path = ((currentProfile && currentProfile.organization_id) || '') + '/' + personId + '/' + rand + '.' + ext;
+    var up = await supabaseClient.storage.from('training-evidence').upload(path, file, { contentType:mime, upsert:false });
+    if(up.error) throw new Error('Upload failed: ' + up.error.message);
+    return { path:path, name:file.name, mime:mime, size:file.size, hash:hash };
+  }
+  async function attachFile(personId, file, cat, note, sessionId, assignmentId){
+    var x = await uploadFor(personId, file);
+    var r = await supabaseClient.rpc('attach_training_evidence', { p_person:personId, p_category:cat, p_path:x.path, p_file_name:x.name, p_mime_type:x.mime, p_file_size:x.size, p_content_hash:x.hash, p_note:note || null, p_session:sessionId || null, p_assignment:assignmentId || null });
+    if(r.error) throw new Error(r.error.message);
+    return r.data;
+  }
+  async function downloadEvidence(evId){
+    try{
+      var x = T.evidence.filter(function(r){ return r.id === evId; })[0]; if(!x) throw new Error('File not found.');
+      var lg = await supabaseClient.rpc('log_training_evidence_download', { p_evidence:evId }); if(lg.error) throw new Error(lg.error.message);
+      var dl = await supabaseClient.storage.from('training-evidence').download(x.storage_path);
+      if(dl.error || !dl.data) throw new Error((dl.error && dl.error.message) || 'Could not download the file.');
+      var hash = await sha256Hex(await dl.data.arrayBuffer());
+      if(hash !== x.content_hash) toast('Warning: this file does not match its recorded fingerprint. Do not rely on it.', 'error');
+      var url = URL.createObjectURL(dl.data), l = document.createElement('a'); l.href = url; l.download = x.file_name; document.body.appendChild(l); l.click(); l.remove();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 10000);
+      if(hash === x.content_hash) toast('Downloaded. Fingerprint verified.');
+    }catch(err){ toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- forms ----- */
+  function activePeople(){ return T.people.filter(function(p){ return p.status === 'active'; }); }
+  function personOptions(){ return choose(activePeople().map(function(p){ return [p.id, p.full_name + (p.job_title ? ' · ' + p.job_title : '')]; })); }
+  function skillOptions(){ return choose(T.skills.filter(function(s){ return s.status === 'active'; }).map(function(s){ return [s.id, s.code + ' — ' + s.title]; })); }
+  function assessorProfiles(){ return T.profiles.filter(function(p){ return ['admin','quality manager','approver','department manager','auditor'].indexOf(String(p.role || '').toLowerCase()) !== -1 && String(p.status || 'Active').toLowerCase() === 'active'; }); }
+  function deptList(){ var set = {}; (typeof DEPARTMENTS !== 'undefined' ? DEPARTMENTS : []).forEach(function(d){ set[d] = 1; }); T.people.forEach(function(p){ if(p.department) set[p.department] = 1; }); return Object.keys(set).sort(); }
+
+  function actPerson(p){
+    p = p || {}; var linked = {}; T.people.forEach(function(x){ if(x.user_id && x.id !== p.id) linked[x.user_id] = 1; });
+    var logins = [['', '— no login (an operator without an account) —']].concat(T.profiles.filter(function(x){ return !linked[x.id]; }).map(function(x){ return [x.id, (x.full_name || 'Unnamed') + ' · ' + (x.role || '')]; }));
+    var mgrs = [['', '— none —']].concat(T.people.filter(function(x){ return x.id !== p.id && x.status === 'active'; }).map(function(x){ return [x.id, x.full_name]; }));
+    openModal({ title:p.id ? 'Edit ' + p.full_name : 'Add a person', submitText:'Save', successText:'Saved.',
+      help:'Operators do not need a login. If the person has one, link it: that person can then see their own training, and can never assess themselves.',
+      fields:[ { id:'full_name', label:'Full name', value:p.full_name || '', required:true }, { id:'employee_no', label:'Employee number (optional, must be unique)', value:p.employee_no || '' },
+        { id:'department', label:'Department', type:'select', options:[['', '— choose —']].concat(deptList().map(function(d){ return [d, d]; })), value:p.department || '' },
+        { id:'job_title', label:'Job title / role', value:p.job_title || '', placeholder:'e.g. Production Operator' }, { id:'site', label:'Site', value:p.site || '' },
+        { id:'employment_type', label:'Employment type', type:'select', options:EMP, value:p.employment_type || 'permanent' },
+        { id:'start_date', label:'Start date', type:'date', value:p.start_date || '' }, { id:'end_date', label:'End date (if known)', type:'date', value:p.end_date || '' },
+        { id:'manager_id', label:'Manager', type:'select', options:mgrs, value:p.manager_id || '' },
+        { id:'user_id', label:'Linked login', type:'select', options:logins, value:p.user_id || '' },
+        { id:'status', label:'Status (making a person inactive cancels their open assignments, with the reason on record)', type:'select', options:[['active','Active'],['inactive','Inactive']], value:p.status || 'active' } ],
+      call:function(v){ return { fn:'people_save', args:{ p_id:p.id || newId(), p_f:{ full_name:v.full_name, employee_no:v.employee_no, department:v.department, job_title:v.job_title, site:v.site, employment_type:v.employment_type, start_date:v.start_date, end_date:v.end_date, manager_id:v.manager_id, user_id:v.user_id, status:v.status } } }; } });
+  }
+  function actSkill(s){
+    s = s || {}; var ass = {}; (s.assessor_ids || []).forEach(function(x){ ass[x] = 1; });
+    var deps = {}; (s.required_departments || []).forEach(function(x){ deps[String(x).toLowerCase()] = 1; });
+    openModal({ title:s.id ? 'Edit ' + s.code : 'Add a skill or training requirement', submitText:'Save', successText:'Saved.',
+      help:'Requirements follow the work people do. Say who needs it, how it is taught, and, where competence must be proven, how it is assessed and what counts as passing. Leave the refresher blank if this skill does not expire.',
+      fields:[ { id:'title', label:'Skill / training title', value:s.title || '', required:true, placeholder:'e.g. Metal detector verification' }, { id:'code', label:'Code (blank = automatic)', value:s.code || '' },
+        { id:'category', label:'Category', value:s.category || '', placeholder:'e.g. Food safety, OHS, Quality' },
+        { id:'description', label:'Description and learning objectives', type:'textarea', value:s.description || '' },
+        { id:'training_method', label:'Training method', type:'select', options:choose(METHOD), value:s.training_method || '', required:true },
+        { type:'heading', label:'Who needs it', help:'A person is shown as requiring this skill when their department or job title matches.' },
+        { id:'required_departments', label:'Departments', type:'multi', items:deptList().map(function(d){ return [d, d, !!deps[d.toLowerCase()]]; }) },
+        { id:'required_job_titles', label:'Job titles (comma-separated, exactly as in the directory)', value:(s.required_job_titles || []).join(', ') },
+        { type:'heading', label:'Competence assessment' },
+        { id:'requires_assessment', label:'Must competence be assessed and signed?', type:'select', options:[['false','No: training attendance is enough'],['true','Yes: a signed competence decision is required']], value:s.requires_assessment ? 'true' : 'false' },
+        { id:'assessment_method', label:'Assessment method', type:'select', options:[['', '— none —']].concat(AMETHOD_SKILL), value:s.assessment_method || '' },
+        { id:'acceptance_criteria', label:'Acceptance criteria (what counts as competent)', type:'textarea', value:s.acceptance_criteria || '', placeholder:'e.g. All safety-critical steps performed correctly, including the failure response.' },
+        { id:'assessor_ids', label:'Named assessors (leave none ticked to allow any Admin, Quality Manager, Approver or Department Manager)', type:'multi', items:assessorProfiles().map(function(p){ return [p.id, (p.full_name || 'Unnamed') + ' · ' + p.role, !!ass[p.id]]; }) },
+        { id:'refresher_months', label:'Refresher / reassessment every … months (blank = does not expire)', type:'number', value:s.refresher_months },
+        { id:'risk', label:'Risk if this skill is lacking', type:'select', options:RISK, value:s.risk || 'medium' },
+        { id:'owner_id', label:'Requirement owner', type:'select', options:choose(assessorProfiles().map(function(p){ return [p.id, (p.full_name || 'Unnamed') + ' · ' + p.role]; })), value:s.owner_id || '', required:true },
+        { id:'status', label:'Status', type:'select', options:[['active','Active'],['retired','Retired']], value:s.status || 'active' } ],
+      call:function(v){ return { fn:'skill_save', args:{ p_id:s.id || newId(), p_f:{ title:v.title, code:v.code, category:v.category, description:v.description, training_method:v.training_method, required_departments:v.required_departments,
+        required_job_titles:v.required_job_titles.split(',').map(function(x){ return x.trim(); }).filter(Boolean), requires_assessment:v.requires_assessment === 'true', assessment_method:v.assessment_method, acceptance_criteria:v.acceptance_criteria,
+        assessor_ids:v.assessor_ids, refresher_months:v.refresher_months, risk:v.risk, owner_id:v.owner_id, status:v.status } } }; } });
+  }
+  function actAssign(pid, sid){
+    openModal({ title:'Assign training', submitText:'Assign', successText:'Training assigned.',
+      help:'Each person can have one open assignment per skill. A repeated click cannot create a duplicate.',
+      fields:[ { id:'person', label:'Person', type:'select', options:personOptions(), value:pid || '', required:true }, { id:'skill', label:'Skill / training', type:'select', options:skillOptions(), value:sid || '', required:true },
+        { id:'reason', label:'Reason', type:'select', options:choose(REASON), value:'induction', required:true }, { id:'source', label:'Source reference (required for SOP change, CAPA, NCR, change control, audit and recall; for example CAPA-0012)' },
+        { id:'due', label:'Due date', type:'date', value:plusDays(14), required:true } ],
+      call:function(v){ return { fn:'assignment_create', args:{ p_person:v.person, p_skill:v.skill, p_reason:v.reason, p_due:v.due, p_source:nul(v.source), p_version:null } }; } });
+  }
+  function actBulk(s){
+    var have = {}; T.assignments.forEach(function(a){ if(a.skill_id === s.id && (isOpenA(a) || a.status === 'completed')) have[a.person_id] = 1; });
+    var items = activePeople().map(function(p){ var req = isRequired(p, s); return [p.id, p.full_name + (p.department ? ' · ' + p.department : '') + (have[p.id] ? ' (already assigned or trained)' : ''), req && !have[p.id]]; });
+    openModal({ title:'Assign “' + s.title + '” to several people', submitText:'Assign', successText:'Done.',
+      help:'People who need this skill and have no open or completed assignment are ticked. Anyone who already has it open is skipped automatically.',
+      fields:[ { id:'persons', label:'People', type:'multi', items:items, required:true }, { id:'reason', label:'Reason', type:'select', options:choose(REASON), value:'induction', required:true },
+        { id:'source', label:'Source reference (required for SOP change, CAPA, NCR, change control, audit and recall)' }, { id:'due', label:'Due date', type:'date', value:plusDays(14), required:true } ],
+      call:function(v){ return { fn:'assignment_bulk_create', args:{ p_skill:s.id, p_persons:v.persons, p_reason:v.reason, p_due:v.due, p_source:nul(v.source), p_version:null } }; } });
+  }
+  function actSession(opts){
+    opts = opts || {};
+    var items = activePeople().map(function(p){ return [p.id, p.full_name + (p.job_title ? ' · ' + p.job_title : ''), opts.pid === p.id]; });
+    openModal({ title:'Record a training session', submitText:'Record session', successText:'Session recorded.',
+      help:'Record who attended. Open assignments for that skill are marked as trained. Training is not competence: where competence must be proven, an assessor signs it separately.',
+      fields:[ { id:'topic', label:'Topic', value:opts.topic || '', required:true }, { id:'skill', label:'Skill / requirement (optional for a general talk)', type:'select', options:[['', '— not linked to a skill —']].concat(skillOptions().slice(1)), value:opts.sid || '' },
+        { id:'trainer', label:'Trainer / provider', required:true }, { id:'date', label:'Date held', type:'date', value:todayStr(), required:true }, { id:'minutes', label:'Duration (minutes)', type:'number' },
+        { id:'method', label:'Method', type:'select', options:choose(METHOD), value:opts.method || '', required:true }, { id:'location', label:'Location / delivery' }, { id:'language', label:'Language', value:'English' },
+        { id:'materials', label:'Materials used (document, version, slides)', type:'textarea', rows:2 },
+        { id:'attendees', label:'Who attended', type:'multi', items:items, required:true },
+        { id:'file', label:'Attendance sheet or certificate (optional, attached to the first person ticked)', type:'file' } ],
+      call:function(v){ return { fn:'session_record', args:{ p_id:newId(), p_f:{ topic:v.topic, skill_id:v.skill, trainer_name:v.trainer, session_date:v.date, duration_minutes:v.minutes, method:v.method, location:v.location, language:v.language, materials:v.materials },
+        p_attendees:v.attendees.map(function(id){ return { person_id:id }; }) } }; },
+      after:async function(v, files, data){ if(files.file && data && data.session_id) await attachFile(v.attendees[0], files.file, 'attendance_sheet', 'Session attendance evidence', data.session_id, null); } });
+  }
+  function actAssess(r){
+    var s = r.s, p = r.p;
+    var asg = r.list.filter(function(a){ return a.status !== 'cancelled' && a.status !== 'waived'; });
+    openModal({ title:'Competence decision: ' + p.full_name, submitText:'Sign decision', successText:'Competence decision signed.',
+      help:'You are signing this decision as yourself. It cannot be edited afterwards; a wrong decision is revoked with a reason and replaced. You cannot assess your own competence.',
+      fields:[ { type:'note', label:'Skill: ' + s.title + '\nAcceptance criteria: ' + (s.acceptance_criteria || '(none recorded)') },
+        { id:'assignment', label:'Linked training assignment (optional)', type:'select', options:[['', '— none —']].concat(asg.map(function(a){ return [a.id, lbl(REASON_ALL, a.reason) + ' · ' + a.status + (a.completed_on ? ' ' + a.completed_on : ' · due ' + a.due_date)]; })), value:r.tr.a && r.tr.a.id && asg.some(function(a){ return a.id === r.tr.a.id; }) ? r.tr.a.id : '' },
+        { id:'method', label:'How was competence assessed?', type:'select', options:choose(AMETHOD), value:s.assessment_method || '', required:true }, { id:'on', label:'Date assessed', type:'date', value:todayStr(), required:true },
+        { id:'result', label:'Result', type:'select', options:choose(RESULT), required:true },
+        { id:'restrictions', label:'If supervised only: what must the person NOT do independently?', type:'textarea', rows:2 },
+        { id:'next', label:'Next assessment date (required unless fully competent; blank uses the skill’s refresher period)', type:'date' },
+        { id:'comments', label:'Comments: what you observed or tested, gaps, coaching needed (for evidence review or experience: the basis for the decision)', type:'textarea' },
+        { id:'file', label:'Evidence: completed checklist, test result or certificate (optional)', type:'file' } ],
+      prepare:async function(v, files){
+        await signed('Signing a competence decision is a signature. Enter your password to confirm it is you.');
+        if(files.file) return { ev: await attachFile(p.id, files.file, 'assessment_checklist', 'Competence assessment evidence', null, v.assignment || null) };
+        return { ev:null };
+      },
+      call:function(v, x){ return { fn:'competence_record', args:{ p_id:newId(), p_f:{ person_id:p.id, skill_id:s.id, assignment_id:v.assignment, method:v.method, assessed_on:v.on, result:v.result, restrictions:v.restrictions, reassessment_due:v.next, comments:v.comments, evidence_id:x && x.ev ? x.ev : '' } } }; } });
+  }
+  function actClose(a){
+    var p = pById(a.person_id), s = sById(a.skill_id);
+    openModal({ title:'Close this assignment', submitText:'Close assignment', successText:'Assignment closed.',
+      help:(p ? p.full_name : '') + ' · ' + (s ? s.title : '') + '. Cancel it if it no longer applies. Waive it only with a good reason: a failed competence assessment can never be waived. The reason stays on record.',
+      fields:[ { id:'status', label:'Close as', type:'select', options:[['cancelled','Cancelled: no longer applies'],['waived','Waived: requirement met another way']], value:'cancelled' }, { id:'why', label:'Reason (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'assignment_close', args:{ p_id:a.id, p_status:v.status, p_reason:v.why } }; } });
+  }
+  function actRevoke(c){
+    openModal({ title:'Revoke this competence decision', submitText:'Revoke', successText:'Revoked.',
+      help:'Use this if the decision was recorded in error. The record stays on file marked revoked, and the person’s status goes back to the previous decision.',
+      fields:[ { id:'why', label:'Reason (at least 15 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Revoking a decision is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'competence_revoke', args:{ p_id:c.id, p_reason:v.why } }; } });
+  }
+  function actAttach(p){
+    openModal({ title:'Attach a file to ' + p.full_name, submitText:'Attach', successText:'File attached.',
+      help:'Photo, PDF, Word, Excel or text, up to 25 MB. A fingerprint (SHA-256) is recorded and checked on every download. Files cannot be replaced or deleted once attached.',
+      fields:[ { id:'file', label:'File', type:'file', required:true }, { id:'cat', label:'What is it?', type:'select', options:EV_CAT, value:'certificate' }, { id:'note', label:'What does it show? (optional)' } ],
+      prepare:async function(v, files){ return { id: await attachFile(p.id, files.file, v.cat, nul(v.note), null, null) }; }, call:null });
+  }
+
+  /* ----- evidence pack: employee training passport ----- */
+  function passportHtml(p){
+    var rs = rows().filter(function(r){ return r.p.id === p.id; });
+    var as = T.assessments.filter(function(a){ return a.person_id === p.id; }).sort(function(a, b){ return a.assessed_on < b.assessed_on ? 1 : -1; });
+    var ev = T.evidence.filter(function(x){ return x.person_id === p.id; });
+    var td = function(x){ return '<td style="border:1px solid #bbb;padding:4px 6px;vertical-align:top;">' + e(x == null || x === '' ? '—' : x) + '</td>'; };
+    var th = function(x){ return '<th style="border:1px solid #bbb;padding:4px 6px;background:#eee;text-align:left;">' + e(x) + '</th>'; };
+    var org = (window.__orgName || '');
+    return '<!doctype html><html><head><meta charset="utf-8"><title>Training passport — ' + e(p.full_name) + '</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:24px;color:#111}h1{font-size:20px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 6px}table{border-collapse:collapse;width:100%}</style></head><body>' +
+      '<h1>Employee training passport</h1><div>' + e(org) + '</div><div style="margin:8px 0;"><b>' + e(p.full_name) + '</b> · ' + e(p.job_title || '—') + ' · ' + e(p.department || '—') + ' · ' + e(lbl(EMP, p.employment_type)) + (p.employee_no ? ' · No. ' + e(p.employee_no) : '') + '</div>' +
+      '<div>Generated ' + e(new Date().toLocaleString()) + '. Status as at the generation time; "trained" and "competent" are separate records.</div>' +
+      '<h2>Requirements: training and competence status</h2><table><tr>' + ['Skill','Training','Competence'].map(th).join('') + '</tr>' + (rs.length ? rs.map(function(r){ return '<tr>' + td(r.s.code + ' ' + r.s.title) + td(r.tr.label) + td(r.co.label + (r.la && r.la.restrictions ? ' — restriction: ' + r.la.restrictions : '')) + '</tr>'; }).join('') : '<tr>' + td('No requirements recorded') + td('') + td('') + '</tr>') + '</table>' +
+      '<h2>Competence decisions (every attempt)</h2><table><tr>' + ['Date','Skill','Attempt','Method','Result','Assessor','Next due','Status','Criteria used'].map(th).join('') + '</tr>' + (as.length ? as.map(function(a){ var s = sById(a.skill_id); return '<tr>' + td(a.assessed_on) + td(s ? s.title : '') + td(a.attempt_no) + td(lbl(AMETHOD, a.method)) + td(lbl(RESULT, a.result)) + td(userName(a.assessor_id)) + td(a.reassessment_due) + td(a.status === 'revoked' ? 'REVOKED: ' + (a.revoke_reason || '') : 'Active') + td(a.criteria) + '</tr>'; }).join('') : '<tr>' + td('None') + '</tr>') + '</table>' +
+      '<h2>Training completed</h2><table><tr>' + ['Skill','Reason','Completed','Session'].map(th).join('') + '</tr>' + T.assignments.filter(function(a){ return a.person_id === p.id && a.status === 'completed'; }).map(function(a){ var s = sById(a.skill_id), se = T.sessions.filter(function(x){ return x.id === a.session_id; })[0]; return '<tr>' + td(s ? s.title : '') + td(lbl(REASON_ALL, a.reason)) + td(a.completed_on) + td(se ? se.topic + ' (' + se.trainer_name + ')' : '') + '</tr>'; }).join('') + '</table>' +
+      '<h2>Evidence files (SHA-256 fingerprints)</h2><table><tr>' + ['File','Type','Uploaded','Fingerprint'].map(th).join('') + '</tr>' + (ev.length ? ev.map(function(x){ return '<tr>' + td(x.file_name) + td(lbl(EV_CAT, x.category)) + td(day(x.uploaded_at)) + td(x.content_hash) + '</tr>'; }).join('') : '<tr>' + td('None') + '</tr>') + '</table>' +
+      '<p style="margin-top:18px;font-size:11px;color:#444;">Competence decisions are signed by the assessor’s own account and cannot be edited; corrections are recorded as revocations. This passport is a record export, not a legal certificate.</p></body></html>';
+  }
+  function showPassport(p){
+    var html = passportHtml(p), w = null;
+    try{ w = window.open('', '_blank'); }catch(_){}
+    if(w && w.document){ w.document.open(); w.document.write(html); w.document.close(); try{ w.focus(); }catch(_){} }
+    else saveFile('training-passport-' + p.full_name.replace(/[^a-z0-9]+/gi, '-') + '-' + todayStr() + '.html', html, 'text/html');
+  }
+  function saveFile(name, text, type){ var blob = new Blob([text], { type:type || 'text/plain' }), url = URL.createObjectURL(blob), l = document.createElement('a'); l.href = url; l.download = name; document.body.appendChild(l); l.click(); l.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 10000); }
+  function csv(rs){ return rs.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n'); }
+  function matrixCsv(){
+    var out = [['Employee','Employee no','Department','Job title','Skill code','Skill','Required','Training status','Due / completed','Competence status','Last assessor','Reassessment due','Restrictions']];
+    rows().forEach(function(r){ out.push([r.p.full_name, r.p.employee_no, r.p.department, r.p.job_title, r.s.code, r.s.title, r.req ? 'Yes' : 'Assigned only', r.tr.label, r.tr.a ? (r.tr.a.completed_on || r.tr.a.due_date) : '', r.co.label, r.la ? userName(r.la.assessor_id) : '', r.la ? r.la.reassessment_due : '', r.la ? r.la.restrictions : '']); });
+    saveFile('aqms-training-matrix-' + todayStr() + '.csv', csv(out), 'text/csv');
+  }
+  function registerCsv(){
+    var out = [['Employee','Skill','Attempt','Method','Result','Assessed on','Assessor','Reassessment due','Restrictions','Status','Revoke reason','Criteria used','Comments']];
+    T.assessments.forEach(function(a){ var s = sById(a.skill_id); out.push([pName(a.person_id), s ? s.title : '', a.attempt_no, lbl(AMETHOD, a.method), lbl(RESULT, a.result), a.assessed_on, userName(a.assessor_id), a.reassessment_due, a.restrictions, a.status, a.revoke_reason, a.criteria, a.comments]); });
+    saveFile('aqms-competence-register-' + todayStr() + '.csv', csv(out), 'text/csv');
+  }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-tp="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function stat(n, l, tone, f){ return '<button data-tp="filter" data-f="' + e(f || 'all') + '" style="flex:1 1 118px;text-align:left;cursor:pointer;background:transparent;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></button>'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function tabs(){
+    var list = [['matrix','Training matrix'],['people','People'],['skills','Skills & requirements'],['sessions','Sessions'],['competence','Competence register']];
+    return '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + list.map(function(x){ return '<button class="status-pill ' + (T.view === x[0] ? 'active' : '') + '" data-tp="view" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>';
+  }
+  function header(title){
+    return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;"><h2 class="serif" style="font-size:18px;margin:0;">' + e(title) + '</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + '</div></div>';
+  }
+  function actionsFor(r){
+    var b = '';
+    if(canWork()){
+      if(r.tr.k === 'none' || r.tr.k === 'refresher' || r.tr.k === 'waived') b += bt('assign', { p:r.p.id, s:r.s.id }, r.tr.k === 'refresher' ? 'Assign refresher' : 'Assign');
+      if(r.tr.k === 'open' || r.tr.k === 'overdue') b += bt('session', { p:r.p.id, s:r.s.id }, 'Record training', true);
+    }
+    if(canAssess() && (r.s.requires_assessment || r.la || r.tr.k === 'trained' || r.tr.k === 'refresher')) b += bt('assess', { k:r.key }, r.la ? 'Reassess' : 'Assess', r.co.k === 'pending');
+    if(isQm() && r.tr.a && isOpenA(r.tr.a)) b += bt('close', { id:r.tr.a.id }, 'Close…');
+    return b;
+  }
+  function rowCard(r){
+    var op = T.openKey === r.key, la = r.la, h = '';
+    if(op){
+      h += '<div style="border-top:1px solid var(--line2);padding:12px 16px;font-size:12.5px;">';
+      h += '<div style="margin-bottom:6px;"><b>Criteria:</b> ' + e(r.s.acceptance_criteria || '—') + '</div>';
+      h += '<div style="margin-bottom:6px;"><b>Training method:</b> ' + e(lbl(METHOD, r.s.training_method)) + ' · <b>Refresher:</b> ' + (r.s.refresher_months ? 'every ' + e(r.s.refresher_months) + ' months' : 'does not expire') + ' · <b>Risk:</b> ' + e(lbl(RISK, r.s.risk)) + '</div>';
+      if(la && la.restrictions) h += '<div style="margin-bottom:6px;color:var(--rust);"><b>Restrictions:</b> ' + e(la.restrictions) + '</div>';
+      var asg = r.list.slice().sort(function(a, b){ return a.assigned_at < b.assigned_at ? 1 : -1; });
+      h += '<div style="margin-top:8px;font-weight:700;">Assignments</div>' + (asg.length ? asg.map(function(a){ return '<div>' + e(lbl(REASON_ALL, a.reason)) + (a.source_ref ? ' (' + e(a.source_ref) + ')' : '') + ' · ' + e(a.status) + (a.completed_on ? ' ' + e(a.completed_on) : ' · due ' + e(a.due_date)) + (a.coaching ? ' · coaching after a failed assessment' : '') + (a.cancel_reason ? ' · ' + e(a.cancel_reason) : '') + '</div>'; }).join('') : '<div class="muted-italic">None.</div>');
+      var as = T.assessments.filter(function(a){ return a.person_id === r.p.id && a.skill_id === r.s.id; }).sort(function(a, b){ return a.attempt_no < b.attempt_no ? 1 : -1; });
+      h += '<div style="margin-top:8px;font-weight:700;">Competence decisions</div>' + (as.length ? as.map(function(a){
+        var ev = T.evidence.filter(function(x){ return x.id === a.evidence_id; })[0];
+        return '<div style="margin-bottom:4px;' + (a.status === 'revoked' ? 'opacity:.6;' : '') + '">Attempt ' + e(a.attempt_no) + ' · ' + e(lbl(RESULT, a.result)) + ' · ' + e(lbl(AMETHOD, a.method)) + ' · ' + e(a.assessed_on) + ' · assessor ' + e(userName(a.assessor_id)) + (a.reassessment_due ? ' · next ' + e(a.reassessment_due) : '') + (a.status === 'revoked' ? ' · REVOKED: ' + e(a.revoke_reason) : '') +
+          (a.comments ? '<div style="color:var(--muted);">' + e(a.comments) + '</div>' : '') + (ev ? '<div>' + bt('evdl', { id:ev.id }, '⬇ ' + ev.file_name) + '</div>' : '') + (isQm() && a.status === 'active' ? '<div>' + bt('revoke', { id:a.id }, 'Revoke…') + '</div>' : '') + '</div>'; }).join('') : '<div class="muted-italic">None.</div>');
+      h += '</div>';
+    }
+    return '<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-tp="toggle" data-k="' + e(r.key) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (op ? '▾' : '›') + '</span><div style="min-width:0;"><div class="audit-title">' + e(r.p.full_name) + ' <span style="color:var(--muted);font-weight:400;font-size:11px;">· ' + e(r.s.title) + '</span></div>' +
+      '<div class="audit-sub">' + e(r.p.job_title || '—') + ' · ' + e(r.p.department || '—') + (r.s.risk === 'high' ? ' · high-risk skill' : '') + '</div></div></div><div class="flex-wrap">' + tag(r.tr.tone, r.tr.label) + tag(r.co.tone, r.co.label) + '</div></button>' +
+      '<div class="flex-wrap" style="padding:0 16px 10px;gap:6px;">' + actionsFor(r) + '</div>' + h + '</div>';
+  }
+  function matrixView(){
+    var all = rows(), st = stats(all), list = filteredRows();
+    if(!T.skills.length) return '<div class="card p4"><p class="muted-italic" style="margin:0;">No skills or requirements yet. ' + (isQm() ? 'Open “Skills & requirements” and add the training your roles need.' : 'Ask an Admin or Quality Manager to set up the skills.') + '</p></div>';
+    var filters = [['all','All'],['outstanding','Training outstanding'],['overdue','Overdue'],['unassigned','Not assigned'],['pending','Assessment pending'],['reassess','Reassessment due'],['supervised','Supervised / not yet competent'],['complete','Complete']].map(function(x){ return '<button class="status-pill ' + (T.filter === x[0] ? 'active' : '') + '" data-tp="filter" data-f="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+    var depts = deptList();
+    var sel = '<select data-tp="dept" style="font-size:12px;"><option value="">All departments</option>' + depts.map(function(d){ return '<option' + (T.dept === d ? ' selected' : '') + '>' + e(d) + '</option>'; }).join('') + '</select> ' +
+      '<select data-tp="skillsel" style="font-size:12px;"><option value="">All skills</option>' + T.skills.filter(function(s){ return s.status === 'active'; }).map(function(s){ return '<option value="' + e(s.id) + '"' + (T.skillId === s.id ? ' selected' : '') + '>' + e(s.title) + '</option>'; }).join('') + '</select> ' +
+      '<input data-tp="search" placeholder="Search name, role or skill" value="' + e(T.q) + '" style="font-size:12px;max-width:190px;" />';
+    return (all.length ? '<div class="flex-wrap" style="gap:8px;margin-bottom:6px;">' + stat(st.outstanding, 'requirements with training outstanding', st.outstanding ? 'amber' : '', 'outstanding') + stat(st.unassigned, 'required, not yet assigned', st.unassigned ? 'rust' : '', 'unassigned') + stat(st.overdue, 'assignments overdue', st.overdue ? 'rust' : '', 'overdue') + stat(st.pending, 'trained, awaiting competence assessment', st.pending ? 'amber' : '', 'pending') + stat(st.reassess, 'reassessments due within 30 days', st.reassess ? 'amber' : '', 'reassess') + stat(st.supervised, 'people on supervised work or not yet competent', st.supervised ? 'rust' : '', 'supervised') + '</div>' +
+      '<p class="muted-italic" style="font-size:11px;margin:0 0 10px;">These count requirements (a person and a skill), not people, except the last tile. “Trained” and “competent” are separate: attending a session never counts as competence.</p>' : '<p class="muted-italic">No requirements apply to anyone yet. Set which departments or job titles need each skill, or assign training directly.</p>') +
+      '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + filters + '</div><div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + sel + '</div>' +
+      (list.length ? list.map(rowCard).join('') : '<p class="muted-italic">Nothing in this view.</p>');
+  }
+  function peopleView(){
+    var q = T.q.trim().toLowerCase();
+    var list = T.people.filter(function(p){ return (T.showInactive || p.status === 'active') && (!q || (p.full_name + ' ' + (p.job_title || '') + ' ' + (p.department || '')).toLowerCase().indexOf(q) !== -1); });
+    var h = '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;"><input data-tp="search" placeholder="Search name, role or department" value="' + e(T.q) + '" style="font-size:12px;max-width:230px;" />' + bt('inactive', {}, T.showInactive ? 'Hide inactive' : 'Show inactive') + (isQm() ? bt('padd', {}, '+ Add person', true) + bt('psync', {}, 'Add missing logins') : '') + '</div>';
+    if(!list.length) return h + '<p class="muted-italic">No people yet.' + (isQm() ? ' Use “Add person”, or “Add missing logins” to bring in everyone who has a login.' : '') + '</p>';
+    return h + list.map(function(p){
+      var op = T.openKey === 'p' + p.id, rs = rows().filter(function(r){ return r.p.id === p.id; }), open = rs.filter(function(r){ return ['none','open','overdue','refresher'].indexOf(r.tr.k) !== -1; }).length;
+      var det = '';
+      if(op){
+        var ev = T.evidence.filter(function(x){ return x.person_id === p.id; });
+        det = '<div style="border-top:1px solid var(--line2);padding:12px 16px;font-size:12.5px;"><div>' + e(lbl(EMP, p.employment_type)) + (p.employee_no ? ' · No. ' + e(p.employee_no) : '') + (p.site ? ' · ' + e(p.site) : '') + (p.start_date ? ' · started ' + e(p.start_date) : '') + (p.end_date ? ' · ends ' + e(p.end_date) : '') + (p.manager_id ? ' · manager ' + e(pName(p.manager_id)) : '') + (p.user_id ? ' · has a login' : ' · no login') + '</div>' +
+          '<div style="margin-top:8px;font-weight:700;">Files</div>' + (ev.length ? ev.map(function(x){ return '<div>' + bt('evdl', { id:x.id }, '⬇ ' + x.file_name) + ' <span class="muted-italic" style="font-size:11px;">' + e(lbl(EV_CAT, x.category)) + ' · ' + e(day(x.uploaded_at)) + '</span></div>'; }).join('') : '<div class="muted-italic">None.</div>') +
+          '<div class="flex-wrap" style="margin-top:8px;gap:6px;">' + bt('passport', { id:p.id }, 'Training passport') + (canWork() ? bt('attach', { id:p.id }, 'Attach file') + bt('assign', { p:p.id }, 'Assign training') : '') + (isQm() ? bt('pedit', { id:p.id }, 'Edit') : '') + '</div></div>';
+      }
+      return '<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-tp="toggle" data-k="p' + e(p.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (op ? '▾' : '›') + '</span><div style="min-width:0;"><div class="audit-title">' + e(p.full_name) + '</div><div class="audit-sub">' + e(p.job_title || '—') + ' · ' + e(p.department || '—') + '</div></div></div><div class="flex-wrap">' + (p.status === 'inactive' ? tag('neutral', 'Inactive') : '') + tag('neutral', lbl(EMP, p.employment_type)) + (open ? tag('amber', open + ' requirement(s) outstanding') : '') + '</div></button>' + det + '</div>';
+    }).join('');
+  }
+  function skillsView(){
+    var h = '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + (isQm() ? bt('sadd', {}, '+ Add skill / requirement', true) : '') + '</div>';
+    if(!T.skills.length) return h + '<p class="muted-italic">No skills yet.</p>';
+    return h + T.skills.map(function(s){
+      var op = T.openKey === 's' + s.id, det = '';
+      if(op){
+        det = '<div style="border-top:1px solid var(--line2);padding:12px 16px;font-size:12.5px;"><div>' + e(s.description || 'No description.') + '</div>' +
+          '<div style="margin-top:6px;"><b>Needed by:</b> ' + e(((s.required_departments || []).concat(s.required_job_titles || [])).join(', ') || 'nobody set; assigned individually') + '</div>' +
+          '<div><b>Training:</b> ' + e(lbl(METHOD, s.training_method)) + ' · <b>Owner:</b> ' + e(userName(s.owner_id)) + ' · <b>Refresher:</b> ' + (s.refresher_months ? s.refresher_months + ' months' : 'does not expire') + '</div>' +
+          (s.requires_assessment ? '<div><b>Assessment:</b> ' + e(lbl(AMETHOD_SKILL, s.assessment_method)) + '<br><b>Criteria:</b> ' + e(s.acceptance_criteria) + '<br><b>Assessors:</b> ' + ((s.assessor_ids || []).length ? e(s.assessor_ids.map(userName).join(', ')) : 'any Admin, Quality Manager, Approver or Department Manager') + '</div>' : '<div>No signed competence decision required.</div>') +
+          '<div class="flex-wrap" style="margin-top:8px;gap:6px;">' + (canWork() ? bt('bulk', { id:s.id }, 'Assign to several people') + bt('session', { s:s.id }, 'Record a session') : '') + (isQm() ? bt('sedit', { id:s.id }, 'Edit') : '') + '</div></div>';
+      }
+      return '<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-tp="toggle" data-k="s' + e(s.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (op ? '▾' : '›') + '</span><div style="min-width:0;"><div class="audit-title">' + e(s.code) + ' · ' + e(s.title) + '</div><div class="audit-sub">' + e(s.category || '—') + ' · ' + e(lbl(METHOD, s.training_method)) + '</div></div></div><div class="flex-wrap">' + (s.status === 'retired' ? tag('neutral', 'Retired') : '') + (s.requires_assessment ? tag('navy', 'Assessed') : tag('neutral', 'Attendance only')) + tag(s.risk === 'high' ? 'rust' : s.risk === 'low' ? 'neutral' : 'amber', lbl(RISK, s.risk) + ' risk') + '</div></button>' + det + '</div>';
+    }).join('');
+  }
+  function sessionsView(){
+    var h = '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + (canWork() ? bt('session', {}, '+ Record a session', true) : '') + '</div>';
+    if(!T.sessions.length) return h + '<p class="muted-italic">No sessions recorded yet.</p>';
+    return h + T.sessions.map(function(se){
+      var att = T.attendance.filter(function(a){ return a.session_id === se.id; }), op = T.openKey === 'x' + se.id, s = se.skill_id ? sById(se.skill_id) : null, det = '';
+      if(op){
+        var ev = T.evidence.filter(function(x){ return x.session_id === se.id; });
+        det = '<div style="border-top:1px solid var(--line2);padding:12px 16px;font-size:12.5px;"><div>' + e(lbl(METHOD, se.method)) + ' · ' + e(se.trainer_name) + (se.duration_minutes ? ' · ' + e(se.duration_minutes) + ' min' : '') + (se.location ? ' · ' + e(se.location) : '') + ' · ' + e(se.language || '') + '</div>' + (se.materials ? '<div>Materials: ' + e(se.materials) + '</div>' : '') +
+          '<div style="margin-top:6px;font-weight:700;">Attendance</div>' + att.map(function(a){ return '<div>' + (a.attended ? '✔ ' : '✘ ') + e(pName(a.person_id)) + '</div>'; }).join('') +
+          (ev.length ? '<div style="margin-top:6px;font-weight:700;">Files</div>' + ev.map(function(x){ return '<div>' + bt('evdl', { id:x.id }, '⬇ ' + x.file_name) + '</div>'; }).join('') : '') + '</div>';
+      }
+      return '<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-tp="toggle" data-k="x' + e(se.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (op ? '▾' : '›') + '</span><div style="min-width:0;"><div class="audit-title">' + e(se.topic) + '</div><div class="audit-sub">' + e(day(se.session_date)) + ' · ' + e(se.trainer_name) + (s ? ' · ' + e(s.title) : '') + '</div></div></div><div class="flex-wrap">' + tag('neutral', att.filter(function(a){ return a.attended; }).length + ' attended') + '</div></button>' + det + '</div>';
+    }).join('');
+  }
+  function competenceView(){
+    var latest = {};
+    T.assessments.filter(function(a){ return a.status === 'active'; }).forEach(function(a){ var k = a.person_id + '|' + a.skill_id; if(!latest[k] || a.assessed_on > latest[k].assessed_on || (a.assessed_on === latest[k].assessed_on && a.attempt_no > latest[k].attempt_no)) latest[k] = a; });
+    var list = Object.keys(latest).map(function(k){ return latest[k]; });
+    var rank = { not_yet_competent:0, supervised_only:1, competent:2 };
+    list.sort(function(a, b){ var ea = a.reassessment_due || '9999', eb = b.reassessment_due || '9999'; return ea < eb ? -1 : ea > eb ? 1 : 0; });
+    var h = '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + (T.assessments.length ? bt('regcsv', {}, '⬇ Register CSV') : '') + '</div><p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Latest signed decision for each person and skill, soonest reassessment first. Decisions cannot be edited; they are revoked and replaced. Assess people from the Training matrix.</p>';
+    if(!list.length) return h + '<p class="muted-italic">No competence decisions recorded yet.</p>';
+    return h + list.map(function(a){
+      var s = sById(a.skill_id), co = s ? competenceState(s, a, 'trained') : { label:lbl(RESULT, a.result), tone:'neutral' };
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;"><div><div class="audit-title">' + e(pName(a.person_id)) + ' <span style="color:var(--muted);font-weight:400;font-size:11px;">· ' + e(s ? s.title : '') + '</span></div><div class="audit-sub">Assessed ' + e(a.assessed_on) + ' by ' + e(userName(a.assessor_id)) + ' · ' + e(lbl(AMETHOD, a.method)) + ' · attempt ' + e(a.attempt_no) + '</div>' + (a.restrictions ? '<div style="font-size:12px;color:var(--rust);">Restriction: ' + e(a.restrictions) + '</div>' : '') + '</div><div>' + tag(co.tone, co.label) + '</div></div></div>';
+    }).join('');
+  }
+  function myView(){
+    var mine = rows();
+    if(!mine.length) return '<p class="muted-italic">You have no training assigned yet.</p>';
+    return mine.map(function(r){ return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div class="audit-title">' + e(r.s.title) + '</div><div class="flex-wrap" style="margin-top:4px;">' + tag(r.tr.tone, r.tr.label) + tag(r.co.tone, r.co.label) + '</div>' + (r.la && r.la.restrictions ? '<div style="font-size:12px;color:var(--rust);margin-top:4px;">Restriction: ' + e(r.la.restrictions) + '</div>' : '') + '</div>'; }).join('');
+  }
+  window.renderTrainingModule = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use training records.</p></div>';
+      if(window.__tpView){ T.view = window.__tpView; window.__tpView = null; T.openKey = null; }
+      if(!T.loaded && !T.loading && !T.tried) setTimeout(load, 0);
+      var head = header('🎓 Training & Competence');
+      var intro = '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">🔒 Your organisation only. Training attendance and signed competence decisions are separate records. Decisions are signed by the assessor’s own account and are never edited, only revoked and replaced. Every change is written to a history that cannot be altered. Files are private and fingerprinted.</p>';
+      var err = T.error ? '<p style="color:var(--rust);font-size:12px;">' + e(T.error) + '</p>' : '';
+      if(!canSee()) return head + err + '<h3 class="serif" style="font-size:15px;">My training</h3>' + (T.loading && !T.loaded ? '<p class="muted-italic">Loading…</p>' : myView());
+      var body = T.loading && !T.loaded ? '<p class="muted-italic">Loading…</p>' : T.view === 'people' ? peopleView() : T.view === 'skills' ? skillsView() : T.view === 'sessions' ? sessionsView() : T.view === 'competence' ? competenceView() : matrixView();
+      var extra = T.view === 'matrix' && T.loaded ? '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + (canWork() ? bt('assign', {}, '+ Assign training', true) + bt('session', {}, 'Record a session') : '') + bt('mcsv', {}, '⬇ Matrix CSV') + '</div>' : '';
+      return head + intro + err + tabs() + extra + body;
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Training page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.trainingEnsureLoaded = function(){ if(!T.loaded && !T.loading && !T.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.trainingPeopleNames = function(){ return T.people.filter(function(p){ return p.status === 'active'; }).map(function(p){ return p.full_name; }); };
+  window.trainingFindPerson = function(name){ var n = String(name || '').trim().toLowerCase(); return T.people.filter(function(p){ return p.status === 'active' && String(p.full_name).trim().toLowerCase() === n; })[0] || null; };
+  window.trainingDirectoryLoaded = function(){ return T.loaded; };
+  window.__trainingStats = function(){
+    if(!T.loaded && !T.loading && !T.tried && typeof cloudReady === 'function' && cloudReady() && canSee()) setTimeout(load, 0);
+    if(!T.loaded) return null; var all = rows(); if(!all.length) return null; return stats(all);
+  };
+
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-tp-modal]');
+    if(m){ var k0 = m.getAttribute('data-tp-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-tp]'); if(!el) return;
+    var a = el.getAttribute('data-tp'); if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    ev.preventDefault(); ev.stopPropagation();
+    var id = el.getAttribute('data-id');
+    if(a === 'reload'){ T.loading = false; T.tried = false; load(); }
+    else if(a === 'view'){ T.view = el.getAttribute('data-v'); T.openKey = null; rerender(); }
+    else if(a === 'filter'){ T.filter = el.getAttribute('data-f'); if(T.view !== 'matrix') T.view = 'matrix'; rerender(); }
+    else if(a === 'toggle'){ var k = el.getAttribute('data-k'); T.openKey = T.openKey === k ? null : k; rerender(); }
+    else if(a === 'inactive'){ T.showInactive = !T.showInactive; rerender(); }
+    else if(a === 'padd') actPerson(); else if(a === 'psync') direct('people_sync_from_profiles', {}, 'Logins added to the directory.');
+    else if(a === 'pedit'){ var p1 = pById(id); if(p1) actPerson(p1); }
+    else if(a === 'sadd') actSkill(); else if(a === 'sedit'){ var s1 = sById(id); if(s1) actSkill(s1); }
+    else if(a === 'assign') actAssign(el.getAttribute('data-p'), el.getAttribute('data-s'));
+    else if(a === 'bulk'){ var s2 = sById(id); if(s2) actBulk(s2); }
+    else if(a === 'session') actSession({ pid:el.getAttribute('data-p'), sid:el.getAttribute('data-s'), topic:(sById(el.getAttribute('data-s')) || {}).title, method:(sById(el.getAttribute('data-s')) || {}).training_method });
+    else if(a === 'assess'){ var r1 = rows().filter(function(r){ return r.key === el.getAttribute('data-k'); })[0]; if(r1) actAssess(r1); }
+    else if(a === 'close'){ var as1 = T.assignments.filter(function(x){ return x.id === id; })[0]; if(as1) actClose(as1); }
+    else if(a === 'revoke'){ var c1 = T.assessments.filter(function(x){ return x.id === id; })[0]; if(c1) actRevoke(c1); }
+    else if(a === 'attach'){ var p2 = pById(id); if(p2) actAttach(p2); }
+    else if(a === 'passport'){ var p3 = pById(id); if(p3) showPassport(p3); }
+    else if(a === 'evdl') downloadEvidence(id);
+    else if(a === 'mcsv') matrixCsv(); else if(a === 'regcsv') registerCsv();
+  }, true);
+  document.addEventListener('change', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return; var a = t.getAttribute('data-tp'); if(!a) return;
+    if(a === 'dept'){ T.dept = t.value; rerender(); } else if(a === 'skillsel'){ T.skillId = t.value; rerender(); }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || t.getAttribute('data-tp') !== 'search') return;
+    T.q = t.value; var pos = t.selectionStart; rerender();
+    var again = document.querySelector('[data-tp="search"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} }
+  }, true);
+  window.trainingReset = function(){ T.people = []; T.skills = []; T.assignments = []; T.sessions = []; T.attendance = []; T.assessments = []; T.evidence = []; T.profiles = []; T.loaded = false; T.loading = false; T.tried = false; T.error = ''; T.openKey = null; modal = null; mount(); };
 })();
 </script>
 
