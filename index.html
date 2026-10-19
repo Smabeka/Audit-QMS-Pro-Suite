@@ -21351,7 +21351,7 @@ function showUpdateBanner(){
   /* ----- forms ----- */
   function activePeople(){ return T.people.filter(function(p){ return p.status === 'active'; }); }
   function personOptions(){ return choose(activePeople().map(function(p){ return [p.id, p.full_name + (p.job_title ? ' · ' + p.job_title : '')]; })); }
-  function skillOptions(){ return choose(T.skills.filter(function(s){ return s.status === 'active'; }).map(function(s){ return [s.id, s.code + ' — ' + s.title]; })); }
+  function skillOptions(){ var l = T.skills.filter(function(s){ return s.status === 'active'; }).map(function(s){ return [s.id, s.code + ' — ' + s.title]; }); return l.length ? choose(l) : [['', '— no skills yet: add one under Skills & requirements —']]; }
   function assessorProfiles(){ return T.profiles.filter(function(p){ return ['admin','quality manager','approver','department manager','auditor'].indexOf(String(p.role || '').toLowerCase()) !== -1 && String(p.status || 'Active').toLowerCase() === 'active'; }); }
   function deptList(){ var set = {}; (typeof DEPARTMENTS !== 'undefined' ? DEPARTMENTS : []).forEach(function(d){ set[d] = 1; }); T.people.forEach(function(p){ if(p.department) set[p.department] = 1; }); return Object.keys(set).sort(); }
 
