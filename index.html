@@ -16861,6 +16861,7 @@ function showUpdateBanner(){
     if(cd.loading) return;
     if(typeof supabaseClient === 'undefined' || !supabaseClient) return;
     cd.loading = true;
+    try{ if(window.__tiReset) window.__tiReset(); }catch(_){}
     try{
       var sel = function(t){ return supabaseClient.from(t).select('*'); };
       var res = await Promise.all([
@@ -17199,7 +17200,7 @@ function showUpdateBanner(){
       (v.effective_date ? ' · effective ' + e(v.effective_date) : '') + '</div>' +
       signoff + '</div>' +
       '<div class="flex-wrap" style="gap:6px;">' + buttons.join('') + '</div></div>' +
-      trail + dist + '</div>';
+      trail + dist + (window.__trainingImpactPanel ? window.__trainingImpactPanel(v, f) : '') + '</div>';
   }
 
   function externalOf(familyId){
@@ -21222,6 +21223,7 @@ function showUpdateBanner(){
   }
   function matchFilter(r){
     var f = T.filter;
+    if(f === 'revgap') return r.list.some(function(a){ return isOpenA(a) && a.document_version_id; });
     if(f === 'outstanding') return ['none','open','overdue','refresher'].indexOf(r.tr.k) !== -1;
     if(f === 'overdue') return r.tr.k === 'overdue';
     if(f === 'unassigned') return r.tr.k === 'none';
@@ -21249,6 +21251,7 @@ function showUpdateBanner(){
       overdue:cnt(function(r){ return r.tr.k === 'overdue'; }),
       pending:cnt(function(r){ return r.co.k === 'pending'; }),
       reassess:cnt(function(r){ return r.co.k === 'reassess_due' || r.co.k === 'reassess_overdue'; }),
+      revgap:cnt(function(r){ return r.list.some(function(a){ return isOpenA(a) && a.document_version_id; }); }),
       supervised:Object.keys(persons).length };
   }
 
@@ -21552,12 +21555,12 @@ function showUpdateBanner(){
   function matrixView(){
     var all = rows(), st = stats(all), list = filteredRows();
     if(!T.skills.length) return '<div class="card p4"><p class="muted-italic" style="margin:0;">No skills or requirements yet. ' + (isQm() ? 'Open “Skills & requirements” and add the training your roles need.' : 'Ask an Admin or Quality Manager to set up the skills.') + '</p></div>';
-    var filters = [['all','All'],['outstanding','Training outstanding'],['overdue','Overdue'],['unassigned','Not assigned'],['pending','Assessment pending'],['reassess','Reassessment due'],['supervised','Supervised / not yet competent'],['complete','Complete']].map(function(x){ return '<button class="status-pill ' + (T.filter === x[0] ? 'active' : '') + '" data-tp="filter" data-f="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+    var filters = [['all','All'],['outstanding','Training outstanding'],['overdue','Overdue'],['unassigned','Not assigned'],['pending','Assessment pending'],['reassess','Reassessment due'],['supervised','Supervised / not yet competent'],['revgap','From document revisions'],['complete','Complete']].map(function(x){ return '<button class="status-pill ' + (T.filter === x[0] ? 'active' : '') + '" data-tp="filter" data-f="' + x[0] + '">' + x[1] + '</button>'; }).join('');
     var depts = deptList();
     var sel = '<select data-tp="dept" style="font-size:12px;"><option value="">All departments</option>' + depts.map(function(d){ return '<option' + (T.dept === d ? ' selected' : '') + '>' + e(d) + '</option>'; }).join('') + '</select> ' +
       '<select data-tp="skillsel" style="font-size:12px;"><option value="">All skills</option>' + T.skills.filter(function(s){ return s.status === 'active'; }).map(function(s){ return '<option value="' + e(s.id) + '"' + (T.skillId === s.id ? ' selected' : '') + '>' + e(s.title) + '</option>'; }).join('') + '</select> ' +
       '<input data-tp="search" placeholder="Search name, role or skill" value="' + e(T.q) + '" style="font-size:12px;max-width:190px;" />';
-    return (all.length ? '<div class="flex-wrap" style="gap:8px;margin-bottom:6px;">' + stat(st.outstanding, 'requirements with training outstanding', st.outstanding ? 'amber' : '', 'outstanding') + stat(st.unassigned, 'required, not yet assigned', st.unassigned ? 'rust' : '', 'unassigned') + stat(st.overdue, 'assignments overdue', st.overdue ? 'rust' : '', 'overdue') + stat(st.pending, 'trained, awaiting competence assessment', st.pending ? 'amber' : '', 'pending') + stat(st.reassess, 'reassessments due within 30 days', st.reassess ? 'amber' : '', 'reassess') + stat(st.supervised, 'people on supervised work or not yet competent', st.supervised ? 'rust' : '', 'supervised') + '</div>' +
+    return (all.length ? '<div class="flex-wrap" style="gap:8px;margin-bottom:6px;">' + stat(st.outstanding, 'requirements with training outstanding', st.outstanding ? 'amber' : '', 'outstanding') + stat(st.unassigned, 'required, not yet assigned', st.unassigned ? 'rust' : '', 'unassigned') + stat(st.overdue, 'assignments overdue', st.overdue ? 'rust' : '', 'overdue') + stat(st.pending, 'trained, awaiting competence assessment', st.pending ? 'amber' : '', 'pending') + stat(st.reassess, 'reassessments due within 30 days', st.reassess ? 'amber' : '', 'reassess') + stat(st.supervised, 'people on supervised work or not yet competent', st.supervised ? 'rust' : '', 'supervised') + stat(st.revgap, 'training gaps caused by document revisions', st.revgap ? 'amber' : '', 'revgap') + '</div>' +
       '<p class="muted-italic" style="font-size:11px;margin:0 0 10px;">These count requirements (a person and a skill), not people, except the last tile. “Trained” and “competent” are separate: attending a session never counts as competence.</p>' : '<p class="muted-italic">No requirements apply to anyone yet. Set which departments or job titles need each skill, or assign training directly.</p>') +
       '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + filters + '</div><div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + sel + '</div>' +
       (list.length ? list.map(rowCard).join('') : '<p class="muted-italic">Nothing in this view.</p>');
@@ -21648,6 +21651,105 @@ function showUpdateBanner(){
     if(!T.loaded && !T.loading && !T.tried && typeof cloudReady === 'function' && cloudReady() && canSee()) setTimeout(load, 0);
     if(!T.loaded) return null; var all = rows(); if(!all.length) return null; return stats(all);
   };
+
+  /* ----- Training impact on document revisions (stage 2) ----- */
+  var TI = { cache:{}, busy:{} };
+  var TI_OPTS = [['no_impact','No training impact: editorial change, or no change to how the work is done'],
+    ['read_acknowledge','Read and acknowledge only'],
+    ['briefing','Briefing or toolbox talk (trained, no signed assessment)'],
+    ['training_assessment','Training with a signed competence assessment'],
+    ['training_before_effective','Training AND competence required BEFORE the revision takes effect']];
+  var TI_SHORT = { no_impact:'No training impact', read_acknowledge:'Read and acknowledge', briefing:'Briefing', training_assessment:'Training with signed assessment', training_before_effective:'Training before effective' };
+  function tiLoad(vid){
+    if(TI.cache[vid] || TI.busy[vid]) return;
+    if(typeof supabaseClient === 'undefined' || !supabaseClient) return;
+    TI.busy[vid] = 1;
+    supabaseClient.rpc('training_impact_readiness', { p_version:vid }).then(function(r){
+      TI.busy[vid] = 0;
+      if(r.error) TI.cache[vid] = { error: /does not exist|schema cache|could not find/i.test(r.error.message || '') ? 'notinstalled' : r.error.message };
+      else TI.cache[vid] = r.data || {};
+      rerender();
+    }, function(err){ TI.busy[vid] = 0; TI.cache[vid] = { error:String((err && err.message) || err) }; rerender(); });
+  }
+  async function tiRefresh(vid){ delete TI.cache[vid]; await refresh(); rerender(); }
+  window.__tiReset = function(){ TI.cache = {}; TI.busy = {}; };
+  function tiSkillNames(ids){ return (ids || []).map(function(id){ var s = sById(id); return s ? s.code + ' ' + s.title : '(skill)'; }).join(', '); }
+  window.__trainingImpactPanel = function(v, f){
+    try{
+      if(!canSee() || !v || v.state === 'obsolete') return '';
+      if(!T.loaded && !T.loading && !T.tried) setTimeout(load, 0);
+      var box = 'margin-top:8px;border:1px solid var(--line2,#ddd);border-radius:6px;padding:8px 10px;font-size:12px;';
+      var c = TI.cache[v.id];
+      if(!c){ tiLoad(v.id); return '<div class="muted-italic" style="font-size:11px;margin-top:6px;">Loading training impact…</div>'; }
+      if(c.error === 'notinstalled') return '<div class="muted-italic" style="font-size:11px;margin-top:6px;">Training impact is not installed yet. Run people_stage2_run_this.sql in Supabase.</div>';
+      if(c.error) return '<div style="color:var(--rust);font-size:11.5px;margin-top:6px;">Training impact: ' + e(c.error) + '</div>';
+      var d = c.decision, working = ['draft','in_review','approved'].indexOf(v.state) !== -1;
+      if(!d && !working) return '<div class="muted-italic" style="font-size:11px;margin-top:6px;">Training impact: no decision recorded (published before the training impact step existed).</div>';
+      var a = c.assignments || {}, bl = c.blockers || [], qm = isQm();
+      var head = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:4px;"><strong>Training impact</strong> ' +
+        (d ? tag('navy', TI_SHORT[d.decision] || d.decision) : tag('rust', 'Not decided')) + ' ' +
+        (working ? (c.can_publish ? tag('amber', 'Training rules met for publishing') : tag('rust', 'Blocks publishing')) : '') + '</div>';
+      var body = '';
+      if(d){
+        body += '<div>' + e(d.rationale) + '</div><div class="muted-italic" style="font-size:11px;">Decided by ' + e(userName(d.decided_by)) + ' · ' + e(day(d.decided_at)) +
+          (d.skill_ids && d.skill_ids.length ? ' · skills: ' + e(tiSkillNames(d.skill_ids)) : '') + (d.due_date ? ' · due ' + e(d.due_date) : '') + ' · ' + e(d.affected_count) + ' affected when decided</div>';
+        if(['briefing','training_assessment','training_before_effective'].indexOf(d.decision) !== -1)
+          body += '<div style="margin-top:4px;">Assignments: <strong>' + e(a.total || 0) + '</strong> · trained ' + e(a.completed || 0) + ' · open ' + e(a.open || 0) +
+            (a.overdue ? ' · <span style="color:var(--rust);font-weight:600;">overdue ' + e(a.overdue) + '</span>' : '') +
+            ' · awaiting a Competent result ' + e(a.assessment_pending || 0) + (a.waived ? ' · waived ' + e(a.waived) : '') + ' · people affected now ' + e(c.affected_now || 0) + '</div>';
+      }
+      if(working && bl.length) body += '<ul style="margin:6px 0 0 16px;padding:0;color:var(--rust);">' + bl.map(function(x){ return '<li>' + e(x) + '</li>'; }).join('') + '</ul>';
+      var btns = '';
+      if(qm && working && (!d || !a.total)) btns += bt('x', {}, d ? 'Change decision' : 'Decide training impact', !d).replace('data-tp="x"', 'data-ti="decide" data-v="' + e(v.id) + '" data-f="' + e(v.document_family_id) + '"');
+      if(['admin','quality manager','approver'].indexOf(myRole()) !== -1 && working) btns += bt('x', {}, 'Preview affected people').replace('data-tp="x"', 'data-ti="preview" data-v="' + e(v.id) + '"');
+      if(qm && d && ['briefing','training_assessment','training_before_effective'].indexOf(d.decision) !== -1 && v.state !== 'draft') btns += bt('x', {}, a.total ? 'Generate for new people' : 'Generate assignments', !a.total).replace('data-tp="x"', 'data-ti="generate" data-v="' + e(v.id) + '"');
+      if(d && a.total) btns += '<span class="muted-italic" style="font-size:11px;align-self:center;">Progress per person: People Compliance → Training Matrix (filter “From document revisions”).</span>';
+      return '<div style="' + box + '">' + head + body + (btns ? '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + btns + '</div>' : '') + '</div>';
+    }catch(err){ return ''; }
+  };
+  function tiDecide(vid, fid){
+    var fam = fid; var sk = T.skills.filter(function(s){ return s.status === 'active'; });
+    var items = sk.map(function(s){ return [s.id, s.code + ' — ' + s.title + (s.requires_assessment ? ' (signed assessment required)' : ' (no assessment)'), s.document_family_id === fam]; });
+    var prev = (TI.cache[vid] || {}).decision || {};
+    openModal({ title:'Training impact decision', submitText:'Sign decision', successText:'Training impact decision recorded.',
+      help:'Decide what training this revision needs. The author of the revision cannot decide its own training impact. The decision is signed and cannot be edited; a change is recorded as a new decision. The system enforces the rules that follow from your choice but cannot judge whether the choice is right.',
+      fields:[ { id:'decision', label:'What training does this revision need?', type:'select', options:choose(TI_OPTS), value:prev.decision || '', required:true },
+        { id:'why', label:'Why? What changed in how work is done, and why is this level right? (at least 20 characters)', type:'textarea', rows:3, value:prev.rationale || '', required:true },
+        { type:'note', label:'Briefing and training options: choose the skills below and a due date. Briefing needs skills WITHOUT an assessment; training with assessment needs skills that REQUIRE one. Employees are found from this revision’s distribution list and from the skills’ required departments and job titles. “Before effective” blocks publishing until everyone is trained and signed Competent.' },
+        { id:'skills', label:'Skills (briefing and training options only)', type:'multi', items:items },
+        { id:'due', label:'Training due date (briefing and training options only)', type:'date', value:plusDays(14) } ],
+      prepare:async function(){ await signed('Recording the training impact decision is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'training_impact_decide', args:{ p_version:vid, p_decision:v.decision, p_rationale:v.why, p_skills:v.skills || [], p_due:nul(v.due) } }; },
+      after:async function(){ delete TI.cache[vid]; } });
+  }
+  async function tiPreview(vid){
+    var c = TI.cache[vid] || {}, d = c.decision, sk = d ? d.skill_ids : [];
+    var r = await supabaseClient.rpc('training_impact_preview', { p_version:vid, p_skills:sk && sk.length ? sk : [] });
+    if(r.error){ toast(r.error.message, 'error'); return; }
+    var list = r.data || [];
+    openModal({ title:'People affected by this revision', submitText:'Close', successText:'Closed.',
+      help:'Taken from the revision’s distribution list' + (sk && sk.length ? ' and the chosen skills’ required departments and job titles' : ' (choose skills in the decision to include skill requirements)') + '. People without an active entry in the Employee Directory are not listed.',
+      fields:[ { type:'note', label:list.length ? list.length + ' people:\n' + list.map(function(p){ return '• ' + p.full_name + (p.department ? ' · ' + p.department : '') + (p.job_title ? ' · ' + p.job_title : '') + ' (' + p.via + ')'; }).join('\n') : 'Nobody is affected yet. Add a distribution list to the revision, or set required departments and job titles on the skill.' } ] });
+  }
+  async function tiGenerate(vid){
+    try{
+      await signed('Generating training assignments is recorded against your name. Enter your password to confirm it is you.');
+      var r = await supabaseClient.rpc('training_impact_generate', { p_version:vid });
+      if(r.error) throw new Error(r.error.message);
+      var x = r.data || {};
+      toast('Created ' + (x.created || 0) + ' assignment(s)' + (x.already_existing ? '; ' + x.already_existing + ' already existed' : '') + '.');
+      await tiRefresh(vid);
+    }catch(err){ toast((err && err.message) || String(err), 'error'); }
+  }
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var el = t.closest('[data-ti]'); if(!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    var a = el.getAttribute('data-ti'), vid = el.getAttribute('data-v');
+    if(a === 'decide') tiDecide(vid, el.getAttribute('data-f'));
+    else if(a === 'preview') tiPreview(vid);
+    else if(a === 'generate') tiGenerate(vid);
+  }, true);
 
   document.addEventListener('click', function(ev){
     var t = ev.target; if(!t || !t.closest) return;
