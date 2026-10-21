@@ -5004,6 +5004,7 @@ const canResolveAppeal =
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:8px 0 4px;">Actions</div>
       ${actionRows}
+      ${window.__trainingLinkHtml ? window.__trainingLinkHtml('capa', r.reference_number, r.title, isClosed) : ''}
       ${(isClosed || !capaRoleIn(CAPA_ROLES_CREATE)) ? '' : `<button class="btn btn-ghost" style="font-size:11px;margin-top:6px;" data-action="add-formal-action" data-id="${esc(r.id)}">+ Add Action</button>`}
 
       <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:12px 0 4px;">Effectiveness</div>
@@ -9458,9 +9459,9 @@ function renderDashboard(){
   const totalDocs = _cdStats ? _cdStats.total : state.documents.length;
   const docsInGoodStanding = _cdStats ? _cdStats.good : state.documents.filter(d=>(d.status==="Approved"||d.status==="Published") && documentReviewStatus(d)!=="Overdue").length;
   const documentScore = totalDocs>0 ? Math.round((docsInGoodStanding/totalDocs)*1000)/10 : null;
-  const totalTraining = state.trainingRecords.length;
-  const trainingInGoodStanding = state.trainingRecords.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
-  const trainingScore = totalTraining>0 ? Math.round((trainingInGoodStanding/totalTraining)*1000)/10 : null;
+  /* Training score: requirements (person x skill) that are trained AND, where required, signed competent. Needs at least 5 requirements, otherwise "no data". */
+  const _trn = (typeof window.__trainingStats === 'function') ? window.__trainingStats() : null;
+  const trainingScore = (_trn && _trn.total>=5) ? Math.round((_trn.complete/_trn.total)*1000)/10 : null;
   const activeHaccp = state.haccpPoints.filter(p=>p.status!=="Inactive");
   const haccpScore = activeHaccp.length>0 ? Math.round((activeHaccp.filter(p=>haccpStatus(p)==="Compliant").length/activeHaccp.length)*1000)/10 : null;
   const recallScore = window.recallReadiness ? window.recallReadiness() : null;
@@ -9498,7 +9499,6 @@ function renderDashboard(){
     return days>=0 && days<=7;
   });
   const haccpVerificationOverdue = state.verificationLogs.filter(v=>v.activityType==="HACCP Plan Review" && v.nextDueDate && daysUntil(v.nextDueDate)<0);
-  const trainingExpiring = state.trainingRecords.filter(t=>trainingStatus(t)==="Expiring Soon");
   const _ncr = (typeof window.__ncrStats === 'function') ? window.__ncrStats() : null;
   const alerts = [];
   if(_ncr && _ncr.critical) alerts.push(`🚩 ${_ncr.critical} Critical NCR${_ncr.critical===1?'':'s'} still active`);
@@ -9506,7 +9506,10 @@ function renderDashboard(){
   if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
   if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
   if(haccpVerificationOverdue.length) alerts.push(`⚠️ HACCP verification overdue (${haccpVerificationOverdue.length})`);
-  if(trainingExpiring.length) alerts.push(`⚠️ ${trainingExpiring.length} training certificate${trainingExpiring.length===1?'':'s'} expiring soon`);
+  if(_trn && _trn.overdue) alerts.push(`⚠️ ${_trn.overdue} training requirement${_trn.overdue===1?'':'s'} overdue`);
+  if(_trn && _trn.revgap) alerts.push(`⚠️ ${_trn.revgap} training gap${_trn.revgap===1?'':'s'} from document revisions`);
+  if(_trn && _trn.reassess) alerts.push(`⚠️ ${_trn.reassess} competence reassessment${_trn.reassess===1?'':'s'} due within 30 days`);
+  if(_trn && _trn.dueSoon) alerts.push(`⚠️ ${_trn.dueSoon} training assignment${_trn.dueSoon===1?'':'s'} due within 7 days`);
 
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
@@ -9587,6 +9590,7 @@ function renderDashboard(){
   const priorities = [];
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
   highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk", urgency:r.riskLevel==="Critical"?1000:500}));
+  if(_trn && _trn.overdue) priorities.push({dot:"🔴", text:`Clear ${_trn.overdue} overdue training requirement${_trn.overdue===1?'':'s'}`, navId:"nav-people-training", urgency:1});
   if(_ncr) _ncr.overdue.forEach(n=>priorities.push({dot:"🔴", text:`Resolve overdue NCR: ${n.reference_number} — ${n.title}`, navId:"nav-ncr", urgency:1}));
   haccpVerificationOverdue.forEach(v=>priorities.push({dot:"🔴", text:`Verify HACCP: ${v.activityType||'Verification overdue'}`, navId:"nav-fs-verification", urgency:v.nextDueDate?-daysUntil(v.nextDueDate):0}));
   audits.filter(a=>a.status==="In Progress").forEach(a=>priorities.push({dot:"🟡", text:`Complete audit: ${a.title}`, jumpAudit:a.id, urgency:a.dueDate?-daysUntil(a.dueDate):0}));
@@ -10050,19 +10054,20 @@ function renderMgmtReviewPerformance(){
   const processMetrics = d.metricsWithValues.filter(x=>(x.m.category||"")==="Process");
   const processOnTarget = processMetrics.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
   const processPct = processMetrics.length ? Math.round((processOnTarget/processMetrics.length)*100) : null;
-  const totalTrainingR = state.trainingRecords.length;
-  const trainingGoodR = state.trainingRecords.filter(t=>{ const s=trainingStatus(t); return s==="Valid"||s==="No Expiry"; }).length;
-  const trainingPctR = totalTrainingR ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
+  const _trnR = (typeof window.__trainingStats === 'function') ? window.__trainingStats() : null;
+  const totalTrainingR = _trnR ? _trnR.total : 0;
+  const trainingGoodR = _trnR ? _trnR.complete : 0;
+  const trainingPctR = totalTrainingR>=5 ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
   const calibTotalR = state.calibrationRecords.length;
   const calibOverdueR = state.calibrationRecords.filter(c=>c.nextDueDate && daysUntil(c.nextDueDate)<0).length;
   const employeeNamesR = new Set();
   state.trainingRecords.forEach(r=>{ if(r.employeeName) employeeNamesR.add(r.employeeName.trim().toLowerCase()); });
-  const headcountR = employeeNamesR.size;
+  const headcountR = (window.trainingDirectoryLoaded && window.trainingDirectoryLoaded()) ? window.trainingPeopleNames().length : employeeNamesR.size;
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">🧰 Resource Adequacy</h3>
-      ${mrRow("People — Headcount Tracked", headcountR ? `${headcountR}` : null, "navy", "Unique employees with a competency, medical or training record")}
-      ${mrRow("People — Training / Competence in Good Standing", trainingPctR===null?null:`${trainingPctR}% (${trainingGoodR}/${totalTrainingR})`, trainingPctR===null?null:(trainingPctR>=90?'green':trainingPctR>=70?'amber':'rust'), "From People Compliance")}
+      ${mrRow("People — Headcount Tracked", headcountR ? `${headcountR}` : null, "navy", "Active people in the Employee Directory")}
+      ${mrRow("People — Training / Competence in Good Standing", trainingPctR===null?null:`${trainingPctR}% (${trainingGoodR}/${totalTrainingR} requirements)`, trainingPctR===null?null:(trainingPctR>=90?'green':trainingPctR>=70?'amber':'rust'), "Requirements (person and skill) trained and, where required, signed Competent. Shown once at least 5 requirements exist.")}
       ${mrRow("Infrastructure — Equipment Calibrated", calibTotalR ? `${calibTotalR-calibOverdueR}/${calibTotalR} up to date` : null, calibTotalR?(calibOverdueR>0?'rust':'green'):null, "From Calibration & Equipment register")}
       ${mrRow("Infrastructure — Calibrations Overdue", calibTotalR ? `${calibOverdueR}` : null, calibOverdueR>0?'rust':'green', null)}
       <p class="muted-italic" style="margin-top:10px;font-size:12px;">Reviewed as part of Management Review to confirm people, equipment and infrastructure are adequate to meet quality and food-safety objectives (ISO 9001 §7.1).</p>
@@ -17903,6 +17908,7 @@ function showUpdateBanner(){
       (n.status === 'closed' ? row('Closure', e(n.closure_comment) + '<div class="muted-italic" style="font-size:11px;">' + e(nameOf(n.closed_by)) + ' · ' + e(fmt(n.closed_at)) + '</div>') : '') +
       (n.status === 'cancelled' ? row('Cancelled because', e(n.cancel_reason)) : '') +
       need +
+      (window.__trainingLinkHtml ? window.__trainingLinkHtml('ncr', n.reference_number, n.title, n.status === 'closed' || n.status === 'cancelled') : '') +
       (b.length ? '<div class="flex-wrap" style="margin-top:10px;gap:6px;">' + b.join('') + '</div>' : '') +
       trail + '</div>';
   }
@@ -20156,6 +20162,7 @@ function showUpdateBanner(){
       '<div style="margin-top:10px;"><b style="font-size:12px;">Tasks</b>' + tasksBlock(c) + '</div>' +
       '<div style="margin-top:10px;"><b style="font-size:12px;">Linked records</b>' + linksBlock(c) + '</div>' +
       '<div style="margin-top:10px;"><b style="font-size:12px;">Evidence</b>' + evidenceBlock(c) + '</div>' +
+      (window.__trainingLinkHtml ? window.__trainingLinkHtml('change_control', c.change_number, c.title, ['closed','cancelled','rejected','rolled_back'].indexOf(c.status) !== -1) : '') +
       (b.length ? '<div class="flex-wrap" style="gap:6px;margin-top:10px;">' + b.join('') + '</div>' : '') +
       (ev.length ? '<details style="margin-top:10px;"><summary style="font-size:12px;cursor:pointer;">History (' + ev.length + ')</summary>' + ev.map(function(x){ return '<div style="font-size:11.5px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">' + e(stamp(x.created_at)) + ' · ' + e(x.actor_name || '—') + '</span><br>' + e(eventText(x)) + '</div>'; }).join('') + '</details>' : '') + '</div>';
   }
@@ -20745,6 +20752,7 @@ function showUpdateBanner(){
       section('Evidence files', evidenceBlock(c)) +
       section('Recovery and closure', closureBlock(c, M)) +
       (ncrB ? '<div style="margin-top:10px;">' + ncrB + '</div>' : '') +
+      (window.__trainingLinkHtml ? window.__trainingLinkHtml('recall', c.recall_number, c.title, ['closed','cancelled'].indexOf(c.status) !== -1) : '') +
       (b.length ? '<div class="flex-wrap" style="gap:6px;margin-top:10px;">' + b.join('') + '</div>' : '') +
       (ev.length ? '<details style="margin-top:10px;"><summary style="font-size:12px;cursor:pointer;">History (' + ev.length + ')</summary>' + ev.map(function(x){ return '<div style="font-size:11.5px;padding:4px 0;border-bottom:1px solid var(--line,#eee);"><span class="muted-italic">' + e(stamp(x.created_at)) + ' · ' + e(x.actor_name || '—') + '</span><br>' + e(eventText(x)) + '</div>'; }).join('') + '</details>' : '') + '</div>';
   }
@@ -21251,6 +21259,8 @@ function showUpdateBanner(){
       overdue:cnt(function(r){ return r.tr.k === 'overdue'; }),
       pending:cnt(function(r){ return r.co.k === 'pending'; }),
       reassess:cnt(function(r){ return r.co.k === 'reassess_due' || r.co.k === 'reassess_overdue'; }),
+      complete:cnt(function(r){ return (r.tr.k === 'trained' || r.tr.k === 'waived') && (r.co.k === 'competent' || r.co.k === 'na'); }),
+      dueSoon:cnt(function(r){ var a = r.tr.a; if(!a || !isOpenA(a) || !a.due_date) return false; return a.due_date >= todayStr() && a.due_date <= plusDays(7); }),
       revgap:cnt(function(r){ return r.list.some(function(a){ return isOpenA(a) && a.document_version_id; }); }),
       supervised:Object.keys(persons).length };
   }
@@ -21652,6 +21662,44 @@ function showUpdateBanner(){
     if(!T.loaded) return null; var all = rows(); if(!all.length) return null; return stats(all);
   };
 
+  /* ----- training linked to CAPA, NCR, change control and recalls ----- */
+  var LINK_KIND = { capa:'CAPA', ncr:'NCR', change_control:'Change control', recall:'Recall' };
+  function linkedAssignments(kind, ref){ return T.assignments.filter(function(a){ return a.reason === kind && a.source_ref === ref && a.status !== 'cancelled'; }); }
+  function isCompetentNow(a){ var la = lastAssessment(a.person_id, a.skill_id); return !!la && la.result === 'competent'; }
+  window.__trainingLinkHtml = function(kind, ref, title, closed){
+    try{
+      if(!canSee() || !ref) return '';
+      if(!T.loaded && !T.loading && !T.tried) setTimeout(load, 0);
+      if(T.error) return '';
+      var box = 'margin-top:10px;border:1px solid var(--line2,#ddd);border-radius:6px;padding:8px 10px;font-size:12px;';
+      if(!T.loaded) return '<div class="muted-italic" style="font-size:11px;margin-top:8px;">Loading training…</div>';
+      var list = linkedAssignments(kind, ref), t = todayStr();
+      var done = list.filter(function(a){ return a.status === 'completed'; }).length;
+      var open = list.filter(isOpenA), late = open.filter(function(a){ return a.due_date < t; }).length;
+      var waiting = list.filter(function(a){ return a.requires_assessment && a.status !== 'waived' && !isCompetentNow(a); }).length;
+      var btn = (canWork() && !closed) ? bt('x', {}, 'Assign training from this ' + LINK_KIND[kind]).replace('data-tp="x"', 'data-ti="link" data-kind="' + e(kind) + '" data-ref="' + e(ref) + '" data-title="' + e(title || '') + '"') : '';
+      var body = list.length
+        ? '<div>' + list.length + ' assignment(s) · trained ' + done + ' · open ' + open.length + (late ? ' · <span style="color:var(--rust);font-weight:600;">overdue ' + late + '</span>' : '') + ' · awaiting a Competent result ' + waiting + '</div>' +
+          '<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:11.5px;color:var(--muted);">Who and what</summary>' + list.slice(0, 40).map(function(a){
+            var s = sById(a.skill_id);
+            return '<div style="padding:2px 0;border-bottom:1px solid var(--line2,#eee);">' + e(pName(a.person_id)) + ' · ' + e(s ? s.title : 'skill') + ' · ' + e(a.status) + (isOpenA(a) ? ' · due ' + e(a.due_date) : '') + (a.requires_assessment ? (isCompetentNow(a) ? ' · Competent' : ' · assessment pending') : '') + '</div>';
+          }).join('') + (list.length > 40 ? '<div class="muted-italic">+ ' + (list.length - 40) + ' more in the Training Matrix</div>' : '') + '</details>'
+        : '<div class="muted-italic">No training linked to this ' + e(LINK_KIND[kind]) + ' yet.</div>';
+      if(!list.length && !btn) return '';
+      return '<div style="' + box + '"><strong>Training from this ' + e(LINK_KIND[kind]) + '</strong>' + body + (btn ? '<div style="margin-top:6px;">' + btn + '</div>' : '') + '</div>';
+    }catch(err){ return ''; }
+  };
+  function actLink(kind, ref, title){
+    var have = {}; linkedAssignments(kind, ref).forEach(function(a){ have[a.person_id + '|' + a.skill_id] = 1; });
+    var items = activePeople().map(function(p){ return [p.id, p.full_name + (p.department ? ' · ' + p.department : '') + (p.job_title ? ' · ' + p.job_title : ''), false]; });
+    openModal({ title:'Assign training from ' + ref, submitText:'Assign', successText:'Training assigned.',
+      help:'Creates assignments linked to ' + LINK_KIND[kind] + ' ' + ref + (title ? ' (' + title + ')' : '') + '. Anyone who already has this skill open is skipped. Department Managers can assign only in their own department.',
+      fields:[ { id:'skill', label:'Skill / training', type:'select', options:skillOptions(), required:true },
+        { id:'persons', label:'People', type:'multi', items:items, required:true },
+        { id:'due', label:'Due date', type:'date', value:plusDays(14), required:true } ],
+      call:function(v){ return { fn:'assignment_bulk_create', args:{ p_skill:v.skill, p_persons:v.persons, p_reason:kind, p_due:v.due, p_source:ref, p_version:null } }; } });
+  }
+
   /* ----- Training impact on document revisions (stage 2) ----- */
   var TI = { cache:{}, busy:{} };
   var TI_OPTS = [['no_impact','No training impact: editorial change, or no change to how the work is done'],
@@ -21749,6 +21797,7 @@ function showUpdateBanner(){
     if(a === 'decide') tiDecide(vid, el.getAttribute('data-f'));
     else if(a === 'preview') tiPreview(vid);
     else if(a === 'generate') tiGenerate(vid);
+    else if(a === 'link') actLink(el.getAttribute('data-kind'), el.getAttribute('data-ref'), el.getAttribute('data-title'));
   }, true);
 
   document.addEventListener('click', function(ev){
