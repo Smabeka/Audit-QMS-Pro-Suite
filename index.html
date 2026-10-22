@@ -8626,11 +8626,12 @@ const NAV_MODULES = [
     ]
   },
   { id:"nav-foodsafe", icon:"🍽️", label:"FoodSafe Tracker", children:[
-      { id:"nav-fs-haccp", label:"HACCP", isActive(){ return tab==="haccp"; }, action(){ tab="haccp"; } },
-      { id:"nav-fs-temperature", label:"Temperature", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="temperature"; }, action(){ tab="foodsafe"; foodsafeSubTab="temperature"; } },
+      { id:"nav-fs-today", label:"Today's Checks", isActive(){ return tab==="fs-today"; }, action(){ tab="fs-today"; window.__fsView="today"; } },
+      { id:"nav-fs-points", label:"Monitoring Points", isActive(){ return tab==="fs-points"; }, action(){ tab="fs-points"; window.__fsView="points"; } },
+      { id:"nav-fs-readings", label:"Readings", isActive(){ return tab==="fs-readings"; }, action(){ tab="fs-readings"; window.__fsView="readings"; } },
+      { id:"nav-fs-deviations", label:"Deviations", isActive(){ return tab==="fs-deviations"; }, action(){ tab="fs-deviations"; window.__fsView="deviations"; } },
       { id:"nav-fs-cleaning", label:"Cleaning & Sanitation", children:[
           { id:"nav-fs-cip", label:"CIP", isActive(){ return tab==="cip"; }, action(){ tab="cip"; } },
-          { id:"nav-fs-checklist", label:"Food Safety Checklist", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="haccp-checklist"; }, action(){ tab="foodsafe"; foodsafeSubTab="haccp-checklist"; } },
           { id:"nav-fs-pest", label:"Pest Control", isActive(){ return tab==="pest-control"; }, action(){ tab="pest-control"; } }
         ]
       },
@@ -9140,7 +9141,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
@@ -9462,8 +9463,9 @@ function renderDashboard(){
   /* Training score: requirements (person x skill) that are trained AND, where required, signed competent. Needs at least 5 requirements, otherwise "no data". */
   const _trn = (typeof window.__trainingStats === 'function') ? window.__trainingStats() : null;
   const trainingScore = (_trn && _trn.total>=5) ? Math.round((_trn.complete/_trn.total)*1000)/10 : null;
-  const activeHaccp = state.haccpPoints.filter(p=>p.status!=="Inactive");
-  const haccpScore = activeHaccp.length>0 ? Math.round((activeHaccp.filter(p=>haccpStatus(p)==="Compliant").length/activeHaccp.length)*1000)/10 : null;
+  /* Food safety score: CCP/OPRP points whose last reading passed, is not overdue and has no open deviation. Needs at least 3 such points, otherwise "no data". */
+  const _fs = (typeof window.__fsStats === 'function') ? window.__fsStats() : null;
+  const haccpScore = (_fs && _fs.keyPoints>=3) ? Math.round((_fs.keyGood/_fs.keyPoints)*1000)/10 : null;
   const recallScore = window.recallReadiness ? window.recallReadiness() : null;
   const totalSuppliers = state.suppliers.length;
   const supplierScore = totalSuppliers>0 ? Math.round((state.suppliers.filter(s=>s.approvalStatus==="Approved").length/totalSuppliers)*1000)/10 : null;
@@ -9542,7 +9544,7 @@ function renderDashboard(){
   const KPI_NAV_TARGETS = {
     audit:"nav-audit-register", capa:"nav-capa", risk:"nav-risk", training:"nav-people-training",
     documents:"nav-documents", kpiMetrics:"nav-metrics", supplier:"nav-suppliers-list",
-    haccp:"nav-fs-haccp", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-cip",
+    haccp:"nav-fs-today", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-cip",
     sensory:"nav-sensory-0", lab:"nav-lab-trend"
   };
   function kpiRow(label, score, key){
@@ -9596,7 +9598,8 @@ function renderDashboard(){
   audits.filter(a=>a.status==="In Progress").forEach(a=>priorities.push({dot:"🟡", text:`Complete audit: ${a.title}`, jumpAudit:a.id, urgency:a.dueDate?-daysUntil(a.dueDate):0}));
   state.documents.filter(d=>d.status==="Under Review").forEach(d=>priorities.push({dot:"🟡", text:`Approve document: ${d.title}`, navId:"nav-documents", urgency:0}));
   state.suppliers.filter(s=>s.approvalStatus==="Pending").forEach(s=>priorities.push({dot:"🟡", text:`Review supplier: ${s.name}`, navId:"nav-suppliers-list", urgency:0}));
-  activeHaccp.filter(p=>haccpStatus(p)!=="Compliant").forEach(p=>priorities.push({dot:"🟢", text:`Verify CCP: ${p.ccpNumber||'CCP'} — ${p.processStep||''}`, navId:"nav-fs-haccp", urgency:0}));
+  if(_fs && _fs.openDeviations) priorities.push({dot:"🔴", text:`Close ${_fs.openDeviations} open food safety deviation${_fs.openDeviations===1?'':'s'}${_fs.oldestOpenDays?` (oldest ${_fs.oldestOpenDays} d)`:''}`, navId:"nav-fs-deviations", urgency:1+_fs.oldestOpenDays});
+  if(_fs && _fs.overdue) priorities.push({dot:"🟡", text:`${_fs.overdue} monitoring point${_fs.overdue===1?'':'s'} overdue for a reading`, navId:"nav-fs-today", urgency:_fs.overdue});
   const priorityOrder = {"🔴":0,"🟡":1,"🟢":2};
   priorities.sort((a,b)=>priorityOrder[a.dot]-priorityOrder[b.dot] || b.urgency-a.urgency);
   const topPriorities = priorities.slice(0,8);
@@ -9783,7 +9786,7 @@ function renderDashboard(){
       ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length, "nav-people-training")}
       ${statCard("🚨", "Active Recalls", (window.recallActiveCount ? window.recallActiveCount() : 0), "nav-trace-recall")}
       ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length, "nav-trace-batch")}
-      ${statCard("🌡️", "Critical Temp Readings", state.tempLogs.filter(l=>tempLogIsCritical(l)).length, "nav-fs-temperature")}
+      ${statCard("🌡️", "Open Food Safety Deviations", _fs ? _fs.openDeviations : "—", "nav-fs-deviations")}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
@@ -21840,6 +21843,359 @@ function showUpdateBanner(){
   }, true);
   window.trainingReset = function(){ T.people = []; T.skills = []; T.assignments = []; T.sessions = []; T.attendance = []; T.assessments = []; T.evidence = []; T.profiles = []; T.loaded = false; T.loading = false; T.tried = false; T.error = ''; T.openKey = null; modal = null; mount(); };
 })();
+
+/* ===== Food Safety Controls (stage 1): monitoring points (CCP / OPRP / PRP), check forms, signed readings judged by the server, deviations ===== */
+(function(){
+  if(window.__fsInstalled) return;
+  window.__fsInstalled = true;
+  var F = { points:[], status:{}, readings:[], deviations:[], ncrs:[], profiles:[], loaded:false, loading:false, tried:false, error:'', view:'today', devFilter:'open', rForm:'', rResult:'', rq:'', pType:'', pq:'' };
+  var modal = null, formModal = null;
+  var PTYPE = [['ccp','CCP: critical control point'],['oprp','OPRP: operational prerequisite'],['prp','PRP: prerequisite programme check']];
+  var PARAM = [['temperature','Temperature (°C)'],['number','Number (with unit)'],['pass_fail','Pass / fail']];
+  var DISP = [['released','Released: product is safe to use or sell'],['reworked','Reworked or re-processed'],['rejected','Rejected or destroyed'],['not_applicable','No product affected']];
+  var DEVSTAT = { open:['Open: needs containment','rust'], contained:['Contained: needs product decision','amber'], decided:['Decided: needs root cause and closure','navy'], closed:['Closed','green'] };
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function canRecord(){ return ['admin','quality manager','approver','department manager','employee'].indexOf(myRole()) !== -1; }
+  function canDecide(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ if(!iso) return '—'; var d = new Date(iso); if(isNaN(d)) return String(iso).slice(0, 16); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function ago(iso){ if(!iso) return 'never'; var m = Math.round((Date.now() - new Date(iso).getTime()) / 60000); if(m < 1) return 'just now'; if(m < 60) return m + ' min ago'; var h = Math.round(m / 60); if(h < 48) return h + ' h ago'; return Math.round(h / 24) + ' days ago'; }
+  function person(id){ for(var i = 0; i < F.profiles.length; i++){ if(F.profiles[i].id === id) return F.profiles[i].full_name || 'Unnamed user'; } return id ? 'Unknown user' : '—'; }
+  function pointById(id){ for(var i = 0; i < F.points.length; i++){ if(F.points[i].id === id) return F.points[i]; } return null; }
+  function activePoints(){ return F.points.filter(function(p){ return p.status === 'active'; }); }
+  function forms(){ var m = {}; activePoints().forEach(function(p){ (m[p.form_name] = m[p.form_name] || []).push(p); }); return m; }
+  function limitText(p){
+    if(p.parameter === 'pass_fail') return 'Pass or fail';
+    var u = p.unit ? ' ' + p.unit : '';
+    if(p.limit_min != null && p.limit_max != null) return p.limit_min + ' to ' + p.limit_max + u;
+    return p.limit_max != null ? 'max ' + p.limit_max + u : 'min ' + p.limit_min + u;
+  }
+  function judge(p, v){ if(v === '' || v == null || isNaN(Number(v))) return null; v = Number(v); return (p.limit_min == null || v >= p.limit_min) && (p.limit_max == null || v <= p.limit_max); }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function st(p){ return F.status[p.id] || {}; }
+  function pointState(p){
+    var s = st(p);
+    if(s.open_deviations > 0) return ['Open deviation', 'rust'];
+    if(!s.last_at) return [p.frequency_hours ? 'Never recorded' : 'No readings yet', p.frequency_hours ? 'rust' : 'neutral'];
+    if(s.overdue) return ['Overdue (last ' + ago(s.last_at) + ')', 'rust'];
+    return [s.last_passed ? 'OK (' + ago(s.last_at) + ')' : 'Last reading failed', s.last_passed ? 'green' : 'rust'];
+  }
+
+  async function load(){
+    if(F.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    F.loading = true; F.tried = true; F.error = '';
+    try{
+      var since = new Date(Date.now() - 60 * 86400000).toISOString();
+      var res = await Promise.all([
+        fetchAllRows('fs_points', function(q){ return q.order('code', { ascending:true }); }),
+        supabaseClient.from('fs_point_status').select('*'),
+        supabaseClient.from('fs_readings').select('*').gte('recorded_at', since).order('recorded_at', { ascending:false }).limit(1500),
+        fetchAllRows('fs_deviations', function(q){ return q.order('created_at', { ascending:false }); }),
+        supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500),
+        supabaseClient.rpc('get_org_directory')
+      ]);
+      var err = null; for(var i = 0; i < 4; i++){ if(res[i].error){ err = res[i].error; break; } }
+      if(err) F.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'Food Safety Controls is not installed yet. Run fs_controls_run_this.sql in Supabase.' : err.message;
+      else {
+        F.points = res[0].data || []; F.status = {}; (res[1].data || []).forEach(function(s){ F.status[s.point_id] = s; });
+        F.readings = res[2].data || []; F.deviations = res[3].data || []; F.ncrs = res[4].error ? [] : (res[4].data || []); F.profiles = res[5].error ? [] : (res[5].data || []);
+        F.loaded = true;
+      }
+    }catch(ex){ F.error = (ex && ex.message) || String(ex); }
+    F.loading = false; rerender();
+  }
+  async function refresh(){ F.loading = false; await load(); }
+
+  /* ----- generic modal ----- */
+  function mount(){
+    var host = document.getElementById('fs-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'fs-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = formModal ? formModalHtml() : modalHtml();
+  }
+  function openModal(c){ modal = c; formModal = null; mount(); }
+  function closeModal(){ modal = null; formModal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'fsf-' + x.id, ctl;
+      if(x.type === 'note') return '<div style="font-size:12px;background:var(--cream,#f7f3ea);border-radius:6px;padding:8px 10px;white-space:pre-wrap;margin-bottom:8px;">' + e(x.label) + '</div>';
+      if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" style="width:100%;box-sizing:border-box;" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'number') ctl = '<input type="number" step="any" id="' + id + '" value="' + e(x.value == null ? '' : x.value) + '" />';
+      else ctl = '<input id="' + id + '"' + (x.list ? ' list="' + id + '-dl"' : '') + ' placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />' + (x.list ? '<datalist id="' + id + '-dl">' + x.list.map(function(o){ return '<option value="' + e(o) + '"></option>'; }).join('') + '</datalist>' : '');
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-fs-modal="overlay"><div class="modal-card" style="max-width:560px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;">' + e(modal.help) + '</p>' : '') + f +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-fs-modal="cancel">Cancel</button><button class="btn btn-primary" data-fs-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){ if(x.type === 'note') return; var el = document.getElementById('fsf-' + x.id); if(el) v[x.id] = String(el.value || '').trim(); });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(cfg.prepare) await cfg.prepare(v);
+      var call = cfg.call(v), r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      modal = null; mount(); toast(cfg.successText || 'Saved.'); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- check form and quick reading ----- */
+  function answerRow(p){
+    var a = formModal.answers[p.id] || {}, id = p.id;
+    var input = p.parameter === 'pass_fail'
+      ? '<div style="display:flex;gap:8px;"><button class="btn ' + (a.passed === true ? 'btn-primary' : 'btn-ghost') + '" data-fs="ans" data-p="' + e(id) + '" data-v="pass" style="flex:1;">✓ Pass</button><button class="btn ' + (a.passed === false ? 'btn-primary' : 'btn-ghost') + '" data-fs="ans" data-p="' + e(id) + '" data-v="fail" style="flex:1;' + (a.passed === false ? 'background:var(--rust);border-color:var(--rust);' : '') + '">✕ Fail</button></div>'
+      : '<input type="number" step="any" inputmode="decimal" data-fs-val="' + e(id) + '" value="' + e(a.value == null ? '' : a.value) + '" placeholder="Reading' + (p.unit ? ' in ' + e(p.unit) : '') + '" style="width:100%;box-sizing:border-box;font-size:16px;" />';
+    return '<div style="border:1px solid var(--line,#ddd);border-radius:8px;padding:10px;margin-bottom:8px;"><div style="font-weight:600;font-size:13px;">' + e(p.code) + ' · ' + e(p.name) + ' ' + tag(p.point_type === 'ccp' ? 'rust' : p.point_type === 'oprp' ? 'amber' : 'neutral', p.point_type.toUpperCase()) + '</div>' +
+      '<div class="muted-italic" style="font-size:11px;margin:2px 0 6px;">Limit: ' + e(limitText(p)) + (p.method ? ' · ' + e(p.method) : '') + (p.area ? ' · ' + e(p.area) : '') + '</div>' + input +
+      '<div id="fs-hint-' + e(id) + '" style="font-size:11.5px;margin-top:4px;min-height:14px;">' + hintHtml(p, a) + '</div></div>';
+  }
+  function hintHtml(p, a){
+    var ok = p.parameter === 'pass_fail' ? (a.passed == null ? null : a.passed) : judge(p, a.value);
+    if(ok === null) return '';
+    return ok ? '<span style="color:var(--green,#2f6b3f);">✓ within the limit</span>' : '<span style="color:var(--rust);font-weight:600;">⚠ outside the limit: submitting will open a deviation. Corrective action: ' + e(p.corrective_action || 'see procedure') + '</span>';
+  }
+  function formModalHtml(){
+    var fm = formModal, list = fm.points;
+    var body = fm.single
+      ? '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">Monitoring point</label><select data-fs="qpoint" style="width:100%;">' + [['', '— choose —']].concat(list.map(function(p){ return [p.id, p.code + ' · ' + p.name + ' (' + limitText(p) + ')']; })).map(function(o){ return '<option value="' + e(o[0]) + '"' + (fm.qid === o[0] ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select></div>' +
+        (fm.qid ? answerRow(pointById(fm.qid)) : '') +
+        ['product:Product (optional)', 'batch:Batch or lot (optional)', 'location:Location (optional)', 'note:Note (optional)'].map(function(s){ var k = s.split(':')[0]; return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(s.split(':')[1]) + '</label><input data-fs-extra="' + k + '" value="' + e(fm.extra[k] || '') + '" /></div>'; }).join('')
+      : list.map(answerRow).join('');
+    return '<div class="modal-overlay" data-fs-modal="overlay"><div class="modal-card" style="max-width:600px;max-height:94vh;overflow:auto;"><h3 class="serif" style="margin:0 0 4px;font-size:18px;color:var(--navy);">' + e(fm.title) + '</h3>' +
+      '<p style="font-size:12px;color:var(--muted);margin:0 0 10px;">Recorded as ' + e(person(currentProfile && currentProfile.id)) + ' at the time you submit. The server judges each reading against its limit; readings cannot be edited afterwards.</p>' + body +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;"><button class="btn btn-ghost" data-fs-modal="cancel">Cancel</button><button class="btn btn-primary" data-fs-modal="submitform"' + (fm.busy ? ' disabled' : '') + '>' + (fm.single ? 'Record reading' : 'Submit form') + '</button></div></div></div>';
+  }
+  function openForm(name){ formModal = { title:name, form:name, points:(forms()[name] || []).slice().sort(function(a, b){ return a.code.localeCompare(b.code, undefined, { numeric:true }); }), answers:{}, run:newId(), busy:false }; modal = null; mount(); }
+  function openQuick(){
+    var pts = activePoints().sort(function(a, b){ return a.code.localeCompare(b.code, undefined, { numeric:true }); });
+    if(!pts.length){ toast('There are no active monitoring points yet.', 'error'); return; }
+    formModal = { title:'Record a reading', single:true, points:pts, answers:{}, qid:'', extra:{}, id:newId(), busy:false }; modal = null; mount();
+  }
+  async function submitForm(){
+    var fm = formModal; if(!fm || fm.busy) return;
+    try{
+      if(fm.single){
+        var p = pointById(fm.qid); if(!p){ toast('Choose the monitoring point.', 'error'); return; }
+        var a = fm.answers[p.id] || {}; if(p.parameter === 'pass_fail' ? a.passed == null : (a.value == null || a.value === '')){ toast('Enter the reading for ' + p.code + '.', 'error'); return; }
+        fm.busy = true; mount();
+        var r = await supabaseClient.rpc('fs_reading_record', { p_id:fm.id, p_point:p.id, p_value:p.parameter === 'pass_fail' ? null : Number(a.value), p_passed:p.parameter === 'pass_fail' ? a.passed : null, p_product:nul(fm.extra.product), p_batch:nul(fm.extra.batch), p_location:nul(fm.extra.location), p_note:nul(fm.extra.note) });
+        if(r.error) throw new Error(r.error.message);
+        formModal = null; mount(); toast(r.data && r.data.passed ? 'Reading recorded: within the limit.' : 'Reading recorded: OUT OF LIMIT. Deviation ' + (r.data && r.data.deviation_ref) + ' opened. Record containment now.', r.data && r.data.passed ? undefined : 'error'); await refresh(); return;
+      }
+      var items = [], fails = 0;
+      for(var i = 0; i < fm.points.length; i++){
+        var q = fm.points[i], b = fm.answers[q.id] || {};
+        if(q.parameter === 'pass_fail'){ if(b.passed == null){ toast('Answer pass or fail for ' + q.code + '.', 'error'); return; } if(!b.passed) fails++; items.push({ point_id:q.id, passed:b.passed }); }
+        else { if(b.value == null || b.value === '' || isNaN(Number(b.value))){ toast('Enter the reading for ' + q.code + '.', 'error'); return; } if(judge(q, b.value) === false) fails++; items.push({ point_id:q.id, value:Number(b.value) }); }
+      }
+      if(fails && !window.confirm(fails + ' point(s) are outside their limit. Submitting will open ' + fails + ' deviation(s) that must be contained and decided. Submit?')) return;
+      fm.busy = true; mount();
+      var rr = await supabaseClient.rpc('fs_form_submit', { p_run:fm.run, p_form:fm.form, p_items:items, p_note:null });
+      if(rr.error) throw new Error(rr.error.message);
+      formModal = null; mount();
+      toast(rr.data && rr.data.failed ? 'Form submitted. ' + rr.data.failed + ' deviation(s) opened: ' + (rr.data.deviations || []).join(', ') + '. Record containment now.' : 'Form submitted. Everything within limits.', rr.data && rr.data.failed ? 'error' : undefined);
+      await refresh();
+    }catch(err){ if(formModal){ formModal.busy = false; mount(); } toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- point and deviation actions ----- */
+  function actPoint(p){
+    p = p || {}; var formNames = Object.keys(forms()); var hasReadings = p.id && F.readings.some(function(r){ return r.point_id === p.id; });
+    openModal({ title:p.id ? 'Edit ' + p.code : 'New monitoring point', submitText:'Save point', successText:'Point saved.',
+      help:'A CCP or OPRP needs numeric limits (or pass/fail) and a corrective action. ' + (hasReadings ? 'This point already has readings: changing its limits needs a reason, and old readings keep the limits that applied at the time.' : ''),
+      fields:[ { id:'code', label:'Code (for example CCP-1, PRP-4)', value:p.code || '', required:true }, { id:'name', label:'What is monitored (for example Cold room temperature)', value:p.name || '', required:true },
+        { id:'point_type', label:'Type', type:'select', options:PTYPE, value:p.point_type || 'prp', required:true },
+        { id:'form_name', label:'Form it belongs to (points with the same form name are filled in together)', value:p.form_name || '', list:formNames, required:true },
+        { id:'area', label:'Area or equipment', value:p.area || '' }, { id:'process_step', label:'Process step', value:p.process_step || '' }, { id:'hazard', label:'Hazard controlled', value:p.hazard || '' },
+        { id:'parameter', label:'What is recorded', type:'select', options:PARAM, value:p.parameter || 'temperature', required:true }, { id:'unit', label:'Unit (blank for °C or pass/fail)', value:p.unit || '' },
+        { id:'limit_min', label:'Minimum limit (blank if none)', type:'number', value:p.limit_min }, { id:'limit_max', label:'Maximum limit (blank if none)', type:'number', value:p.limit_max },
+        { id:'frequency_hours', label:'How often, in hours (24 = daily, blank = on demand)', type:'number', value:p.frequency_hours },
+        { id:'method', label:'Monitoring method (for example probe thermometer, visual check)', value:p.method || '' },
+        { id:'corrective_action', label:'Corrective action when out of limit', type:'textarea', value:p.corrective_action || '' }, { id:'responsible_role', label:'Responsible role', value:p.responsible_role || '' },
+        { id:'status', label:'Status', type:'select', options:[['active','Active'], ['inactive','Inactive']], value:p.status || 'active' },
+        { id:'change_reason', label:'Reason for changing limits or type (required once readings exist)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Saving a monitoring point changes a food safety control. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'fs_point_save', args:{ p_id:p.id || newId(), p_f:v } }; } });
+  }
+  function actContain(d){
+    openModal({ title:'Containment for ' + d.ref, submitText:'Record containment', successText:'Containment recorded.', help:d.description,
+      fields:[ { id:'action', label:'Immediate action taken (what you did right now, at least 10 characters)', type:'textarea', required:true },
+        { id:'held', label:'Was product put on hold?', type:'select', options:[['', '— choose —'], ['yes', 'Yes, product is on hold'], ['no', 'No product affected']], required:true },
+        { id:'qty', label:'Quantity or batches on hold (optional)' } ],
+      call:function(v){ return { fn:'fs_dev_contain', args:{ p_id:d.id, p_action:v.action, p_held:v.held === 'yes', p_qty:nul(v.qty) } }; } });
+  }
+  function actDecide(d){
+    openModal({ title:'Decide on product: ' + d.ref, submitText:'Sign decision', successText:'Decision recorded.',
+      help:d.description + '\nContained: ' + (d.immediate_action || '') + (d.product_held ? ' (product on hold' + (d.held_qty ? ': ' + d.held_qty : '') + ')' : '') + '\nYou cannot decide on a reading you recorded yourself, unless nobody else is authorised.',
+      fields:[ { id:'disp', label:'What happens to the product?', type:'select', options:[['', '— choose —']].concat(DISP), required:true },
+        { id:'note', label:'Reason for the decision (at least 10 characters)', type:'textarea', required:true }, { id:'qty', label:'Quantity or batches (optional)' } ],
+      prepare:async function(){ await signed('Deciding on product is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'fs_dev_decide', args:{ p_id:d.id, p_disposition:v.disp, p_note:v.note, p_qty:nul(v.qty) } }; } });
+  }
+  function actLinkNcr(d){
+    openModal({ title:'Link an NCR to ' + d.ref, submitText:'Link NCR', successText:'NCR linked.', help:'Raise the NCR first (button on the deviation), then link it here. A CCP deviation cannot be closed without one.',
+      fields:[ { id:'ncr', label:'NCR', type:'select', options:[['', '— choose —']].concat(F.ncrs.map(function(n){ return [n.id, (n.reference_number || 'NCR') + ' · ' + String(n.title || '').slice(0, 70)]; })), required:true } ],
+      call:function(v){ return { fn:'fs_dev_link_ncr', args:{ p_id:d.id, p_ncr:v.ncr } }; } });
+  }
+  function actClose(d){
+    openModal({ title:'Close ' + d.ref, submitText:'Sign and close', successText:'Deviation closed.', help:'Closing confirms the cause was found and the fix is in place.',
+      fields:[ { id:'root', label:'Root cause (at least 15 characters)', type:'textarea', required:true }, { id:'act', label:'Corrective action that stops it happening again (at least 15 characters)', type:'textarea', required:true }, { id:'note', label:'Closure note (optional)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Closing a deviation is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'fs_dev_close', args:{ p_id:d.id, p_root:v.root, p_action:v.act, p_note:nul(v.note) } }; } });
+  }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-fs="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function tile(n, l, tone){ return '<div style="flex:1 1 118px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function tabs(){
+    var open = F.deviations.filter(function(d){ return d.status !== 'closed'; }).length;
+    return '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + [['today', "Today's checks"], ['points', 'Monitoring points'], ['readings', 'Readings'], ['deviations', 'Deviations' + (open ? ' (' + open + ')' : '')]].map(function(x){ return '<button class="status-pill ' + (F.view === x[0] ? 'active' : '') + '" data-fs="view" data-v="' + x[0] + '">' + e(x[1]) + '</button>'; }).join('') + '</div>';
+  }
+  function todayView(){
+    var fm = forms(), names = Object.keys(fm).sort(), pts = activePoints();
+    var overdue = pts.filter(function(p){ return st(p).overdue; }).length, open = F.deviations.filter(function(d){ return d.status !== 'closed'; }).length;
+    var out = '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(names.length, 'check forms') + tile(overdue, 'points overdue', overdue ? 'rust' : '') + tile(open, 'open deviations', open ? 'rust' : '') + tile(pts.filter(function(p){ return p.point_type === 'ccp'; }).length, 'CCP points') + '</div>';
+    if(!names.length) return out + '<div class="card p4"><p class="muted-italic" style="margin:0;">No monitoring points yet. ' + (isQm() ? 'Open “Monitoring points” and add your CCPs, OPRPs and PRP checks, giving the points of one check sheet the same form name.' : 'Ask an Admin or Quality Manager to set up the monitoring points.') + '</p></div>';
+    return out + names.map(function(n){
+      var ps = fm[n].slice().sort(function(a, b){ return a.code.localeCompare(b.code, undefined, { numeric:true }); });
+      var late = ps.filter(function(p){ return st(p).overdue; }).length, never = ps.filter(function(p){ return !st(p).last_at; }).length, last = ps.reduce(function(m, p){ var t = st(p).last_at; return t && (!m || t > m) ? t : m; }, null);
+      var chip = late || (never && ps.some(function(p){ return p.frequency_hours; })) ? tag('rust', late ? late + ' overdue' : 'not done yet') : tag('green', 'up to date');
+      return '<div class="card" style="margin-bottom:10px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;"><div><div class="audit-title">' + e(n) + ' ' + chip + '</div><div class="audit-sub">' + ps.length + ' points · last done ' + e(last ? ago(last) : 'never') + '</div></div>' +
+        (canRecord() ? bt('fillform', { f:n }, 'Fill in form', late > 0 || !last) : '') + '</div>' +
+        '<details style="margin-top:6px;"><summary style="cursor:pointer;font-size:11.5px;color:var(--muted);">Points on this form</summary>' + ps.map(function(p){ var s = pointState(p), x = st(p); return '<div style="padding:3px 0;border-bottom:1px solid var(--line2,#eee);font-size:12px;">' + e(p.code) + ' · ' + e(p.name) + ' · limit ' + e(limitText(p)) + ' · ' + tag(s[1], s[0]) + (x.last_value != null ? ' last ' + e(x.last_value) + (p.unit ? ' ' + e(p.unit) : '') : '') + '</div>'; }).join('') + '</details></div>';
+    }).join('');
+  }
+  function pointsView(){
+    var list = F.points.filter(function(p){ return (!F.pType || p.point_type === F.pType) && (!F.pq || (p.code + ' ' + p.name + ' ' + p.form_name + ' ' + (p.area || '')).toLowerCase().indexOf(F.pq.toLowerCase()) !== -1); });
+    var head = '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['', 'All'], ['ccp', 'CCP'], ['oprp', 'OPRP'], ['prp', 'PRP']].map(function(x){ return '<button class="status-pill ' + (F.pType === x[0] ? 'active' : '') + '" data-fs="ptype" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') +
+      '<input data-fs-q="pq" placeholder="Search code, name, form" value="' + e(F.pq) + '" style="font-size:12px;max-width:200px;" />' + (isQm() ? bt('newpoint', {}, '+ New point', true) : '') + '</div>';
+    if(!list.length) return head + '<p class="muted-italic">No monitoring points in this view.</p>';
+    return head + list.map(function(p){ var s = pointState(p);
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div><div class="audit-title">' + e(p.code) + ' · ' + e(p.name) + ' ' + tag(p.point_type === 'ccp' ? 'rust' : p.point_type === 'oprp' ? 'amber' : 'neutral', p.point_type.toUpperCase()) + (p.status === 'inactive' ? ' ' + tag('neutral', 'Inactive') : '') + '</div>' +
+        '<div class="audit-sub">' + e(p.form_name) + ' · limit ' + e(limitText(p)) + (p.frequency_hours ? ' · every ' + e(p.frequency_hours) + ' h' : ' · on demand') + (p.area ? ' · ' + e(p.area) : '') + '</div>' +
+        (p.corrective_action ? '<div class="muted-italic" style="font-size:11px;">If out of limit: ' + e(p.corrective_action) + '</div>' : '') + '</div><div>' + (p.status === 'active' ? tag(s[1], s[0]) : '') + (isQm() ? ' ' + bt('editpoint', { id:p.id }, 'Edit') : '') + '</div></div></div>'; }).join('');
+  }
+  function readingsFiltered(){
+    return F.readings.filter(function(r){ var p = pointById(r.point_id) || {};
+      if(F.rForm && p.form_name !== F.rForm) return false; if(F.rResult === 'out' && r.passed) return false;
+      if(F.rq){ var t = ((p.code || '') + ' ' + (p.name || '') + ' ' + (r.product || '') + ' ' + (r.batch_ref || '') + ' ' + person(r.recorded_by)).toLowerCase(); if(t.indexOf(F.rq.toLowerCase()) === -1) return false; } return true; });
+  }
+  function readingsView(){
+    var list = readingsFiltered(), names = Object.keys(forms()).sort();
+    var head = '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;"><select data-fs-sel="rForm" style="font-size:12px;"><option value="">All forms</option>' + names.map(function(n){ return '<option' + (F.rForm === n ? ' selected' : '') + '>' + e(n) + '</option>'; }).join('') + '</select>' +
+      '<select data-fs-sel="rResult" style="font-size:12px;"><option value="">All results</option><option value="out"' + (F.rResult === 'out' ? ' selected' : '') + '>Out of limit only</option></select>' +
+      '<input data-fs-q="rq" placeholder="Search point, product, batch, person" value="' + e(F.rq) + '" style="font-size:12px;max-width:220px;" />' + bt('csv', {}, '⬇ CSV') + (canRecord() ? bt('quick', {}, '+ Record a reading', true) : '') + '</div>' +
+      '<p class="muted-italic" style="font-size:11px;margin:0 0 8px;">Showing the last 60 days (' + list.length + ' readings). Readings cannot be edited or deleted.</p>';
+    if(!list.length) return head + '<p class="muted-italic">No readings in this view.</p>';
+    return head + list.slice(0, 200).map(function(r){ var p = pointById(r.point_id) || { code:'?', name:'' };
+      return '<div class="card" style="margin-bottom:6px;padding:8px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12.5px;"><div><strong>' + e(p.code) + '</strong> ' + e(p.name) + ' · ' + (r.value != null ? '<strong>' + e(r.value) + (r.unit ? ' ' + e(r.unit) : '') + '</strong>' : (r.passed ? 'Pass' : 'Fail')) + '</div><div>' + tag(r.passed ? 'green' : 'rust', r.passed ? 'Within limit' : 'OUT OF LIMIT') + '</div></div>' +
+        '<div class="muted-italic" style="font-size:11px;">' + e(when(r.recorded_at)) + ' · ' + e(person(r.recorded_by)) + (r.limit_min != null || r.limit_max != null ? ' · limit then: ' + e(limitText(r)) : '') + (r.product ? ' · ' + e(r.product) : '') + (r.batch_ref ? ' · batch ' + e(r.batch_ref) : '') + (r.location ? ' · ' + e(r.location) : '') + (r.note ? ' · ' + e(r.note) : '') + '</div></div>'; }).join('');
+  }
+  function devCard(d){
+    var s = DEVSTAT[d.status] || [d.status, 'neutral'], ncr = F.ncrs.filter(function(n){ return n.id === d.ncr_id; })[0], r = F.readings.filter(function(x){ return x.id === d.reading_id; })[0];
+    var steps = '<div style="font-size:12px;margin-top:6px;">' + (r ? 'Recorded by ' + e(person(r.recorded_by)) + ' · ' + e(when(r.recorded_at)) : '') +
+      (d.contained_at ? '<div>Contained by ' + e(person(d.contained_by)) + ' · ' + e(when(d.contained_at)) + ': ' + e(d.immediate_action) + (d.product_held ? ' (product on hold' + (d.held_qty ? ': ' + e(d.held_qty) : '') + ')' : '') + '</div>' : '') +
+      (d.disposition_at ? '<div>Product: <strong>' + e(lbl(DISP, d.disposition).split(':')[0]) + '</strong> · ' + e(person(d.disposition_by)) + (d.self_decided ? ' <span style="color:var(--amber);">(decided by the person who recorded it: no one else was authorised)</span>' : '') + ' · ' + e(d.disposition_note) + '</div>' : '') +
+      (ncr ? '<div>NCR: ' + e(ncr.reference_number || 'NCR') + ' · ' + e(ncr.title || '') + '</div>' : (d.ncr_id ? '<div>An NCR is linked.</div>' : '')) +
+      (d.closed_at ? '<div>Closed by ' + e(person(d.closed_by)) + ' · ' + e(when(d.closed_at)) + '. Root cause: ' + e(d.root_cause) + ' Corrective action: ' + e(d.corrective_action) + '</div>' : '') + '</div>';
+    var b = '';
+    if(d.status === 'open' && canRecord()) b += bt('contain', { id:d.id }, 'Record containment', true);
+    if(d.status === 'contained' && canDecide() && !(d.point_type === 'ccp' && myRole() === 'department manager')) b += bt('decide', { id:d.id }, 'Decide on product', true);
+    if(d.status !== 'closed' && canDecide()){
+      var ncrB = ''; try{ if(typeof ncrBtn === 'function') ncrB = ncrBtn({ title:'Food safety deviation ' + d.ref, description:d.description + '. Describe what was found and what was done.', source:'process_deviation', severity:d.point_type === 'ccp' ? 'Major' : 'Minor', area:(pointById(d.point_id) || {}).area || '', link_type:'food_safety', link_reference:d.ref + ' — ' + d.description, record_id:String(d.id) }); }catch(_){}
+      b += ncrB + bt('linkncr', { id:d.id }, ncr ? 'Change linked NCR' : 'Link NCR');
+    }
+    if(d.status === 'decided' && isQm()) b += bt('closedev', { id:d.id }, 'Close deviation', true);
+    return '<div class="card" style="margin-bottom:10px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title">' + e(d.ref) + ' · ' + e(d.description) + '</div>' + tag(s[1], s[0]) + '</div>' + steps + (b ? '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + b + '</div>' : '') + '</div>';
+  }
+  function deviationsView(){
+    var f = F.devFilter, list = F.deviations.filter(function(d){ return f === 'all' ? true : f === 'open' ? d.status !== 'closed' : d.status === f; });
+    var head = '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['open', 'Not closed'], ['closed', 'Closed'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (f === x[0] ? 'active' : '') + '" data-fs="devfilter" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>';
+    return head + (list.length ? list.map(devCard).join('') : '<p class="muted-italic">No deviations in this view.</p>');
+  }
+  function csv(rs){ return rs.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n'); }
+  function exportCsv(){
+    var rows = [['Time', 'Form', 'Point', 'Name', 'Type', 'Value', 'Unit', 'Result', 'Limit min then', 'Limit max then', 'Product', 'Batch', 'Location', 'Recorded by', 'Note']].concat(readingsFiltered().map(function(r){ var p = pointById(r.point_id) || {}; return [when(r.recorded_at), p.form_name, p.code, p.name, r.point_type, r.value, r.unit, r.passed ? 'Within limit' : 'Out of limit', r.limit_min, r.limit_max, r.product, r.batch_ref, r.location, person(r.recorded_by), r.note]; }));
+    var blob = new Blob([csv(rows)], { type:'text/csv' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'food-safety-readings.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  window.renderFsControls = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use food safety controls.</p></div>';
+      if(window.__fsView){ F.view = window.__fsView; window.__fsView = null; }
+      if(!F.loaded && !F.loading && !F.tried) setTimeout(load, 0);
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">🛡️ Food Safety Controls</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + (canRecord() ? bt('quick', {}, '+ Record a reading') : '') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Readings are signed as you, judged against the limit by the server, and cannot be edited. An out-of-limit reading opens a deviation that must be contained, decided by someone else, and closed.</p>';
+      if(F.error) return head + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(F.error) + '</p></div>';
+      if(!F.loaded) return head + '<p class="muted-italic">Loading…</p>';
+      return head + tabs() + (F.view === 'points' ? pointsView() : F.view === 'readings' ? readingsView() : F.view === 'deviations' ? deviationsView() : todayView());
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Food safety page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.fsEnsureLoaded = function(){ if(!F.loaded && !F.loading && !F.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.__fsStats = function(){
+    window.fsEnsureLoaded(); if(!F.loaded) return null;
+    var act = activePoints(), key = act.filter(function(p){ return p.point_type !== 'prp'; });
+    var good = key.filter(function(p){ var s = st(p); return s.last_at && s.last_passed && !s.overdue && !(s.open_deviations > 0); }).length;
+    var open = F.deviations.filter(function(d){ return d.status !== 'closed'; });
+    var oldest = open.reduce(function(m, d){ var a = Math.floor((Date.now() - new Date(d.created_at).getTime()) / 86400000); return a > m ? a : m; }, 0);
+    return { points:act.length, keyPoints:key.length, keyGood:good, overdue:act.filter(function(p){ return st(p).overdue; }).length, openDeviations:open.length, oldestOpenDays:oldest };
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-fs]') ? null : t.closest('[data-fs-modal]');
+    if(m){ var k0 = m.getAttribute('data-fs-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else if(k0 === 'submitform') submitForm(); else submitModal(); return; }
+    var el = t.closest('[data-fs]'); if(!el) return;
+    var a = el.getAttribute('data-fs'); if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    ev.preventDefault(); ev.stopPropagation(); var id = el.getAttribute('data-id');
+    if(a === 'reload'){ F.loading = false; F.tried = false; load(); }
+    else if(a === 'view'){ F.view = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'ptype'){ F.pType = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'devfilter'){ F.devFilter = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'fillform') openForm(el.getAttribute('data-f'));
+    else if(a === 'quick') openQuick();
+    else if(a === 'newpoint') actPoint(); else if(a === 'editpoint'){ var p = pointById(id); if(p) actPoint(p); }
+    else if(a === 'csv') exportCsv();
+    else if(a === 'ans' && formModal){ var pid = el.getAttribute('data-p'); formModal.answers[pid] = { passed:el.getAttribute('data-v') === 'pass' }; mount(); }
+    else { var d = F.deviations.filter(function(x){ return x.id === id; })[0]; if(!d) return;
+      if(a === 'contain') actContain(d); else if(a === 'decide') actDecide(d); else if(a === 'linkncr') actLinkNcr(d); else if(a === 'closedev') actClose(d); }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var pid = t.getAttribute('data-fs-val');
+    if(pid && formModal){ var p = pointById(pid); formModal.answers[pid] = { value:t.value }; var h = document.getElementById('fs-hint-' + pid); if(h && p) h.innerHTML = hintHtml(p, formModal.answers[pid]); return; }
+    var x = t.getAttribute('data-fs-extra'); if(x && formModal){ formModal.extra[x] = t.value; return; }
+    var q = t.getAttribute('data-fs-q'); if(q){ F[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-fs-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
+  }, true);
+  document.addEventListener('change', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var s = t.getAttribute('data-fs-sel'); if(s){ F[s] = t.value; rerender(); return; }
+    if(t.getAttribute('data-fs') === 'qpoint' && formModal){ formModal.qid = t.value; formModal.answers = {}; mount(); }
+  }, true);
+  window.fsReset = function(){ F.points = []; F.status = {}; F.readings = []; F.deviations = []; F.ncrs = []; F.profiles = []; F.loaded = false; F.loading = false; F.tried = false; F.error = ''; modal = null; formModal = null; mount(); };
+})();
+
 </script>
 
 </body>
