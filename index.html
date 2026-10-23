@@ -8635,7 +8635,9 @@ const NAV_MODULES = [
           { id:"nav-fs-pest", label:"Pest Control", isActive(){ return tab==="pest-control"; }, action(){ tab="pest-control"; } }
         ]
       },
-      { id:"nav-fs-allergens", label:"Allergen Management", isActive(){ return tab==="allergens"; }, action(){ tab="allergens"; } },
+      { id:"nav-fs-allergens", label:"Allergen Register", isActive(){ return tab==="al-products"; }, action(){ tab="al-products"; window.__alView="products"; } },
+      { id:"nav-fs-al-changeover", label:"Allergen Changeovers", isActive(){ return tab==="al-changeovers"; }, action(){ tab="al-changeovers"; window.__alView="changeovers"; } },
+      { id:"nav-fs-al-incidents", label:"Allergen Incidents", isActive(){ return tab==="al-incidents"; }, action(){ tab="al-incidents"; window.__alView="incidents"; } },
       { id:"nav-fs-ncr", label:"Non-Conformances", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="ncr"; }, action(){ tab="foodsafe"; foodsafeSubTab="ncr"; } },
       { id:"nav-fs-verification", label:"Verification", isActive(){ return tab==="fs-verification"; }, action(){ tab="fs-verification"; } },
       { id:"nav-fs-calibration", label:"Calibration & Equipment", isActive(){ return tab==="calibration"; }, action(){ tab="calibration"; } },
@@ -9141,7 +9143,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
@@ -9469,8 +9471,9 @@ function renderDashboard(){
   const recallScore = window.recallReadiness ? window.recallReadiness() : null;
   const totalSuppliers = state.suppliers.length;
   const supplierScore = totalSuppliers>0 ? Math.round((state.suppliers.filter(s=>s.approvalStatus==="Approved").length/totalSuppliers)*1000)/10 : null;
-  const totalAllergenIncidents = state.allergenIncidents.length;
-  const allergenScore = totalAllergenIncidents>0 ? Math.round((state.allergenIncidents.filter(i=>i.capaStatus==="Closed").length/totalAllergenIncidents)*1000)/10 : null;
+  /* Allergen score: active products whose label is verified against the register and that have no open incident. Needs at least 3 active products, otherwise "no data". */
+  const _al = (typeof window.__alStats === 'function') ? window.__alStats() : null;
+  const allergenScore = (_al && _al.products>=3) ? Math.round((_al.good/_al.products)*1000)/10 : null;
   const activeCip = state.cipSchedules.filter(c=>c.status!=="Inactive");
   const cipScore = activeCip.length>0 ? Math.round((activeCip.filter(c=>cipStatus(c)!=="Overdue").length/activeCip.length)*1000)/10 : null;
   const totalSensory = state.sensoryEvaluations.length;
@@ -9523,7 +9526,7 @@ function renderDashboard(){
     {label:"HACCP Compliance", score:haccpScore},
     {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore},
     {label:"Supplier Approval Rate", score:supplierScore},
-    {label:"Allergen Incident Closure", score:allergenScore},
+    {label:"Allergen Controls", score:allergenScore},
     {label:"CIP Cleaning Compliance", score:cipScore},
     {label:"Sensory Evaluation Pass Rate", score:sensoryScore}
   ];
@@ -9599,6 +9602,10 @@ function renderDashboard(){
   state.documents.filter(d=>d.status==="Under Review").forEach(d=>priorities.push({dot:"🟡", text:`Approve document: ${d.title}`, navId:"nav-documents", urgency:0}));
   state.suppliers.filter(s=>s.approvalStatus==="Pending").forEach(s=>priorities.push({dot:"🟡", text:`Review supplier: ${s.name}`, navId:"nav-suppliers-list", urgency:0}));
   if(_fs && _fs.openDeviations) priorities.push({dot:"🔴", text:`Close ${_fs.openDeviations} open food safety deviation${_fs.openDeviations===1?'':'s'}${_fs.oldestOpenDays?` (oldest ${_fs.oldestOpenDays} d)`:''}`, navId:"nav-fs-deviations", urgency:1+_fs.oldestOpenDays});
+  if(_al && _al.openIncidents) priorities.push({dot:"🔴", text:`Close ${_al.openIncidents} open allergen incident${_al.openIncidents===1?'':'s'}${_al.oldestOpenDays?` (oldest ${_al.oldestOpenDays} d)`:''}`, navId:"nav-fs-al-incidents", urgency:1+_al.oldestOpenDays});
+  if(_al && _al.mismatches) priorities.push({dot:"🔴", text:`${_al.mismatches} product label${_al.mismatches===1?'':'s'} do not match the allergen register`, navId:"nav-fs-allergens", urgency:5});
+  if(_al && _al.pendingChangeovers) priorities.push({dot:"🟡", text:`Verify allergen cleaning on ${_al.pendingChangeovers} changeover${_al.pendingChangeovers===1?'':'s'}`, navId:"nav-fs-al-changeover", urgency:_al.pendingChangeovers});
+  if(_al && _al.toCheck) priorities.push({dot:"🟡", text:`${_al.toCheck} product label${_al.toCheck===1?'':'s'} need an allergen label check`, navId:"nav-fs-allergens", urgency:_al.toCheck});
   if(_fs && _fs.overdue) priorities.push({dot:"🟡", text:`${_fs.overdue} monitoring point${_fs.overdue===1?'':'s'} overdue for a reading`, navId:"nav-fs-today", urgency:_fs.overdue});
   const priorityOrder = {"🔴":0,"🟡":1,"🟢":2};
   priorities.sort((a,b)=>priorityOrder[a.dot]-priorityOrder[b.dot] || b.urgency-a.urgency);
@@ -9762,7 +9769,7 @@ function renderDashboard(){
       ${kpiGroup("Food Safety", [
         {label:"HACCP Compliance", score:haccpScore, key:"haccp"},
         {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore, key:"recall"},
-        {label:"Allergen Incident Closure", score:allergenScore, key:"allergen"},
+        {label:"Allergen Controls", score:allergenScore, key:"allergen"},
         {label:"CIP Cleaning Compliance", score:cipScore, key:"cip"},
         {label:"Sensory Evaluation Pass Rate", score:sensoryScore, key:"sensory"}
       ])}
@@ -22194,6 +22201,293 @@ function showUpdateBanner(){
     if(t.getAttribute('data-fs') === 'qpoint' && formModal){ formModal.qid = t.value; formModal.answers = {}; mount(); }
   }, true);
   window.fsReset = function(){ F.points = []; F.status = {}; F.readings = []; F.deviations = []; F.ncrs = []; F.profiles = []; F.loaded = false; F.loading = false; F.tried = false; F.error = ''; modal = null; formModal = null; mount(); };
+})();
+
+
+/* ===== Allergen Controls (stage 1): product register with signed label check, changeover cleaning verification, incidents ===== */
+(function(){
+  if(window.__alInstalled) return;
+  window.__alInstalled = true;
+  var LIST = ['Milk','Eggs','Fish','Crustaceans','Peanuts','Tree Nuts','Soy','Wheat/Gluten','Sesame','Sulphites','Mustard','Celery','Lupin','Molluscs'];
+  var A = { products:[], status:{}, checks:[], changeovers:[], incidents:[], ncrs:[], profiles:[], loaded:false, loading:false, tried:false, error:'', view:'products', pq:'', pState:'', incFilter:'open', coFilter:'all' };
+  var modal = null;
+  var SOURCES = [['customer_complaint','Customer complaint'],['changeover','Failed changeover'],['label_mismatch','Label mismatch found'],['supplier','Supplier issue'],['internal_audit','Internal audit or inspection'],['other','Other']];
+  var METHODS = [['visual','Visual inspection'],['atp','ATP swab'],['allergen_swab','Allergen swab test'],['lab_test','Laboratory test']];
+  var INCSTAT = { open:['Open: needs containment','rust'], contained:['Contained: needs root cause and closure','amber'], closed:['Closed','green'] };
+  var LABELSTATE = { mismatch:['Label does not match register','rust'], unverified:['Label not checked yet','amber'], stale:['Needs label re-check','amber'], verified:['Label verified','green'] };
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function canRecord(){ return ['admin','quality manager','approver','department manager','employee'].indexOf(myRole()) !== -1; }
+  function canDecide(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ if(!iso) return '—'; var d = new Date(iso); if(isNaN(d)) return String(iso).slice(0, 16); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function person(id){ for(var i = 0; i < A.profiles.length; i++){ if(A.profiles[i].id === id) return A.profiles[i].full_name || 'Unnamed user'; } return id ? 'Unknown user' : '—'; }
+  function prod(id){ for(var i = 0; i < A.products.length; i++){ if(A.products[i].id === id) return A.products[i]; } return null; }
+  function active(){ return A.products.filter(function(p){ return p.status === 'active'; }); }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function chips(arr, tone){ arr = arr || []; return arr.length ? arr.map(function(a){ return '<span class="tag tag-' + (tone || 'neutral') + '" style="margin:0 3px 3px 0;">' + e(a) + '</span>'; }).join('') : '<span class="muted-italic" style="font-size:11px;">none</span>'; }
+  function lstate(p){ var s = A.status[p.id]; return s ? s.label_state : 'unverified'; }
+  function lastCheck(p){ for(var i = 0; i < A.checks.length; i++){ if(A.checks[i].product_id === p.id) return A.checks[i]; } return null; }
+
+  async function load(){
+    if(A.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    A.loading = true; A.tried = true; A.error = '';
+    try{
+      var res = await Promise.all([
+        fetchAllRows('al_products', function(q){ return q.order('code', { ascending:true }); }),
+        supabaseClient.from('al_product_status').select('*'),
+        supabaseClient.from('al_label_checks').select('*').order('checked_at', { ascending:false }).limit(600),
+        supabaseClient.from('al_changeovers').select('*').order('cleaned_at', { ascending:false }).limit(400),
+        fetchAllRows('al_incidents', function(q){ return q.order('created_at', { ascending:false }); }),
+        supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500),
+        supabaseClient.rpc('get_org_directory')
+      ]);
+      var err = null; for(var i = 0; i < 5; i++){ if(res[i].error){ err = res[i].error; break; } }
+      if(err) A.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'Allergen Controls is not installed yet. Run al_controls_run_this.sql in Supabase.' : err.message;
+      else {
+        A.products = res[0].data || []; A.status = {}; (res[1].data || []).forEach(function(s){ A.status[s.product_id] = s; });
+        A.checks = res[2].data || []; A.changeovers = res[3].data || []; A.incidents = res[4].data || [];
+        A.ncrs = res[5].error ? [] : (res[5].data || []); A.profiles = res[6].error ? [] : (res[6].data || []); A.loaded = true;
+      }
+    }catch(ex){ A.error = (ex && ex.message) || String(ex); }
+    A.loading = false; rerender();
+  }
+  async function refresh(){ A.loading = false; await load(); }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('al-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'al-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'alf-' + x.id, ctl;
+      if(x.type === 'note') return '<div style="font-size:12px;background:var(--cream,#f7f3ea);border-radius:6px;padding:8px 10px;white-space:pre-wrap;margin-bottom:8px;">' + e(x.label) + '</div>';
+      if(x.type === 'multi'){
+        ctl = '<div id="' + id + '" style="display:flex;flex-wrap:wrap;gap:4px 12px;">' + LIST.map(function(a){ return '<label style="display:inline-flex;align-items:center;gap:4px;font-size:12.5px;"><input type="checkbox" value="' + e(a) + '" style="width:auto;"' + ((x.value || []).indexOf(a) !== -1 ? ' checked' : '') + ' />' + e(a) + '</label>'; }).join('') + '</div>';
+      }
+      else if(x.type === 'textarea') ctl = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" style="width:100%;box-sizing:border-box;" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') ctl = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else ctl = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value || '') + '" />';
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + ctl + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-al-modal="overlay"><div class="modal-card" style="max-width:600px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;white-space:pre-wrap;">' + e(modal.help) + '</p>' : '') + f +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-al-modal="cancel">Cancel</button><button class="btn btn-primary" data-al-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){
+      if(x.type === 'note') return;
+      var el = document.getElementById('alf-' + x.id); if(!el) return;
+      if(x.type === 'multi') v[x.id] = Array.prototype.map.call(el.querySelectorAll('input:checked'), function(i){ return i.value; });
+      else v[x.id] = String(el.value || '').trim();
+    });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && (x.type === 'multi' ? !(v[x.id] || []).length : !v[x.id])){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(cfg.prepare) await cfg.prepare(v);
+      var call = cfg.call(v), r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      var msg = cfg.done ? cfg.done(r.data) : null;
+      modal = null; mount(); toast(msg ? msg.text : (cfg.successText || 'Saved.'), msg && msg.error ? 'error' : undefined); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- actions ----- */
+  function actProduct(p){
+    p = p || {};
+    openModal({ title:p.id ? 'Edit ' + p.code : 'New product', submitText:'Save product', successText:'Product saved.',
+      help:'Tick what the recipe CONTAINS, what it MAY CONTAIN (shared line or ingredient risk), and what the LABEL says. ' + (p.id ? 'Changing allergens or label wording needs a reason and cancels the label check.' : ''),
+      fields:[ { id:'code', label:'Product code', value:p.code || '', required:true }, { id:'name', label:'Product name', value:p.name || '', required:true }, { id:'area', label:'Line or area', value:p.area || '' },
+        { id:'status', label:'Status', type:'select', options:[['active','Active'], ['discontinued','Discontinued']], value:p.status || 'active' },
+        { id:'contains', label:'RECIPE CONTAINS', type:'multi', value:p.contains || [] }, { id:'may_contain', label:'RECIPE MAY CONTAIN', type:'multi', value:p.may_contain || [] },
+        { id:'label_contains', label:'LABEL says “Contains”', type:'multi', value:p.label_contains || [] }, { id:'label_may_contain', label:'LABEL says “May contain”', type:'multi', value:p.label_may_contain || [] },
+        { id:'label_ref', label:'Label reference or artwork version checked', value:p.label_ref || '' }, { id:'notes', label:'Notes', value:p.notes || '' },
+        { id:'change_reason', label:'Reason for changing allergens or label (required when editing them)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Changing a product’s allergen record is a controlled change. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'al_product_save', args:{ p_id:p.id || newId(), p_f:v } }; } });
+  }
+  function actLabel(p){
+    openModal({ title:'Check label: ' + p.code + ' ' + p.name, submitText:'Sign label check', successText:'Label check recorded.',
+      help:'Hold the actual label or artwork next to this record.\nRecipe contains: ' + (p.contains.join(', ') || 'none') + '\nMay contain: ' + (p.may_contain.join(', ') || 'none') + '\nLabel says contains: ' + (p.label_contains.join(', ') || 'none') + '\nLabel says may contain: ' + (p.label_may_contain.join(', ') || 'none') + '\nLabel reference: ' + (p.label_ref || 'not entered') + '\nYou cannot check a label you last edited, unless nobody else is authorised.',
+      fields:[ { id:'result', label:'Does the printed label match this record?', type:'select', options:[['', '— choose —'], ['pass', 'Yes: label matches'], ['fail', 'No: label is wrong']], required:true }, { id:'note', label:'Note (required if wrong)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('A label check is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'al_label_check', args:{ p_id:newId(), p_product:p.id, p_result:v.result, p_note:nul(v.note) } }; } });
+  }
+  function prodOptions(){ return [['', '— choose —']].concat(active().map(function(p){ return [p.id, p.code + ' · ' + p.name]; })); }
+  function actChangeover(){
+    if(active().length < 2){ toast('Add at least two active products first.', 'error'); return; }
+    openModal({ title:'Record a changeover', submitText:'Record cleaning', help:'The system works out which allergens of the previous product must be cleaned out. Someone else then verifies the cleaning.',
+      fields:[ { id:'from', label:'Line ran this product BEFORE', type:'select', options:prodOptions(), required:true }, { id:'to', label:'Line will run this product NEXT', type:'select', options:prodOptions(), required:true },
+        { id:'area', label:'Line or area' }, { id:'method', label:'How the line was cleaned', type:'textarea', rows:2 } ],
+      call:function(v){ return { fn:'al_changeover_record', args:{ p_id:newId(), p_from:v.from, p_to:v.to, p_area:nul(v.area), p_method:nul(v.method) } }; },
+      done:function(d){ return d && d.status === 'not_required' ? { text:'Recorded. No allergen needs clearing for this changeover.' } : { text:'Recorded. Must be cleared: ' + ((d && d.allergens_to_clear) || []).join(', ') + '. Now wait for independent verification.' }; } });
+  }
+  function actVerify(c){
+    openModal({ title:'Verify cleaning', submitText:'Sign verification', help:'Allergens to be cleared: ' + (c.allergens_to_clear || []).join(', ') + '\nCleaned by ' + person(c.cleaned_by) + ' (' + (c.clean_method || '') + ').\nYou cannot verify cleaning you did yourself, unless nobody else is authorised. A fail opens an incident.',
+      fields:[ { id:'method', label:'How did you verify?', type:'select', options:[['', '— choose —']].concat(METHODS), required:true }, { id:'result', label:'Result', type:'select', options:[['', '— choose —'], ['pass', 'Pass: line is clean'], ['fail', 'Fail: allergen residue found']], required:true }, { id:'note', label:'Note (required for a fail)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Verifying allergen cleaning is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'al_changeover_verify', args:{ p_id:c.id, p_method:v.method, p_result:v.result, p_note:nul(v.note) } }; },
+      done:function(d){ return d && d.status === 'failed' ? { text:'Verification FAILED. Incident ' + d.incident_ref + ' opened. Hold the product and record containment.', error:true } : { text:'Line released.' }; } });
+  }
+  function actIncident(p){
+    openModal({ title:'Report an allergen incident', submitText:'Report', help:'Report anything involving an undeclared or uncontrolled allergen: a complaint, a cross-contact finding, a wrong label.',
+      fields:[ { id:'product_id', label:'Product (if it is on the register)', type:'select', options:[['', '— not on the register —']].concat(A.products.map(function(x){ return [x.id, x.code + ' · ' + x.name]; })), value:p ? p.id : '' },
+        { id:'product_text', label:'Product name (if not on the register)' }, { id:'allergens', label:'Allergens involved', type:'multi', value:[], required:true },
+        { id:'source', label:'How it came to light', type:'select', options:[['', '— choose —']].concat(SOURCES), required:true },
+        { id:'reached_market', label:'Did the product reach customers?', type:'select', options:[['unknown', 'Not known yet'], ['yes', 'Yes'], ['no', 'No: it stayed on site']] },
+        { id:'description', label:'What happened (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'al_incident_raise', args:{ p_id:newId(), p_f:v } }; },
+      done:function(d){ return { text:'Incident ' + (d && d.ref) + ' reported. Record containment now.', error:true }; } });
+  }
+  function actContain(i){
+    openModal({ title:'Containment for ' + i.ref, submitText:'Record containment', successText:'Containment recorded.', help:i.description,
+      fields:[ { id:'action', label:'Immediate action taken (at least 10 characters)', type:'textarea', required:true }, { id:'held', label:'Was product put on hold?', type:'select', options:[['', '— choose —'], ['yes', 'Yes, product is on hold'], ['no', 'No product affected']], required:true },
+        { id:'qty', label:'Quantity or batches (optional)' }, { id:'reached', label:'Did the product leave the site?', type:'select', options:[['', '— choose —'], ['yes', 'Yes, some reached customers'], ['no', 'No, it stayed on site']], value:i.reached_market === 'unknown' ? '' : i.reached_market, required:true } ],
+      call:function(v){ return { fn:'al_incident_contain', args:{ p_id:i.id, p_action:v.action, p_held:v.held === 'yes', p_qty:nul(v.qty), p_reached:v.reached } }; } });
+  }
+  function actLinkNcr(i){
+    openModal({ title:'Link an NCR to ' + i.ref, submitText:'Link NCR', successText:'NCR linked.', help:'Raise the NCR first (button on the incident), then link it here. If the product reached the market the incident cannot close without one.',
+      fields:[ { id:'ncr', label:'NCR', type:'select', options:[['', '— choose —']].concat(A.ncrs.map(function(n){ return [n.id, (n.reference_number || 'NCR') + ' · ' + String(n.title || '').slice(0, 70)]; })), required:true } ],
+      call:function(v){ return { fn:'al_incident_link_ncr', args:{ p_id:i.id, p_ncr:v.ncr } }; } });
+  }
+  function actClose(i){
+    openModal({ title:'Close ' + i.ref, submitText:'Sign and close', successText:'Incident closed.', help:'Closing confirms the cause was found and the fix is in place.' + (i.reached_market === 'yes' ? '\nProduct reached customers: an NCR must be linked, and consider whether a recall is needed.' : ''),
+      fields:[ { id:'root', label:'Root cause (at least 15 characters)', type:'textarea', required:true }, { id:'act', label:'Corrective action that stops it happening again (at least 15 characters)', type:'textarea', required:true }, { id:'note', label:'Closure note (optional)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Closing an allergen incident is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'al_incident_close', args:{ p_id:i.id, p_root:v.root, p_action:v.act, p_note:nul(v.note) } }; } });
+  }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-al="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function tile(n, l, tone){ return '<div style="flex:1 1 118px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function openInc(){ return A.incidents.filter(function(i){ return i.status !== 'closed'; }); }
+  function pendingCo(){ return A.changeovers.filter(function(c){ return c.status === 'pending'; }); }
+  function tabs(){
+    var oi = openInc().length, pc = pendingCo().length;
+    return '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + [['products', 'Product register'], ['changeovers', 'Changeovers' + (pc ? ' (' + pc + ')' : '')], ['incidents', 'Incidents' + (oi ? ' (' + oi + ')' : '')]].map(function(x){ return '<button class="status-pill ' + (A.view === x[0] ? 'active' : '') + '" data-al="view" data-v="' + x[0] + '">' + e(x[1]) + '</button>'; }).join('') + '</div>';
+  }
+  function productsView(){
+    var act = active(), counts = { verified:0, mismatch:0, other:0 };
+    act.forEach(function(p){ var s = lstate(p); if(s === 'verified') counts.verified++; else if(s === 'mismatch') counts.mismatch++; else counts.other++; });
+    var list = A.products.filter(function(p){ var s = lstate(p); return (!A.pState || (A.pState === 'inactive' ? p.status !== 'active' : (p.status === 'active' && s === A.pState))) && (!A.pq || (p.code + ' ' + p.name + ' ' + (p.area || '')).toLowerCase().indexOf(A.pq.toLowerCase()) !== -1); });
+    var head = '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(act.length, 'active products') + tile(counts.verified, 'labels verified', counts.verified ? 'green' : '') + tile(counts.other, 'labels to check', counts.other ? 'amber' : '') + tile(counts.mismatch, 'label mismatches', counts.mismatch ? 'rust' : '') + '</div>' +
+      '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['', 'All'], ['mismatch', 'Mismatch'], ['unverified', 'Not checked'], ['stale', 'Re-check'], ['verified', 'Verified'], ['inactive', 'Discontinued']].map(function(x){ return '<button class="status-pill ' + (A.pState === x[0] ? 'active' : '') + '" data-al="pstate" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') +
+      '<input data-al-q="pq" placeholder="Search code, name, line" value="' + e(A.pq) + '" style="font-size:12px;max-width:190px;" />' + bt('csv', {}, '⬇ CSV') + (isQm() ? bt('newproduct', {}, '+ New product', true) : '') + '</div>';
+    if(!list.length) return head + '<p class="muted-italic">' + (A.products.length ? 'No products in this view.' : 'No products yet. ' + (isQm() ? 'Add each product with what it contains and what its label says.' : 'Ask an Admin or Quality Manager to add the products.')) + '</p>';
+    return head + list.map(function(p){
+      var s = lstate(p), ls = LABELSTATE[s] || LABELSTATE.unverified, lc = lastCheck(p);
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div><div class="audit-title">' + e(p.code) + ' · ' + e(p.name) + (p.status !== 'active' ? ' ' + tag('neutral', 'Discontinued') : '') + '</div><div class="audit-sub">' + e(p.area || '') + (p.label_ref ? ' · label ' + e(p.label_ref) : '') + '</div></div>' + (p.status === 'active' ? tag(ls[1], ls[0]) : '') + '</div>' +
+        '<div style="font-size:12px;margin-top:6px;"><div><strong>Recipe contains:</strong> ' + chips(p.contains, 'amber') + '</div><div><strong>May contain:</strong> ' + chips(p.may_contain, 'neutral') + '</div><div><strong>Label says contains:</strong> ' + chips(p.label_contains, s === 'mismatch' ? 'rust' : 'neutral') + ' <strong>May contain:</strong> ' + chips(p.label_may_contain, 'neutral') + '</div>' +
+        (lc ? '<div class="muted-italic" style="font-size:11px;margin-top:2px;">Last label check: ' + e(lc.result === 'pass' ? 'passed' : 'FAILED') + ' by ' + e(person(lc.checked_by)) + ' · ' + e(when(lc.checked_at)) + (lc.self_checked ? ' (checked by the person who last edited it: nobody else was authorised)' : '') + (lc.note ? ' · ' + e(lc.note) : '') + '</div>' : '') + '</div>' +
+        '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + (isQm() ? bt('editproduct', { id:p.id }, 'Edit') : '') + (canDecide() && p.status === 'active' ? bt('label', { id:p.id }, 'Check label', s !== 'verified') : '') + (canRecord() ? bt('incident', { id:p.id }, 'Report incident') : '') + '</div></div>'; }).join('');
+  }
+  function changeoversView(){
+    var f = A.coFilter, list = A.changeovers.filter(function(c){ return f === 'all' ? true : f === 'pending' ? c.status === 'pending' : c.status === f; });
+    var head = '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['all', 'All'], ['pending', 'Awaiting verification'], ['failed', 'Failed'], ['released', 'Released']].map(function(x){ return '<button class="status-pill ' + (f === x[0] ? 'active' : '') + '" data-al="cofilter" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + (canRecord() ? bt('newco', {}, '+ Record changeover', true) : '') + '</div>';
+    if(!list.length) return head + '<p class="muted-italic">No changeovers in this view.</p>';
+    var tone = { pending:['Awaiting verification', 'amber'], released:['Released: verified clean', 'green'], failed:['FAILED verification', 'rust'], not_required:['No allergen to clear', 'neutral'] };
+    return head + list.slice(0, 150).map(function(c){ var a = prod(c.from_product_id) || { code:'?', name:'' }, b = prod(c.to_product_id) || { code:'?', name:'' }, t = tone[c.status] || ['', 'neutral'], inc = A.incidents.filter(function(i){ return i.id === c.incident_id; })[0];
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title">' + e(a.code) + ' → ' + e(b.code) + ' <span class="muted-italic" style="font-weight:400;font-size:11px;">' + e(c.area || '') + '</span></div>' + tag(t[1], t[0]) + '</div>' +
+        '<div style="font-size:12px;margin-top:4px;">To clear: ' + chips(c.allergens_to_clear, 'amber') + '</div><div class="muted-italic" style="font-size:11px;">Cleaned by ' + e(person(c.cleaned_by)) + ' · ' + e(when(c.cleaned_at)) + (c.clean_method ? ' · ' + e(c.clean_method) : '') + '</div>' +
+        (c.verified_at ? '<div class="muted-italic" style="font-size:11px;">Verified by ' + e(person(c.verified_by)) + ' · ' + e(when(c.verified_at)) + ' · ' + e(lbl(METHODS, c.verify_method)) + (c.self_verified ? ' (verified by the person who cleaned: nobody else was authorised)' : '') + (c.verify_note ? ' · ' + e(c.verify_note) : '') + '</div>' : '') +
+        (inc ? '<div style="font-size:12px;color:var(--rust);">Incident ' + e(inc.ref) + ' opened (' + e(inc.status) + ')</div>' : '') +
+        (c.status === 'pending' && canDecide() ? '<div style="margin-top:6px;">' + bt('verify', { id:c.id }, 'Verify cleaning', true) + '</div>' : '') + '</div>'; }).join('');
+  }
+  function incCard(i){
+    var s = INCSTAT[i.status] || [i.status, 'neutral'], ncr = A.ncrs.filter(function(n){ return n.id === i.ncr_id; })[0], b = '';
+    var steps = '<div style="font-size:12px;margin-top:6px;"><div>Allergens: ' + chips(i.allergens, 'amber') + ' · ' + e(lbl(SOURCES, i.source)) + ' · reported by ' + e(person(i.reported_by)) + ' · ' + e(when(i.created_at)) + '</div>' +
+      (i.reached_market === 'yes' ? '<div style="color:var(--rust);font-weight:600;">Product reached customers. An NCR is required before closing; consider whether a recall is needed.</div>' : '') +
+      (i.contained_at ? '<div>Contained by ' + e(person(i.contained_by)) + ' · ' + e(when(i.contained_at)) + ': ' + e(i.immediate_action) + (i.product_held ? ' (on hold' + (i.held_qty ? ': ' + e(i.held_qty) : '') + ')' : '') + '</div>' : '') +
+      (ncr ? '<div>NCR: ' + e(ncr.reference_number || 'NCR') + ' · ' + e(ncr.title || '') + '</div>' : '') +
+      (i.closed_at ? '<div>Closed by ' + e(person(i.closed_by)) + ' · ' + e(when(i.closed_at)) + (i.self_closed ? ' (closed by the reporter: nobody else was authorised)' : '') + '. Root cause: ' + e(i.root_cause) + ' Corrective action: ' + e(i.corrective_action) + '</div>' : '') + '</div>';
+    if(i.status === 'open' && canRecord()) b += bt('contain', { id:i.id }, 'Record containment', true);
+    if(i.status !== 'closed' && canDecide()){
+      var nb = ''; try{ if(typeof ncrBtn === 'function') nb = ncrBtn({ title:'Allergen incident ' + i.ref + ': ' + (i.product_text || ''), description:i.description, source:'process_deviation', severity:'Major', area:'', product_ref:i.product_text || '', link_type:'food_safety', link_reference:i.ref + ' — ' + i.description, record_id:String(i.id) }); }catch(_){}
+      b += nb + bt('linkncr', { id:i.id }, ncr ? 'Change linked NCR' : 'Link NCR');
+    }
+    if(i.status === 'contained' && isQm()) b += bt('closeinc', { id:i.id }, 'Close incident', true);
+    return '<div class="card" style="margin-bottom:10px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title">' + e(i.ref) + ' · ' + e(i.product_text || '') + '</div>' + tag(s[1], s[0]) + '</div><div style="font-size:12.5px;margin-top:2px;">' + e(i.description) + '</div>' + steps + (b ? '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + b + '</div>' : '') + '</div>';
+  }
+  function incidentsView(){
+    var f = A.incFilter, list = A.incidents.filter(function(i){ return f === 'all' ? true : f === 'open' ? i.status !== 'closed' : i.status === f; });
+    return '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['open', 'Not closed'], ['closed', 'Closed'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (f === x[0] ? 'active' : '') + '" data-al="incfilter" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + (canRecord() ? bt('newinc', {}, '+ Report incident', true) : '') + '</div>' +
+      (list.length ? list.map(incCard).join('') : '<p class="muted-italic">No incidents in this view.</p>');
+  }
+  function exportCsv(){
+    var rows = [['Code', 'Name', 'Status', 'Line', 'Recipe contains', 'May contain', 'Label contains', 'Label may contain', 'Label ref', 'Label state']].concat(A.products.map(function(p){ return [p.code, p.name, p.status, p.area, p.contains.join('; '), p.may_contain.join('; '), p.label_contains.join('; '), p.label_may_contain.join('; '), p.label_ref, lstate(p)]; }));
+    var csv = rows.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var url = URL.createObjectURL(new Blob([csv], { type:'text/csv' })), a = document.createElement('a'); a.href = url; a.download = 'allergen-register.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  window.renderAllergenControls = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use allergen controls.</p></div>';
+      if(window.__alView){ A.view = window.__alView; window.__alView = null; }
+      if(!A.loaded && !A.loading && !A.tried) setTimeout(load, 0);
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">🥜 Allergen Management</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Labels are checked by a second person, changeover cleaning is verified by a second person, and incidents must be contained and closed with a root cause. Nothing can be deleted.</p>';
+      if(A.error) return head + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(A.error) + '</p></div>';
+      if(!A.loaded) return head + '<p class="muted-italic">Loading…</p>';
+      return head + tabs() + (A.view === 'changeovers' ? changeoversView() : A.view === 'incidents' ? incidentsView() : productsView());
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Allergen page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.alEnsureLoaded = function(){ if(!A.loaded && !A.loading && !A.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.__alStats = function(){
+    window.alEnsureLoaded(); if(!A.loaded) return null;
+    var act = active(), good = act.filter(function(p){ return lstate(p) === 'verified' && !(A.status[p.id] && A.status[p.id].open_incidents > 0); }).length;
+    var open = openInc(), oldest = open.reduce(function(m, i){ var d = Math.floor((Date.now() - new Date(i.created_at).getTime()) / 86400000); return d > m ? d : m; }, 0);
+    return { products:act.length, good:good, mismatches:act.filter(function(p){ return lstate(p) === 'mismatch'; }).length, toCheck:act.filter(function(p){ var s = lstate(p); return s === 'unverified' || s === 'stale'; }).length, pendingChangeovers:pendingCo().length, openIncidents:open.length, oldestOpenDays:oldest };
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-al]') ? null : t.closest('[data-al-modal]');
+    if(m){ var k0 = m.getAttribute('data-al-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-al]'); if(!el) return;
+    if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    var a = el.getAttribute('data-al'), id = el.getAttribute('data-id');
+    ev.preventDefault(); ev.stopPropagation();
+    if(a === 'reload'){ A.loading = false; A.tried = false; load(); }
+    else if(a === 'view'){ A.view = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'pstate'){ A.pState = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'incfilter'){ A.incFilter = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'cofilter'){ A.coFilter = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'csv') exportCsv();
+    else if(a === 'newproduct') actProduct();
+    else if(a === 'newco') actChangeover();
+    else if(a === 'newinc') actIncident(null);
+    else { var p = prod(id), c = A.changeovers.filter(function(x){ return x.id === id; })[0], i = A.incidents.filter(function(x){ return x.id === id; })[0];
+      if(a === 'editproduct' && p) actProduct(p); else if(a === 'label' && p) actLabel(p); else if(a === 'incident' && p) actIncident(p);
+      else if(a === 'verify' && c) actVerify(c); else if(a === 'contain' && i) actContain(i); else if(a === 'linkncr' && i) actLinkNcr(i); else if(a === 'closeinc' && i) actClose(i); }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var q = t.getAttribute('data-al-q'); if(q){ A[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-al-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
+  }, true);
+  window.alReset = function(){ A.products = []; A.status = {}; A.checks = []; A.changeovers = []; A.incidents = []; A.ncrs = []; A.profiles = []; A.loaded = false; A.loading = false; A.tried = false; A.error = ''; modal = null; mount(); };
 })();
 
 </script>
