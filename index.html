@@ -8652,11 +8652,11 @@ const NAV_MODULES = [
       { id:"nav-trace-recall-reports", label:"Recall Reports", isActive(){ return tab==="recall-reports"; }, action(){ tab="recall-reports"; } }
     ]
   },
-  { id:"nav-sensory", icon:"⭐", label:"Sensory Evaluation", children: SENSORY_CATEGORIES.map((c,i)=>({
-      id:"nav-sensory-"+i, label:c,
-      isActive(){ return tab==="sensory" && sensorySubTab===c; },
-      action(){ tab="sensory"; sensorySubTab=c; }
-    }))
+  { id:"nav-sensory", icon:"⭐", label:"Sensory Evaluation", children:[
+      { id:"nav-sensory-0", label:"Sensory Evaluations", isActive(){ return tab==="sensory" && sensorySubTab!=="Customer Complaint" && window.__snNav!=="actions"; }, action(){ tab="sensory"; sensorySubTab="Product Quality"; window.__snNav="eval"; window.__snView="eval"; } },
+      { id:"nav-sensory-1", label:"Sensory Follow-ups", isActive(){ return tab==="sensory" && sensorySubTab!=="Customer Complaint" && window.__snNav==="actions"; }, action(){ tab="sensory"; sensorySubTab="Product Quality"; window.__snNav="actions"; window.__snView="actions"; } },
+      { id:"nav-sensory-3", label:"Customer Complaints", isActive(){ return tab==="sensory" && sensorySubTab==="Customer Complaint"; }, action(){ tab="sensory"; sensorySubTab="Customer Complaint"; } }
+    ]
   },
   { id:"nav-lab", icon:"🧫", label:"Laboratory Management", children:[
       { id:"nav-lab-microbiology", label:"Microbiology", isActive(){ return tab==="lab-microbiology"; }, action(){ tab="lab-microbiology"; } },
@@ -9139,7 +9139,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? window.renderComplaints() : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? window.renderComplaints() : window.renderSensoryControls()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
@@ -9473,8 +9473,9 @@ function renderDashboard(){
   /* Scheduled controls score (CIP, calibration, pest, verification, drills): active controls that are not overdue and have no open deviation. Needs at least 3 controls, otherwise "no data". */
   const _sc = (typeof window.__scStats === 'function') ? window.__scStats() : null;
   const cipScore = (_sc && _sc.controls>=3) ? Math.round((_sc.good/_sc.controls)*1000)/10 : null;
-  const totalSensory = state.sensoryEvaluations.length;
-  const sensoryScore = totalSensory>0 ? Math.round((state.sensoryEvaluations.filter(e=>sensoryResult(e)==="Pass").length/totalSensory)*1000)/10 : null;
+  const _snSt = (window.__snStats && window.__snStats()) || null;
+  const totalSensory = _snSt ? _snSt.recent : 0;
+  const sensoryScore = (_snSt && _snSt.recent>=5) ? Math.round((_snSt.recentPass/_snSt.recent)*1000)/10 : null;
   const foodSafetyComponents = [haccpScore, cipScore, allergenScore].filter(s=>s!==null);
   const foodSafetyScore = foodSafetyComponents.length ? Math.round((foodSafetyComponents.reduce((a,b)=>a+b,0)/foodSafetyComponents.length)*10)/10 : null;
   const labTests = [
@@ -9607,6 +9608,7 @@ function renderDashboard(){
   if(_al && _al.mismatches) priorities.push({dot:"🔴", text:`${_al.mismatches} product label${_al.mismatches===1?'':'s'} do not match the allergen register`, navId:"nav-fs-allergens", urgency:5});
   if(_al && _al.pendingChangeovers) priorities.push({dot:"🟡", text:`Verify allergen cleaning on ${_al.pendingChangeovers} changeover${_al.pendingChangeovers===1?'':'s'}`, navId:"nav-fs-al-changeover", urgency:_al.pendingChangeovers});
   if(_al && _al.toCheck) priorities.push({dot:"🟡", text:`${_al.toCheck} product label${_al.toCheck===1?'':'s'} need an allergen label check`, navId:"nav-fs-allergens", urgency:_al.toCheck});
+  { const _sn = (window.__snStats && window.__snStats()) || null; if(_sn && _sn.openFollowups) priorities.push({dot:"🔴", text:`Decide on ${_sn.openFollowups} failed or borderline sensory evaluation${_sn.openFollowups===1?'':'s'}`, navId:"nav-sensory-1", urgency:7}); }
   if(_cm && _cm.late) priorities.push({dot:"🔴", text:`Answer ${_cm.late} overdue customer complaint${_cm.late===1?'':'s'}`, navId:"nav-sensory-3", urgency:5+_cm.late});
   if(_cm && _cm.regNeeded) priorities.push({dot:"🔴", text:`Decide on regulatory notification for ${_cm.regNeeded} complaint${_cm.regNeeded===1?'':'s'}`, navId:"nav-sensory-3", urgency:8});
   if(_cm && _cm.effectivenessDue) priorities.push({dot:"🟡", text:`Complete ${_cm.effectivenessDue} complaint effectiveness check${_cm.effectivenessDue===1?'':'s'}`, navId:"nav-sensory-3", urgency:_cm.effectivenessDue});
@@ -23055,6 +23057,234 @@ function showUpdateBanner(){
     var s = t.getAttribute('data-cm-sel'); if(s){ C[s] = t.value; rerender(); }
   }, true);
   window.cmReset = function(){ C.rows = []; C.flags = {}; C.ncrs = []; C.profiles = []; C.loaded = false; C.loading = false; C.tried = false; C.error = ''; modal = null; mount(); };
+})();
+
+
+
+/* ===== Sensory Evaluation (stage 1): signed, immutable evaluations; server-judged result; independent follow-up decisions ===== */
+(function(){
+  if(window.__snInstalled) return;
+  window.__snInstalled = true;
+  var ATTRS = ['Appearance','Color','Odor/Aroma','Taste/Flavor','Texture','Overall Acceptability'];
+  var CATS = [['product_quality','Product quality'],['new_product','New product development'],['shelf_life','Shelf-life study'],['quality_release','Quality release'],['legacy_complaint','Old complaint record (imported)']];
+  var NEWCATS = CATS.slice(0, 4);
+  var SAMPLES = ['Raw Material','In-Process','Finished Product'];
+  var DISP = [['released','Released'],['reworked','Reworked or re-processed'],['rejected','Rejected or destroyed'],['held_for_retest','Held for retest']];
+  var TONE = { pass:'green', borderline:'amber', fail:'rust' };
+  var N = { evals:[], fus:[], ncrs:[], profiles:[], loaded:false, loading:false, tried:false, error:'', view:'eval', cat:'', res:'', q:'', fuFilter:'open' };
+  var modal = null;
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function canRecord(){ return ['admin','quality manager','approver','department manager','employee'].indexOf(myRole()) !== -1; }
+  function canDecide(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ if(!iso) return '—'; var d = new Date(iso); if(isNaN(d)) return String(iso).slice(0, 16); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function person(id, txt){ for(var i = 0; i < N.profiles.length; i++){ if(N.profiles[i].id === id) return N.profiles[i].full_name || 'Unnamed user'; } return txt || (id ? 'Unknown user' : '—'); }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function cap(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function fuOf(ev){ for(var i = 0; i < N.fus.length; i++){ if(N.fus[i].evaluation_id === ev.id) return N.fus[i]; } return null; }
+  function rule(scores){
+    var vals = ATTRS.map(function(a){ return Number(scores[a]); }).filter(function(v){ return v >= 1 && v <= 5; });
+    if(!vals.length) return null;
+    var sum = vals.reduce(function(a, b){ return a + b; }, 0), avg = sum / vals.length, mn = Math.min.apply(null, vals);
+    return { overall:Math.round(avg * 10) / 10, result:(mn <= 2 || avg < 3) ? 'fail' : (avg < 4 ? 'borderline' : 'pass') };
+  }
+  var RANK = { pass:0, borderline:1, fail:2 };
+
+  async function load(){
+    if(N.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    N.loading = true; N.tried = true; N.error = '';
+    try{
+      var res = await Promise.all([
+        supabaseClient.from('sn_evaluations').select('*').order('evaluated_on', { ascending:false }).limit(2000),
+        fetchAllRows('sn_followups', function(q){ return q.order('created_at', { ascending:false }); }),
+        supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500),
+        supabaseClient.rpc('get_org_directory')
+      ]);
+      var err = res[0].error || res[1].error;
+      if(err) N.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'Sensory Evaluation is not installed yet. Run sn_sensory_run_this.sql in Supabase.' : err.message;
+      else { N.evals = res[0].data || []; N.fus = res[1].data || []; N.ncrs = res[2].error ? [] : (res[2].data || []); N.profiles = res[3].error ? [] : (res[3].data || []); N.loaded = true; }
+    }catch(ex){ N.error = (ex && ex.message) || String(ex); }
+    N.loading = false; rerender();
+  }
+  async function refresh(){ N.loading = false; await load(); }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('sn-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'sn-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'snf-' + x.id, c;
+      if(x.type === 'score') c = '<div style="display:flex;gap:6px;flex-wrap:wrap;" id="' + id + '">' + [5, 4, 3, 2, 1].map(function(n){ return '<button type="button" class="btn ' + (modal.scores[x.id] === n ? 'btn-primary' : 'btn-ghost') + '" style="min-width:42px;" data-sn="score" data-a="' + e(x.id) + '" data-n="' + n + '">' + n + '</button>'; }).join('') + '</div>';
+      else if(x.type === 'textarea') c = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" style="width:100%;box-sizing:border-box;" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') c = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') c = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else c = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value == null ? '' : x.value) + '" />';
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + c + '</div>';
+    }).join('');
+    var live = modal.scores ? (function(){ var r = rule(modal.scores), all = ATTRS.every(function(a){ return modal.scores[a]; }); return all && r ? '<div style="margin:6px 0;font-size:13px;">Result will be: ' + tag(TONE[r.result], cap(r.result) + ' (average ' + r.overall + ')') + (r.result !== 'pass' ? ' — a comment is required and a follow-up will open.' : '') + '</div>' : ''; })() : '';
+    return '<div class="modal-overlay" data-sn-modal="overlay"><div class="modal-card" style="max-width:580px;max-height:94vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;white-space:pre-wrap;">' + e(modal.help) + '</p>' : '') + f + live +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-sn-modal="cancel">Cancel</button><button class="btn btn-primary" data-sn-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  function keepValues(){ if(!modal) return; modal.fields.forEach(function(x){ var el = document.getElementById('snf-' + x.id); if(el && x.type !== 'score') x.value = el.value; }); }
+  function openModal(c){ modal = c; mount(); }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    keepValues();
+    var v = {};
+    modal.fields.forEach(function(x){ if(x.type !== 'score'){ var el = document.getElementById('snf-' + x.id); if(el) v[x.id] = String(el.value || '').trim(); } });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && x.type !== 'score' && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    if(modal.scores){ for(var j = 0; j < ATTRS.length; j++){ if(!modal.scores[ATTRS[j]]){ toast('Score ' + ATTRS[j] + ' from 1 to 5.', 'error'); return; } } }
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(cfg.prepare) await cfg.prepare(v);
+      var call = cfg.call(v), r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      var msg = cfg.done ? cfg.done(r.data) : null;
+      modal = null; mount(); toast(msg ? msg.text : (cfg.successText || 'Saved.'), msg && msg.error ? 'error' : undefined); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- actions ----- */
+  function actNew(){
+    var fields = [ { id:'category', label:'Category', type:'select', options:NEWCATS, value:'product_quality' }, { id:'product_text', label:'Product', required:true }, { id:'batch_ref', label:'Batch or lot number' },
+      { id:'timepoint', label:'Time point (shelf-life studies, for example Day 14)' }, { id:'sample_type', label:'Sample type', type:'select', options:[['', '— not stated —']].concat(SAMPLES.map(function(s){ return [s, s]; })) },
+      { id:'evaluated_on', label:'Evaluation date', type:'date', value:today() } ];
+    ATTRS.forEach(function(a){ fields.push({ id:a, label:a + ' (1 = very poor, 5 = excellent)', type:'score' }); });
+    fields.push({ id:'comments', label:'Comments (required for a Borderline or Fail result)', type:'textarea', rows:2 });
+    openModal({ title:'New sensory evaluation', submitText:'Sign and record', scores:{}, fields:fields,
+      help:'Signed as you and cannot be edited afterwards. The result is worked out by the system: Fail if any score is 2 or lower or the average is below 3; Borderline if the average is below 4; otherwise Pass.',
+      prepare:async function(){ await signed('A sensory evaluation is a signed record. Enter your password to confirm it is you.'); },
+      call:function(v){ var sc = {}; ATTRS.forEach(function(a){ sc[a] = modal.scores[a]; }); return { fn:'sn_evaluate', args:{ p_id:newId(), p_f:{ category:v.category, product_text:v.product_text, batch_ref:nul(v.batch_ref), timepoint:nul(v.timepoint), sample_type:nul(v.sample_type), evaluated_on:v.evaluated_on, comments:nul(v.comments), scores:sc } } }; },
+      done:function(d){ return { text:'Recorded ' + d.ref + ': ' + cap(d.result) + ' (average ' + d.overall + ').' + (d.result !== 'pass' ? ' A follow-up was opened for a decision on the product.' : ''), error:d.result !== 'pass' }; } });
+  }
+  function actDecide(f, ev){
+    openModal({ title:'Decide on the product: ' + ev.ref, submitText:'Sign decision', successText:'Decision recorded.',
+      help:ev.product_text + (ev.batch_ref ? ' · batch ' + ev.batch_ref : '') + ' · ' + cap(ev.result) + ' (average ' + ev.overall + ')\n' + (ev.comments || '') + '\nYou cannot decide on your own evaluation, unless nobody else is authorised. A failed evaluation needs a linked NCR, and releasing a failed product is limited to Admin and Quality Manager with a reason of at least 20 characters.',
+      fields:[ { id:'disp', label:'What happens to the product?', type:'select', options:[['', '— choose —']].concat(DISP), required:true }, { id:'note', label:'Reason (at least 10 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Deciding on a product is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'sn_followup_decide', args:{ p_id:f.id, p_disposition:v.disp, p_note:v.note } }; } });
+  }
+  function actLink(f){
+    openModal({ title:'Link an NCR', submitText:'Link NCR', successText:'NCR linked.', help:'Raise the NCR first (button on the follow-up), then link it here. A failed evaluation cannot be decided without one.',
+      fields:[ { id:'ncr', label:'NCR', type:'select', options:[['', '— choose —']].concat(N.ncrs.map(function(n){ return [n.id, (n.reference_number || 'NCR') + ' · ' + String(n.title || '').slice(0, 70)]; })), required:true } ],
+      call:function(v){ return { fn:'sn_followup_link_ncr', args:{ p_id:f.id, p_ncr:v.ncr } }; } });
+  }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-sn="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function tile(n, l, tone){ return '<div style="flex:1 1 118px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function openFus(){ return N.fus.filter(function(f){ return f.status === 'open'; }); }
+  function tabs(){ var o = openFus().length; return '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + [['eval', 'Evaluations'], ['actions', 'Follow-ups' + (o ? ' (' + o + ')' : '')], ['batches', 'Batch verdicts']].map(function(x){ return '<button class="status-pill ' + (N.view === x[0] ? 'active' : '') + '" data-sn="view" data-v="' + x[0] + '">' + e(x[1]) + '</button>'; }).join('') + '</div>'; }
+  function scoreLine(ev){ return ATTRS.map(function(a){ return e(a.split('/')[0].split(' ')[0]) + ' ' + e(ev.scores && ev.scores[a] != null ? ev.scores[a] : '–'); }).join(' · '); }
+  function evalView(){
+    var list = N.evals.filter(function(x){ return (!N.cat || x.category === N.cat) && (!N.res || x.result === N.res) && (!N.q || (x.ref + ' ' + x.product_text + ' ' + (x.batch_ref || '')).toLowerCase().indexOf(N.q.toLowerCase()) !== -1); });
+    var recent = N.evals.filter(function(x){ return x.evaluated_on >= new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10); });
+    var head = '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(N.evals.length, 'evaluations') + tile(recent.filter(function(x){ return x.result === 'pass'; }).length + '/' + recent.length, 'passed in last 90 days') + tile(openFus().length, 'follow-ups open', openFus().length ? 'rust' : '') + '</div>' +
+      '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;"><select data-sn-sel="cat" style="font-size:12px;"><option value="">All categories</option>' + CATS.map(function(c){ return '<option value="' + c[0] + '"' + (N.cat === c[0] ? ' selected' : '') + '>' + e(c[1]) + '</option>'; }).join('') + '</select>' +
+      '<select data-sn-sel="res" style="font-size:12px;"><option value="">All results</option><option value="pass"' + (N.res === 'pass' ? ' selected' : '') + '>Pass</option><option value="borderline"' + (N.res === 'borderline' ? ' selected' : '') + '>Borderline</option><option value="fail"' + (N.res === 'fail' ? ' selected' : '') + '>Fail</option></select>' +
+      '<input data-sn-q="q" placeholder="Search ref, product, batch" value="' + e(N.q) + '" style="font-size:12px;max-width:200px;" />' + bt('csv', {}, '⬇ CSV') + (canRecord() ? bt('new', {}, '+ New evaluation', true) : '') + '</div>';
+    if(!list.length) return head + '<p class="muted-italic">No evaluations in this view.</p>';
+    return head + list.slice(0, 200).map(function(x){ var f = fuOf(x);
+      return '<div class="card" style="margin-bottom:6px;padding:8px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title" style="font-size:13px;">' + e(x.ref) + ' · ' + e(x.product_text) + (x.batch_ref ? ' · ' + e(x.batch_ref) : '') + (x.timepoint ? ' · ' + e(x.timepoint) : '') + ' ' + tag('neutral', lbl(CATS, x.category)) + (x.imported ? ' ' + tag('neutral', 'Imported') : '') + '</div><div>' + tag(TONE[x.result], cap(x.result) + (x.overall != null ? ' ' + x.overall : '')) + (f ? ' ' + tag(f.status === 'open' ? 'rust' : 'green', f.status === 'open' ? 'Follow-up open' : 'Decided: ' + lbl(DISP, f.disposition)) : '') + '</div></div>' +
+        '<div class="muted-italic" style="font-size:11px;">' + e(x.evaluated_on) + ' · ' + e(person(x.evaluator_id, x.evaluator_text)) + (x.sample_type ? ' · ' + e(x.sample_type) : '') + ' · ' + scoreLine(x) + (x.comments ? ' · ' + e(x.comments) : '') + '</div></div>'; }).join('');
+  }
+  function actionsView(){
+    var f = N.fuFilter, list = N.fus.filter(function(x){ return f === 'all' ? true : x.status === f; });
+    var head = '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['open', 'Open'], ['decided', 'Decided'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (f === x[0] ? 'active' : '') + '" data-sn="fufilter" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>';
+    if(!list.length) return head + '<p class="muted-italic">No follow-ups in this view.</p>';
+    return head + list.map(function(fu){
+      var ev = N.evals.filter(function(x){ return x.id === fu.evaluation_id; })[0]; if(!ev) return '';
+      var ncr = N.ncrs.filter(function(n){ return n.id === fu.ncr_id; })[0], b = '';
+      if(fu.status === 'open' && canDecide()){
+        var nb = ''; try{ if(typeof ncrBtn === 'function') nb = ncrBtn({ title:'Sensory ' + ev.result + ': ' + ev.product_text + (ev.batch_ref ? ' (' + ev.batch_ref + ')' : ''), description:'Sensory evaluation ' + ev.ref + ' result ' + ev.result + ' (average ' + ev.overall + '). ' + (ev.comments || ''), source:'process_deviation', severity:ev.result === 'fail' ? 'Major' : 'Minor', area:'', product_ref:ev.product_text, link_type:'food_safety', link_reference:ev.ref + ' — ' + ev.product_text, record_id:String(fu.id) }); }catch(_){}
+        b = bt('decide', { id:fu.id }, 'Decide on product', true) + nb + bt('link', { id:fu.id }, ncr ? 'Change linked NCR' : 'Link NCR');
+      }
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title">' + e(ev.ref) + ' · ' + e(ev.product_text) + (ev.batch_ref ? ' · ' + e(ev.batch_ref) : '') + '</div><div>' + tag(TONE[ev.result], cap(ev.result)) + ' ' + tag(fu.status === 'open' ? 'rust' : 'green', fu.status === 'open' ? 'Needs decision' : 'Decided') + '</div></div>' +
+        '<div style="font-size:12px;margin-top:4px;">' + e(ev.comments || '') + ' <span class="muted-italic">(evaluated by ' + e(person(ev.evaluator_id, ev.evaluator_text)) + ', ' + e(ev.evaluated_on) + ')</span></div>' + (ncr ? '<div style="font-size:12px;">NCR: ' + e(ncr.reference_number || 'NCR') + ' · ' + e(ncr.title || '') + '</div>' : '') +
+        (fu.status === 'decided' ? '<div style="font-size:12px;">Decision: <strong>' + e(lbl(DISP, fu.disposition)) + '</strong> by ' + e(person(fu.decided_by)) + ' · ' + e(when(fu.decided_at)) + (fu.self_decided ? ' <span style="color:var(--amber);">(decided by the evaluator: nobody else was authorised)</span>' : '') + ' · ' + e(fu.note) + '</div>' : '') + (b ? '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + b + '</div>' : '') + '</div>'; }).join('');
+  }
+  function batchesView(){
+    var m = {};
+    N.evals.forEach(function(x){ if(!x.batch_ref) return; var k = (x.product_text + '||' + x.batch_ref).toLowerCase(); (m[k] = m[k] || { product:x.product_text, batch:x.batch_ref, list:[] }).list.push(x); });
+    var rows = Object.keys(m).map(function(k){ var g = m[k]; g.worst = g.list.reduce(function(w, x){ return RANK[x.result] > RANK[w] ? x.result : w; }, 'pass'); g.openFu = g.list.some(function(x){ var f = fuOf(x); return f && f.status === 'open'; }); return g; }).sort(function(a, b){ return RANK[b.worst] - RANK[a.worst]; });
+    if(!rows.length) return '<p class="muted-italic">No evaluations with a batch number yet. Enter the batch number on each evaluation to see a verdict per batch.</p>';
+    return '<p class="muted-italic" style="font-size:11px;margin:0 0 8px;">The batch verdict is the worst result recorded for that batch. A single evaluator per record is not a trained panel.</p>' + rows.map(function(g){
+      return '<div class="card" style="margin-bottom:6px;padding:8px 12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div><div class="audit-title" style="font-size:13px;">' + e(g.product) + ' · ' + e(g.batch) + '</div><div class="muted-italic" style="font-size:11px;">' + g.list.length + ' evaluation' + (g.list.length === 1 ? '' : 's') + ' · ' + g.list.map(function(x){ return e(cap(x.result)); }).join(', ') + '</div></div><div>' + tag(TONE[g.worst], 'Batch verdict: ' + cap(g.worst)) + (g.openFu ? ' ' + tag('rust', 'Follow-up open') : '') + '</div></div>'; }).join('');
+  }
+  function exportCsv(){
+    var rows = [['Ref', 'Date', 'Category', 'Product', 'Batch', 'Time point', 'Sample type'].concat(ATTRS).concat(['Overall', 'Result', 'Evaluator', 'Comments'])].concat(N.evals.map(function(x){ return [x.ref, x.evaluated_on, x.category, x.product_text, x.batch_ref, x.timepoint, x.sample_type].concat(ATTRS.map(function(a){ return x.scores && x.scores[a]; })).concat([x.overall, x.result, person(x.evaluator_id, x.evaluator_text), x.comments]); }));
+    var csv = rows.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var url = URL.createObjectURL(new Blob([csv], { type:'text/csv' })), a = document.createElement('a'); a.href = url; a.download = 'sensory-evaluations.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  window.renderSensoryControls = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use sensory evaluation.</p></div>';
+      if(window.__snView){ N.view = window.__snView; window.__snView = null; }
+      if(!N.loaded && !N.loading && !N.tried) setTimeout(load, 0);
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">⭐ Sensory Evaluation</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Evaluations are signed and cannot be edited. The system works out Pass, Borderline or Fail. Borderline and Fail open a follow-up that someone else must decide.</p>';
+      if(N.error) return head + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(N.error) + '</p></div>';
+      if(!N.loaded) return head + '<p class="muted-italic">Loading…</p>';
+      return head + tabs() + (N.view === 'actions' ? actionsView() : N.view === 'batches' ? batchesView() : evalView());
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Sensory page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.snEnsureLoaded = function(){ if(!N.loaded && !N.loading && !N.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.__snStats = function(){
+    window.snEnsureLoaded(); if(!N.loaded) return null;
+    var cut = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10), recent = N.evals.filter(function(x){ return x.evaluated_on >= cut && x.category !== 'legacy_complaint'; });
+    return { recent:recent.length, recentPass:recent.filter(function(x){ return x.result === 'pass'; }).length, openFollowups:openFus().length, total:N.evals.length };
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-sn]') ? null : t.closest('[data-sn-modal]');
+    if(m){ var k0 = m.getAttribute('data-sn-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-sn]'); if(!el) return;
+    if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    var a = el.getAttribute('data-sn'), id = el.getAttribute('data-id');
+    ev.preventDefault(); ev.stopPropagation();
+    if(a === 'score' && modal){ keepValues(); modal.scores[el.getAttribute('data-a')] = Number(el.getAttribute('data-n')); mount(); }
+    else if(a === 'reload'){ N.loading = false; N.tried = false; load(); }
+    else if(a === 'view'){ N.view = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'fufilter'){ N.fuFilter = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'csv') exportCsv();
+    else if(a === 'new') actNew();
+    else { var f = N.fus.filter(function(x){ return x.id === id; })[0]; if(!f) return; var evl = N.evals.filter(function(x){ return x.id === f.evaluation_id; })[0];
+      if(a === 'decide' && evl) actDecide(f, evl); else if(a === 'link') actLink(f); }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var q = t.getAttribute('data-sn-q'); if(q){ N[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-sn-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
+  }, true);
+  document.addEventListener('change', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var s = t.getAttribute('data-sn-sel'); if(s){ N[s] = t.value; rerender(); }
+  }, true);
+  window.snReset = function(){ N.evals = []; N.fus = []; N.ncrs = []; N.profiles = []; N.loaded = false; N.loading = false; N.tried = false; N.error = ''; modal = null; mount(); };
 })();
 
 </script>
