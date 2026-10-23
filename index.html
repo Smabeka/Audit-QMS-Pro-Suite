@@ -9139,7 +9139,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? window.renderComplaints() : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
@@ -9507,6 +9507,9 @@ function renderDashboard(){
   if(_ncr && _ncr.overdue.length) alerts.push(`⚠️ ${_ncr.overdue.length} NCR${_ncr.overdue.length===1?'':'s'} past due date`);
   if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
   if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
+  const _cm = (typeof window.__cmStats === 'function') ? window.__cmStats() : null;
+  if(_cm && _cm.late) alerts.push(`⚠️ ${_cm.late} customer complaint${_cm.late===1?'':'s'} past the response deadline`);
+  if(_cm && _cm.regNeeded) alerts.push(`⚠️ ${_cm.regNeeded} complaint${_cm.regNeeded===1?'':'s'} need a regulatory notification decision`);
   if(_sc && _sc.overdue) alerts.push(`⚠️ ${_sc.overdue} scheduled control${_sc.overdue===1?'':'s'} overdue`);
   if(_sc && _sc.openDeviations) alerts.push(`⚠️ ${_sc.openDeviations} scheduled control deviation${_sc.openDeviations===1?'':'s'} open`);
   if(_trn && _trn.overdue) alerts.push(`⚠️ ${_trn.overdue} training requirement${_trn.overdue===1?'':'s'} overdue`);
@@ -9604,6 +9607,9 @@ function renderDashboard(){
   if(_al && _al.mismatches) priorities.push({dot:"🔴", text:`${_al.mismatches} product label${_al.mismatches===1?'':'s'} do not match the allergen register`, navId:"nav-fs-allergens", urgency:5});
   if(_al && _al.pendingChangeovers) priorities.push({dot:"🟡", text:`Verify allergen cleaning on ${_al.pendingChangeovers} changeover${_al.pendingChangeovers===1?'':'s'}`, navId:"nav-fs-al-changeover", urgency:_al.pendingChangeovers});
   if(_al && _al.toCheck) priorities.push({dot:"🟡", text:`${_al.toCheck} product label${_al.toCheck===1?'':'s'} need an allergen label check`, navId:"nav-fs-allergens", urgency:_al.toCheck});
+  if(_cm && _cm.late) priorities.push({dot:"🔴", text:`Answer ${_cm.late} overdue customer complaint${_cm.late===1?'':'s'}`, navId:"nav-sensory-3", urgency:5+_cm.late});
+  if(_cm && _cm.regNeeded) priorities.push({dot:"🔴", text:`Decide on regulatory notification for ${_cm.regNeeded} complaint${_cm.regNeeded===1?'':'s'}`, navId:"nav-sensory-3", urgency:8});
+  if(_cm && _cm.effectivenessDue) priorities.push({dot:"🟡", text:`Complete ${_cm.effectivenessDue} complaint effectiveness check${_cm.effectivenessDue===1?'':'s'}`, navId:"nav-sensory-3", urgency:_cm.effectivenessDue});
   if(_sc && _sc.openDeviations) priorities.push({dot:"🔴", text:`Close ${_sc.openDeviations} scheduled control deviation${_sc.openDeviations===1?'':'s'}${_sc.oldestOpenDays?` (oldest ${_sc.oldestOpenDays} d)`:''}`, navId:"nav-fs-sc-deviations", urgency:1+_sc.oldestOpenDays});
   if(_sc && _sc.overdue) priorities.push({dot:"🔴", text:`${_sc.overdue} scheduled control${_sc.overdue===1?'':'s'} overdue`, navId:"nav-fs-sc-due", urgency:_sc.overdue});
   if(_sc && _sc.awaiting) priorities.push({dot:"🟡", text:`Verify ${_sc.awaiting} completed control${_sc.awaiting===1?'':'s'}`, navId:"nav-fs-sc-due", urgency:_sc.awaiting});
@@ -10169,6 +10175,7 @@ function renderMgmtReviewCustomer(){
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">😊 Customer Focus</h3>
       ${mrRow("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`, d.custComplaintsOpen>0?'amber':'green', "From Sensory Evaluation → Customer Complaints")}
+      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? mrRow("Customer Complaints Register", `${c.total} logged · ${c.open} open · ${c.late} past deadline`, c.late>0?'rust':(c.open>0?'amber':'green'), "From Customer & Consumer Complaints (controlled register)") : ''; })()}
       ${mrRow("Customer Satisfaction", d.csatAvg===null?null:`${csatBucket.emoji} ${d.csatAvg.toFixed(1)} / 5 · ${csatBucket.label}`, csatBucket?csatBucket.tone:null, `${state.csatEntries.length} response(s) logged`)}
       ${mrRow("Product Returns", returnsEntries.length ? `R ${returnsTotal.toLocaleString()} · ${returnsEntries.length} entries` : null, returnsEntries.length?'amber':'green', "From COPQ → Customer Returns category")}
       ${mrRow("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()} · ${state.copqEntries.length} entries` : null, state.copqEntries.length?'rust':'green', null)}
@@ -22768,6 +22775,286 @@ function showUpdateBanner(){
     var q = t.getAttribute('data-sc-q'); if(q){ S[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-sc-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
   }, true);
   window.scReset = function(){ S.controls = []; S.status = {}; S.completions = []; S.verifications = []; S.deviations = []; S.ncrs = []; S.profiles = []; S.loaded = false; S.loading = false; S.tried = false; S.error = ''; modal = null; mount(); };
+})();
+
+
+/* ===== Customer Complaints (stage 1): controlled case workflow received -> investigated -> responded -> closed ===== */
+(function(){
+  if(window.__cmInstalled) return;
+  window.__cmInstalled = true;
+  var CLASSES = [['foreign_object','Foreign object'],['quality_defect','Quality defect'],['packaging_defect','Packaging defect'],['allergen','Allergen-related'],['illness','Illness / health'],['delivery_service','Delivery / service'],['labelling','Labelling'],['other','Other']];
+  var SEVS = [['low','Low'],['medium','Medium'],['high','High'],['critical','Critical']];
+  var CHANNELS = [['phone','Phone'],['email','Email'],['in_person','In person'],['social_media','Social media'],['retailer','Via retailer'],['other','Other']];
+  var STATUS = { received:['Received: needs investigation','rust'], investigated:['Investigated: needs customer response','amber'], responded:['Responded: ready to close','navy'], closed:['Closed','green'] };
+  var SEVTONE = { low:'neutral', medium:'amber', high:'rust', critical:'rust' };
+  var C = { rows:[], flags:{}, ncrs:[], profiles:[], loaded:false, loading:false, tried:false, error:'', view:'cases', filter:'open', cls:'', q:'', openId:null };
+  var modal = null;
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function canRecord(){ return ['admin','quality manager','approver','department manager','employee'].indexOf(myRole()) !== -1; }
+  function canDecide(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function canRegulate(){ return ['admin','quality manager','approver'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ if(!iso) return '—'; var d = new Date(iso); if(isNaN(d)) return String(iso).slice(0, 16); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function dateOnly(s){ return s ? String(s).slice(0, 10) : '—'; }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function person(id){ for(var i = 0; i < C.profiles.length; i++){ if(C.profiles[i].id === id) return C.profiles[i].full_name || 'Unnamed user'; } return id ? 'Unknown user' : '—'; }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function row(id){ for(var i = 0; i < C.rows.length; i++){ if(C.rows[i].id === id) return C.rows[i]; } return null; }
+  function fl(r){ return C.flags[r.id] || {}; }
+  function regNeeded(r){ return r.severity === 'critical' || r.classification === 'illness'; }
+
+  async function load(){
+    if(C.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    C.loading = true; C.tried = true; C.error = '';
+    try{
+      var res = await Promise.all([
+        fetchAllRows('cm_complaints', function(q){ return q.order('received_on', { ascending:false }); }),
+        supabaseClient.from('cm_complaint_status').select('*'),
+        supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500),
+        supabaseClient.rpc('get_org_directory')
+      ]);
+      var err = res[0].error || res[1].error;
+      if(err) C.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'Customer Complaints is not installed yet. Run cm_complaints_run_this.sql in Supabase.' : err.message;
+      else { C.rows = res[0].data || []; C.flags = {}; (res[1].data || []).forEach(function(f){ C.flags[f.complaint_id] = f; }); C.ncrs = res[2].error ? [] : (res[2].data || []); C.profiles = res[3].error ? [] : (res[3].data || []); C.loaded = true; }
+    }catch(ex){ C.error = (ex && ex.message) || String(ex); }
+    C.loading = false; rerender();
+  }
+  async function refresh(){ C.loading = false; await load(); }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('cm-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'cm-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'cmf-' + x.id, c;
+      if(x.type === 'textarea') c = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" style="width:100%;box-sizing:border-box;" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') c = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') c = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else c = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value == null ? '' : x.value) + '" />';
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + c + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-cm-modal="overlay"><div class="modal-card" style="max-width:580px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;white-space:pre-wrap;">' + e(modal.help) + '</p>' : '') + f +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-cm-modal="cancel">Cancel</button><button class="btn btn-primary" data-cm-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){ var el = document.getElementById('cmf-' + x.id); if(el) v[x.id] = String(el.value || '').trim(); });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(cfg.prepare) await cfg.prepare(v);
+      var call = cfg.call(v), r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      var msg = cfg.done ? cfg.done(r.data) : null;
+      modal = null; mount(); toast(msg ? msg.text : (cfg.successText || 'Saved.'), msg && msg.error ? 'error' : undefined); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- actions ----- */
+  function actNew(){
+    openModal({ title:'Record a complaint', submitText:'Record complaint', help:'Allergen-related and illness complaints are automatically set to at least High severity. The response deadline is set from severity unless you choose one.',
+      fields:[ { id:'received_on', label:'Date received', type:'date', value:today() }, { id:'channel', label:'How it was received', type:'select', options:CHANNELS, value:'phone' },
+        { id:'complainant_name', label:'Complainant name' }, { id:'contact', label:'Contact details (phone or email)' }, { id:'product_text', label:'Product', required:true }, { id:'batch_ref', label:'Batch or lot number (if known)' },
+        { id:'classification', label:'Classification', type:'select', options:[['', '— choose —']].concat(CLASSES), required:true }, { id:'severity', label:'Severity', type:'select', options:SEVS, value:'medium' },
+        { id:'response_due', label:'Response deadline (leave blank to set from severity)', type:'date' }, { id:'description', label:'What the customer reported (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'cm_receive', args:{ p_id:newId(), p_f:v } }; },
+      done:function(d){ return { text:'Complaint ' + (d && d.ref) + ' recorded' + (d && d.severity_raised ? ' (severity raised to High)' : '') + '. Customer response due ' + (d && d.response_due) + '.', error:!!(d && d.severity_raised) }; } });
+  }
+  function actAck(r){
+    openModal({ title:'Acknowledge ' + r.ref, submitText:'Record acknowledgement', successText:'Acknowledgement recorded.', help:'Record that the customer was told their complaint was received.',
+      fields:[ { id:'how', label:'How the customer was acknowledged (for example phone call, email)', required:true }, { id:'note', label:'Note (optional)' } ],
+      call:function(v){ return { fn:'cm_acknowledge', args:{ p_id:r.id, p_how:v.how, p_note:nul(v.note) } }; } });
+  }
+  function actInvestigate(r){
+    openModal({ title:'Investigation: ' + r.ref, submitText:'Save investigation', successText:'Investigation recorded.', help:r.description,
+      fields:[ { id:'findings', label:'What the investigation found (at least 15 characters)', type:'textarea', value:r.findings || '', required:true },
+        { id:'substantiated', label:'Was the complaint substantiated?', type:'select', options:[['', '— choose —'], ['yes', 'Yes'], ['no', 'No'], ['inconclusive', 'Inconclusive']], value:r.substantiated || '', required:true },
+        { id:'root_cause', label:'Root cause (required if substantiated)', type:'textarea', rows:2, value:r.root_cause || '' }, { id:'immediate_correction', label:'Immediate correction', type:'textarea', rows:2, value:r.immediate_correction || '' },
+        { id:'corrective_action', label:'Corrective action (required if substantiated)', type:'textarea', rows:2, value:r.corrective_action || '' },
+        { id:'investigator_id', label:'Investigator (optional)', type:'select', options:[['', '— me —']].concat(C.profiles.map(function(p){ return [p.id, p.full_name || 'Unnamed']; })), value:r.investigator_id || '' } ],
+      prepare:async function(){ await signed('Recording an investigation is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'cm_investigate', args:{ p_id:r.id, p_f:v } }; } });
+  }
+  function actRespond(r){
+    openModal({ title:'Final response: ' + r.ref, submitText:'Record response', help:'Record what the customer was told. The case cannot close until this is done.' + (r.response_due < today() ? '\nThe deadline (' + r.response_due + ') has passed: this will count as a late response.' : ''),
+      fields:[ { id:'how', label:'How the customer was told (for example email, phone call, letter)', required:true }, { id:'text', label:'What the customer was told (at least 10 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('The final response is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'cm_respond', args:{ p_id:r.id, p_how:v.how, p_text:v.text } }; },
+      done:function(d){ return { text:d && d.late ? 'Response recorded. It was LATE: the SLA breach stays on record.' : 'Response recorded.', error:!!(d && d.late) }; } });
+  }
+  function actRegulatory(r){
+    openModal({ title:'Regulatory notification: ' + r.ref, submitText:'Sign decision', successText:'Decision recorded.', help:'Decide whether an authority had to be notified, and record the reason. Required before closing a critical or illness complaint.',
+      fields:[ { id:'required', label:'Did an authority have to be notified?', type:'select', options:[['', '— choose —'], ['no', 'No'], ['yes', 'Yes, authority was notified']], value:r.regulatory_decided ? (r.regulatory_required ? 'yes' : 'no') : '', required:true },
+        { id:'authority', label:'Authority notified (if yes)', value:r.regulatory_authority || '' }, { id:'date', label:'Date notified (if yes)', type:'date', value:r.regulatory_date || '' }, { id:'note', label:'Reason for the decision (at least 10 characters)', type:'textarea', rows:2, value:r.regulatory_note || '', required:true } ],
+      prepare:async function(){ await signed('A regulatory decision is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'cm_regulatory', args:{ p_id:r.id, p_required:v.required === 'yes', p_authority:nul(v.authority), p_date:nul(v.date), p_note:v.note } }; } });
+  }
+  function actLink(r){
+    openModal({ title:'Link records to ' + r.ref, submitText:'Save links', successText:'Links saved.', help:'Raise the NCR first (button on the case), then link it here. A substantiated foreign object, allergen, illness or packaging complaint cannot close without one.',
+      fields:[ { id:'ncr', label:'NCR', type:'select', options:[['', '— no change —']].concat(C.ncrs.map(function(n){ return [n.id, (n.reference_number || 'NCR') + ' · ' + String(n.title || '').slice(0, 70)]; })), value:r.ncr_id || '' },
+        { id:'related', label:'Other related record (for example ALG-0003 allergen incident, recall reference)', value:r.related_ref || '' } ],
+      call:function(v){ return { fn:'cm_link', args:{ p_id:r.id, p_ncr:nul(v.ncr), p_related:nul(v.related) } }; } });
+  }
+  function actClose(r){
+    openModal({ title:'Close ' + r.ref, submitText:'Sign and close', successText:'Complaint closed.', help:'Closing confirms the customer has had the final response and the follow-up is done.' + (r.substantiated === 'yes' ? '\nAn effectiveness check will fall due 30 days after closing.' : '') + '\nYou cannot close a case whose investigation you recorded, unless nobody else is authorised.',
+      fields:[ { id:'note', label:'Closure note (optional)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Closing a complaint is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'cm_close', args:{ p_id:r.id, p_note:nul(v.note) } }; } });
+  }
+  function actEffect(r){
+    openModal({ title:'Effectiveness check: ' + r.ref, submitText:'Record result', successText:'Effectiveness check recorded.', help:'Corrective action: ' + (r.corrective_action || '—') + '\nCheck that the problem has not come back. If it has, record Not effective and raise an NCR.',
+      fields:[ { id:'result', label:'Result', type:'select', options:[['', '— choose —'], ['effective', 'Effective: no recurrence'], ['not_effective', 'Not effective: it happened again']], required:true }, { id:'note', label:'What you checked (at least 10 characters)', type:'textarea', rows:2, required:true } ],
+      prepare:async function(){ await signed('The effectiveness check is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'cm_effectiveness', args:{ p_id:r.id, p_result:v.result, p_note:v.note } }; } });
+  }
+  function actReopen(r){
+    openModal({ title:'Reopen ' + r.ref, submitText:'Reopen case', successText:'Case reopened for investigation.', help:'The previous response and closure are kept in the log. The case returns to Investigated and needs a new response and closure.',
+      fields:[ { id:'reason', label:'Reason for reopening (at least 10 characters)', type:'textarea', rows:2, required:true } ],
+      prepare:async function(){ await signed('Reopening a closed complaint is a signed action. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'cm_reopen', args:{ p_id:r.id, p_reason:v.reason } }; } });
+  }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-cm="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function tile(n, l, tone){ return '<div style="flex:1 1 118px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function openRows(){ return C.rows.filter(function(r){ return r.status !== 'closed'; }); }
+  function slaOpen(r){ return r.status !== 'closed' && !r.response_at && r.response_due < today(); }
+  function effDue(r){ return r.status === 'closed' && r.effectiveness_due && !r.effectiveness_result && r.effectiveness_due <= today(); }
+  function tabs(){ return '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + [['cases', 'Cases'], ['trends', 'Trends']].map(function(x){ return '<button class="status-pill ' + (C.view === x[0] ? 'active' : '') + '" data-cm="view" data-v="' + x[0] + '">' + e(x[1]) + '</button>'; }).join('') + '</div>'; }
+  function days(a, b){ return Math.round((new Date(b) - new Date(a)) / 86400000); }
+  function caseCard(r){
+    var f = fl(r), st = STATUS[r.status] || [r.status, 'neutral'], open = C.openId === r.id, ncr = C.ncrs.filter(function(n){ return n.id === r.ncr_id; })[0], b = '';
+    var flags = (f.sla_breached || slaOpen(r) ? tag('rust', 'SLA breached') : '') + (f.similar_90d >= 2 ? ' ' + tag('amber', 'Repeat: ' + (f.similar_90d + 1) + ' on this product in 90 d') : '') + (effDue(r) ? ' ' + tag('amber', 'Effectiveness check due') : '') + (r.imported ? ' ' + tag('neutral', 'Imported') : '') + (r.reopen_count ? ' ' + tag('neutral', 'Reopened ×' + r.reopen_count) : '');
+    if(r.status !== 'closed' && !r.acknowledged_at && canRecord()) b += bt('ack', { id:r.id }, 'Acknowledge customer');
+    if((r.status === 'received' || r.status === 'investigated') && canDecide()) b += bt('investigate', { id:r.id }, r.status === 'received' ? 'Record investigation' : 'Edit investigation', r.status === 'received');
+    if(r.status === 'investigated' && canDecide()) b += bt('respond', { id:r.id }, 'Final response to customer', true);
+    if(r.status !== 'closed' && canRegulate()) b += bt('regulatory', { id:r.id }, r.regulatory_decided ? 'Update regulatory decision' : 'Regulatory decision', regNeeded(r) && !r.regulatory_decided);
+    if(r.status !== 'closed' && canDecide()){
+      var nb = ''; try{ if(typeof ncrBtn === 'function') nb = ncrBtn({ title:'Customer complaint ' + r.ref + ': ' + r.product_text, description:r.description, source:'customer_complaint', severity:(r.severity === 'critical' ? 'Critical' : r.severity === 'high' ? 'Major' : 'Minor'), area:'', product_ref:r.product_text, link_type:'food_safety', link_reference:r.ref + ' — ' + r.description, record_id:String(r.id) }); }catch(_){}
+      b += nb + bt('link', { id:r.id }, ncr ? 'Change links' : 'Link NCR');
+    }
+    if(r.status === 'responded' && isQm()) b += bt('close', { id:r.id }, 'Close complaint', true);
+    if(effDue(r) && isQm()) b += bt('effect', { id:r.id }, 'Record effectiveness check', true);
+    if(r.status === 'closed' && isQm()) b += bt('reopen', { id:r.id }, 'Reopen');
+    var detail = '';
+    if(open){
+      detail = '<div style="font-size:12px;margin-top:8px;border-top:1px solid var(--line2,#eee);padding-top:8px;">' +
+        '<div><strong>Received:</strong> ' + e(dateOnly(r.received_on)) + ' via ' + e(lbl(CHANNELS, r.channel)) + ' · logged by ' + e(person(r.recorded_by)) + (r.complainant_name ? ' · ' + e(r.complainant_name) : '') + (r.contact ? ' · ' + e(r.contact) : '') + (r.batch_ref ? ' · batch ' + e(r.batch_ref) : '') + '</div>' +
+        '<div>' + e(r.description) + '</div><div><strong>Response due:</strong> ' + e(r.response_due) + (r.acknowledged_at ? ' · acknowledged ' + e(when(r.acknowledged_at)) + ' by ' + e(person(r.acknowledged_by)) + ' (' + e(r.acknowledged_how) + ')' : ' · not acknowledged yet') + '</div>' +
+        (r.investigated_at ? '<div><strong>Investigation</strong> (' + e(person(r.investigated_by)) + ', ' + e(when(r.investigated_at)) + '): ' + e(r.findings || '') + ' · substantiated: <strong>' + e(r.substantiated) + '</strong>' + (r.root_cause ? '<br>Root cause: ' + e(r.root_cause) : '') + (r.immediate_correction ? '<br>Immediate correction: ' + e(r.immediate_correction) : '') + (r.corrective_action ? '<br>Corrective action: ' + e(r.corrective_action) : '') + '</div>' : '') +
+        (r.response_at ? '<div><strong>Final response</strong> (' + e(person(r.response_by)) + ', ' + e(when(r.response_at)) + ', ' + e(r.response_how) + '): ' + e(r.response_text) + '</div>' : '') +
+        (r.regulatory_decided ? '<div><strong>Regulatory:</strong> ' + (r.regulatory_required ? 'authority notified: ' + e(r.regulatory_authority) + ' on ' + e(r.regulatory_date) : 'not notified') + ' · ' + e(r.regulatory_note) + ' (' + e(person(r.regulatory_by)) + ')</div>' : (regNeeded(r) && r.status !== 'closed' ? '<div style="color:var(--rust);">A regulatory notification decision is required before this can close.</div>' : '')) +
+        (ncr ? '<div><strong>NCR:</strong> ' + e(ncr.reference_number || 'NCR') + ' · ' + e(ncr.title || '') + '</div>' : '') + (r.related_ref ? '<div><strong>Related:</strong> ' + e(r.related_ref) + '</div>' : '') +
+        (r.closed_at ? '<div><strong>Closed</strong> by ' + e(person(r.closed_by)) + ' · ' + e(when(r.closed_at)) + (r.self_closed ? ' (closed by the investigator: nobody else was authorised)' : '') + (r.closure_note ? ' · ' + e(r.closure_note) : '') + '</div>' : '') +
+        (r.effectiveness_result ? '<div><strong>Effectiveness:</strong> ' + e(r.effectiveness_result === 'effective' ? 'effective' : 'NOT effective') + ' · ' + e(r.effectiveness_note) + ' (' + e(person(r.effectiveness_by)) + ')</div>' : (r.effectiveness_due ? '<div>Effectiveness check due ' + e(r.effectiveness_due) + '</div>' : '')) +
+        (r.imported_note ? '<div class="muted-italic">' + e(r.imported_note) + '</div>' : '') + '</div>';
+    }
+    return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;cursor:pointer;" data-cm="toggle" data-id="' + e(r.id) + '"><div><div class="audit-title">' + e(r.ref) + ' · ' + e(r.product_text) + ' ' + tag('neutral', lbl(CLASSES, r.classification)) + ' ' + tag(SEVTONE[r.severity] || 'neutral', lbl(SEVS, r.severity)) + '</div>' +
+      '<div class="audit-sub">' + e(dateOnly(r.received_on)) + (r.complainant_name ? ' · ' + e(r.complainant_name) : '') + ' · due ' + e(r.response_due) + '</div>' + (flags ? '<div style="margin-top:3px;">' + flags + '</div>' : '') + '</div><div>' + tag(st[1], st[0]) + '</div></div>' + detail + (b ? '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + b + '</div>' : '') + '</div>';
+  }
+  function casesView(){
+    var f = C.filter, list = C.rows.filter(function(r){
+      if(f === 'open' && r.status === 'closed') return false; if(f === 'closed' && r.status !== 'closed') return false; if(f === 'late' && !(slaOpen(r) || fl(r).sla_breached)) return false; if(f === 'effect' && !effDue(r)) return false;
+      if(C.cls && r.classification !== C.cls) return false;
+      if(C.q && (r.ref + ' ' + r.product_text + ' ' + (r.complainant_name || '') + ' ' + (r.batch_ref || '') + ' ' + r.description).toLowerCase().indexOf(C.q.toLowerCase()) === -1) return false; return true; });
+    var od = openRows(), late = C.rows.filter(function(r){ return slaOpen(r); }).length, eff = C.rows.filter(effDue).length;
+    var head = '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(od.length, 'open cases') + tile(late, 'open past deadline', late ? 'rust' : '') + tile(eff, 'effectiveness checks due', eff ? 'amber' : '') + tile(C.rows.length, 'total logged') + '</div>' +
+      '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['open', 'Open'], ['late', 'SLA breached'], ['effect', 'Effectiveness due'], ['closed', 'Closed'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (f === x[0] ? 'active' : '') + '" data-cm="filter" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;"><select data-cm-sel="cls" style="font-size:12px;"><option value="">All classifications</option>' + CLASSES.map(function(c){ return '<option value="' + c[0] + '"' + (C.cls === c[0] ? ' selected' : '') + '>' + e(c[1]) + '</option>'; }).join('') + '</select>' +
+      '<input data-cm-q="q" placeholder="Search ref, product, customer, batch" value="' + e(C.q) + '" style="font-size:12px;max-width:230px;" />' + bt('csv', {}, '⬇ CSV') + (canRecord() ? bt('new', {}, '+ Record complaint', true) : '') + '</div>';
+    return head + (list.length ? list.map(caseCard).join('') : '<p class="muted-italic">No complaints in this view.</p>');
+  }
+  function trendsView(){
+    var n = C.rows.length;
+    if(n < 5) return '<div class="card p4"><p class="muted-italic" style="margin:0;">Not enough data for trends yet: ' + n + ' complaint' + (n === 1 ? '' : 's') + ' recorded. Trends appear once there are at least 5.</p></div>';
+    var byClass = {}, byMonth = {}, byProd = {}, closed = C.rows.filter(function(r){ return r.status === 'closed' && r.closed_at && !r.imported; }), breached = C.rows.filter(function(r){ return fl(r).sla_breached || slaOpen(r); }).length;
+    var cutoff = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+    C.rows.forEach(function(r){ byClass[r.classification] = (byClass[r.classification] || 0) + 1; var m = String(r.received_on).slice(0, 7); byMonth[m] = (byMonth[m] || 0) + 1; if(String(r.received_on) >= cutoff){ var k = r.product_text.trim().toLowerCase(); (byProd[k] = byProd[k] || { name:r.product_text, n:0 }).n++; } });
+    var avg = closed.length ? Math.round(closed.reduce(function(s, r){ return s + Math.max(0, days(r.received_on, r.closed_at)); }, 0) / closed.length) : null;
+    var months = Object.keys(byMonth).sort().slice(-12), max = Math.max.apply(null, months.map(function(m){ return byMonth[m]; }));
+    var repeats = Object.keys(byProd).map(function(k){ return byProd[k]; }).filter(function(p){ return p.n >= 3; }).sort(function(a, b){ return b.n - a.n; });
+    var notEff = C.rows.filter(function(r){ return r.effectiveness_result === 'not_effective'; }).length;
+    return '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(n, 'complaints logged') + tile(avg === null ? '—' : avg + ' d', 'average days to close' + (closed.length ? ' (' + closed.length + ' closed here)' : '')) + tile(breached, 'SLA breaches', breached ? 'rust' : '') + tile(notEff, 'corrective actions not effective', notEff ? 'rust' : '') + '</div>' +
+      '<div class="card p4" style="margin-bottom:10px;"><h3 class="serif" style="font-size:14px;margin:0 0 8px;">By month</h3>' + months.map(function(m){ return '<div style="display:flex;align-items:center;gap:8px;font-size:12px;padding:2px 0;"><span style="width:62px;">' + e(m) + '</span><span style="background:var(--navy);height:10px;width:' + Math.max(4, Math.round(byMonth[m] / max * 60)) + '%;border-radius:3px;"></span><span>' + byMonth[m] + '</span></div>'; }).join('') + '</div>' +
+      '<div class="card p4" style="margin-bottom:10px;"><h3 class="serif" style="font-size:14px;margin:0 0 8px;">By classification</h3>' + Object.keys(byClass).sort(function(a, b){ return byClass[b] - byClass[a]; }).map(function(k){ return '<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--line2,#eee);font-size:13px;"><span>' + e(lbl(CLASSES, k)) + '</span><span class="tag tag-navy">' + byClass[k] + '</span></div>'; }).join('') + '</div>' +
+      '<div class="card p4"><h3 class="serif" style="font-size:14px;margin:0 0 8px;">Repeat products (3 or more in the last 90 days)</h3>' + (repeats.length ? repeats.map(function(p){ return '<div style="font-size:13px;padding:3px 0;">' + e(p.name) + ' · <strong>' + p.n + '</strong> complaints</div>'; }).join('') : '<p class="muted-italic" style="margin:0;">None.</p>') + '</div>' +
+      '<p class="muted-italic" style="font-size:11px;">Average days to close counts only complaints closed in this system, not imported ones.</p>';
+  }
+  function exportCsv(){
+    var rows = [['Ref', 'Received', 'Channel', 'Product', 'Batch', 'Classification', 'Severity', 'Status', 'Response due', 'Responded', 'Substantiated', 'Root cause', 'Corrective action', 'Regulatory notified', 'Closed', 'Effectiveness']].concat(C.rows.map(function(r){ return [r.ref, r.received_on, r.channel, r.product_text, r.batch_ref, r.classification, r.severity, r.status, r.response_due, r.response_at ? when(r.response_at) : '', r.substantiated, r.root_cause, r.corrective_action, r.regulatory_decided ? (r.regulatory_required ? 'yes' : 'no') : '', r.closed_at ? when(r.closed_at) : '', r.effectiveness_result]; }));
+    var csv = rows.map(function(x){ return x.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var url = URL.createObjectURL(new Blob([csv], { type:'text/csv' })), a = document.createElement('a'); a.href = url; a.download = 'complaints.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  window.renderComplaints = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use complaints.</p></div>';
+      if(!C.loaded && !C.loading && !C.tried) setTimeout(load, 0);
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">📮 Customer & Consumer Complaints</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Each complaint is investigated, answered and closed in order. Deadlines come from severity, late responses stay on record, and nothing can be deleted.</p>';
+      if(C.error) return head + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(C.error) + '</p></div>';
+      if(!C.loaded) return head + '<p class="muted-italic">Loading…</p>';
+      return head + tabs() + (C.view === 'trends' ? trendsView() : casesView());
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Complaints page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.cmEnsureLoaded = function(){ if(!C.loaded && !C.loading && !C.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.__cmStats = function(){
+    window.cmEnsureLoaded(); if(!C.loaded) return null;
+    return { total:C.rows.length, open:openRows().length, late:C.rows.filter(slaOpen).length, unacked:C.rows.filter(function(r){ return r.status !== 'closed' && !r.acknowledged_at && !r.imported; }).length, effectivenessDue:C.rows.filter(effDue).length, regNeeded:C.rows.filter(function(r){ return r.status !== 'closed' && regNeeded(r) && !r.regulatory_decided; }).length };
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-cm]') ? null : t.closest('[data-cm-modal]');
+    if(m){ var k0 = m.getAttribute('data-cm-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-cm]'); if(!el) return;
+    if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    var a = el.getAttribute('data-cm'), id = el.getAttribute('data-id');
+    if(a !== 'toggle' || !(t.closest('button') && t.closest('button') !== el)){ ev.preventDefault(); ev.stopPropagation(); } else return;
+    if(a === 'reload'){ C.loading = false; C.tried = false; load(); }
+    else if(a === 'view'){ C.view = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'filter'){ C.filter = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'toggle'){ C.openId = C.openId === id ? null : id; rerender(); }
+    else if(a === 'csv') exportCsv();
+    else if(a === 'new') actNew();
+    else { var r = row(id); if(!r) return;
+      if(a === 'ack') actAck(r); else if(a === 'investigate') actInvestigate(r); else if(a === 'respond') actRespond(r); else if(a === 'regulatory') actRegulatory(r); else if(a === 'link') actLink(r);
+      else if(a === 'close') actClose(r); else if(a === 'effect') actEffect(r); else if(a === 'reopen') actReopen(r); }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var q = t.getAttribute('data-cm-q'); if(q){ C[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-cm-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
+  }, true);
+  document.addEventListener('change', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var s = t.getAttribute('data-cm-sel'); if(s){ C[s] = t.value; rerender(); }
+  }, true);
+  window.cmReset = function(){ C.rows = []; C.flags = {}; C.ncrs = []; C.profiles = []; C.loaded = false; C.loading = false; C.tried = false; C.error = ''; modal = null; mount(); };
 })();
 
 </script>
