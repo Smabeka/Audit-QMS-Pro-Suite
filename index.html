@@ -8630,18 +8630,14 @@ const NAV_MODULES = [
       { id:"nav-fs-points", label:"Monitoring Points", isActive(){ return tab==="fs-points"; }, action(){ tab="fs-points"; window.__fsView="points"; } },
       { id:"nav-fs-readings", label:"Readings", isActive(){ return tab==="fs-readings"; }, action(){ tab="fs-readings"; window.__fsView="readings"; } },
       { id:"nav-fs-deviations", label:"Deviations", isActive(){ return tab==="fs-deviations"; }, action(){ tab="fs-deviations"; window.__fsView="deviations"; } },
-      { id:"nav-fs-cleaning", label:"Cleaning & Sanitation", children:[
-          { id:"nav-fs-cip", label:"CIP", isActive(){ return tab==="cip"; }, action(){ tab="cip"; } },
-          { id:"nav-fs-pest", label:"Pest Control", isActive(){ return tab==="pest-control"; }, action(){ tab="pest-control"; } }
-        ]
-      },
+      { id:"nav-fs-sc-due", label:"Scheduled Controls", isActive(){ return tab==="sc-due"; }, action(){ tab="sc-due"; window.__scView="due"; window.__scType=""; } },
+      { id:"nav-fs-sc-register", label:"Control Register", isActive(){ return tab==="sc-register"; }, action(){ tab="sc-register"; window.__scView="register"; } },
+      { id:"nav-fs-sc-history", label:"Control History", isActive(){ return tab==="sc-history"; }, action(){ tab="sc-history"; window.__scView="history"; } },
+      { id:"nav-fs-sc-deviations", label:"Control Deviations", isActive(){ return tab==="sc-deviations"; }, action(){ tab="sc-deviations"; window.__scView="deviations"; } },
       { id:"nav-fs-allergens", label:"Allergen Register", isActive(){ return tab==="al-products"; }, action(){ tab="al-products"; window.__alView="products"; } },
       { id:"nav-fs-al-changeover", label:"Allergen Changeovers", isActive(){ return tab==="al-changeovers"; }, action(){ tab="al-changeovers"; window.__alView="changeovers"; } },
       { id:"nav-fs-al-incidents", label:"Allergen Incidents", isActive(){ return tab==="al-incidents"; }, action(){ tab="al-incidents"; window.__alView="incidents"; } },
       { id:"nav-fs-ncr", label:"Non-Conformances", isActive(){ return tab==="foodsafe" && foodsafeSubTab==="ncr"; }, action(){ tab="foodsafe"; foodsafeSubTab="ncr"; } },
-      { id:"nav-fs-verification", label:"Verification", isActive(){ return tab==="fs-verification"; }, action(){ tab="fs-verification"; } },
-      { id:"nav-fs-calibration", label:"Calibration & Equipment", isActive(){ return tab==="calibration"; }, action(){ tab="calibration"; } },
-      { id:"nav-fs-calibration-dashboard", label:"Calibration Dashboard", isActive(){ return tab==="calibration-dashboard"; }, action(){ tab="calibration-dashboard"; } },
       { id:"nav-fs-emergency", label:"Emergency Preparedness", isActive(){ return tab==="emergency-preparedness"; }, action(){ tab="emergency-preparedness"; } },
       { id:"nav-fs-fsms-checklist", label:"FSMS Checklist", isActive(){ return tab==="fsms-checklist"; }, action(){ tab="fsms-checklist"; } }
     ]
@@ -8670,7 +8666,7 @@ const NAV_MODULES = [
       { id:"nav-lab-pt", label:"Proficiency Testing", isActive(){ return tab==="proficiency-testing"; }, action(){ tab="proficiency-testing"; } },
       { id:"nav-lab-trend", label:"Trend Analysis", isActive(){ return tab==="lab-trend"; }, action(){ tab="lab-trend"; } },
       { id:"nav-lab-coa", label:"COA Management", isActive(){ return tab==="lab-coa"; }, action(){ tab="lab-coa"; } },
-      { id:"nav-lab-calibration", label:"Equipment Calibration", isActive(){ return tab==="calibration"; }, action(){ tab="calibration"; } },
+      { id:"nav-lab-calibration", label:"Equipment Calibration", isActive(){ return tab==="sc-due" && window.__scType==="calibration"; }, action(){ tab="sc-due"; window.__scView="due"; window.__scType="calibration"; } },
       { id:"nav-lab-media-prep", label:"Media Preparation", isActive(){ return tab==="lab-media-prep"; }, action(){ tab="lab-media-prep"; } },
       { id:"nav-lab-incubation", label:"Incubation Tracking", isActive(){ return tab==="lab-incubation"; }, action(){ tab="lab-incubation"; } }
     ]
@@ -9143,7 +9139,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="customer-complaints")) : renderSensory()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
@@ -9474,8 +9470,9 @@ function renderDashboard(){
   /* Allergen score: active products whose label is verified against the register and that have no open incident. Needs at least 3 active products, otherwise "no data". */
   const _al = (typeof window.__alStats === 'function') ? window.__alStats() : null;
   const allergenScore = (_al && _al.products>=3) ? Math.round((_al.good/_al.products)*1000)/10 : null;
-  const activeCip = state.cipSchedules.filter(c=>c.status!=="Inactive");
-  const cipScore = activeCip.length>0 ? Math.round((activeCip.filter(c=>cipStatus(c)!=="Overdue").length/activeCip.length)*1000)/10 : null;
+  /* Scheduled controls score (CIP, calibration, pest, verification, drills): active controls that are not overdue and have no open deviation. Needs at least 3 controls, otherwise "no data". */
+  const _sc = (typeof window.__scStats === 'function') ? window.__scStats() : null;
+  const cipScore = (_sc && _sc.controls>=3) ? Math.round((_sc.good/_sc.controls)*1000)/10 : null;
   const totalSensory = state.sensoryEvaluations.length;
   const sensoryScore = totalSensory>0 ? Math.round((state.sensoryEvaluations.filter(e=>sensoryResult(e)==="Pass").length/totalSensory)*1000)/10 : null;
   const foodSafetyComponents = [haccpScore, cipScore, allergenScore].filter(s=>s!==null);
@@ -9503,14 +9500,15 @@ function renderDashboard(){
     const days = Math.round((nextDue-new Date())/86400000);
     return days>=0 && days<=7;
   });
-  const haccpVerificationOverdue = state.verificationLogs.filter(v=>v.activityType==="HACCP Plan Review" && v.nextDueDate && daysUntil(v.nextDueDate)<0);
+  const haccpVerificationOverdue = [];
   const _ncr = (typeof window.__ncrStats === 'function') ? window.__ncrStats() : null;
   const alerts = [];
   if(_ncr && _ncr.critical) alerts.push(`🚩 ${_ncr.critical} Critical NCR${_ncr.critical===1?'':'s'} still active`);
   if(_ncr && _ncr.overdue.length) alerts.push(`⚠️ ${_ncr.overdue.length} NCR${_ncr.overdue.length===1?'':'s'} past due date`);
   if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
   if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
-  if(haccpVerificationOverdue.length) alerts.push(`⚠️ HACCP verification overdue (${haccpVerificationOverdue.length})`);
+  if(_sc && _sc.overdue) alerts.push(`⚠️ ${_sc.overdue} scheduled control${_sc.overdue===1?'':'s'} overdue`);
+  if(_sc && _sc.openDeviations) alerts.push(`⚠️ ${_sc.openDeviations} scheduled control deviation${_sc.openDeviations===1?'':'s'} open`);
   if(_trn && _trn.overdue) alerts.push(`⚠️ ${_trn.overdue} training requirement${_trn.overdue===1?'':'s'} overdue`);
   if(_trn && _trn.revgap) alerts.push(`⚠️ ${_trn.revgap} training gap${_trn.revgap===1?'':'s'} from document revisions`);
   if(_trn && _trn.reassess) alerts.push(`⚠️ ${_trn.reassess} competence reassessment${_trn.reassess===1?'':'s'} due within 30 days`);
@@ -9527,7 +9525,7 @@ function renderDashboard(){
     {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore},
     {label:"Supplier Approval Rate", score:supplierScore},
     {label:"Allergen Controls", score:allergenScore},
-    {label:"CIP Cleaning Compliance", score:cipScore},
+    {label:"Scheduled Controls Compliance", score:cipScore},
     {label:"Sensory Evaluation Pass Rate", score:sensoryScore}
   ];
   const availableScores = moduleScores.filter(x=>x.score!==null);
@@ -9547,7 +9545,7 @@ function renderDashboard(){
   const KPI_NAV_TARGETS = {
     audit:"nav-audit-register", capa:"nav-capa", risk:"nav-risk", training:"nav-people-training",
     documents:"nav-documents", kpiMetrics:"nav-metrics", supplier:"nav-suppliers-list",
-    haccp:"nav-fs-today", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-cip",
+    haccp:"nav-fs-today", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-sc-due",
     sensory:"nav-sensory-0", lab:"nav-lab-trend"
   };
   function kpiRow(label, score, key){
@@ -9606,6 +9604,9 @@ function renderDashboard(){
   if(_al && _al.mismatches) priorities.push({dot:"🔴", text:`${_al.mismatches} product label${_al.mismatches===1?'':'s'} do not match the allergen register`, navId:"nav-fs-allergens", urgency:5});
   if(_al && _al.pendingChangeovers) priorities.push({dot:"🟡", text:`Verify allergen cleaning on ${_al.pendingChangeovers} changeover${_al.pendingChangeovers===1?'':'s'}`, navId:"nav-fs-al-changeover", urgency:_al.pendingChangeovers});
   if(_al && _al.toCheck) priorities.push({dot:"🟡", text:`${_al.toCheck} product label${_al.toCheck===1?'':'s'} need an allergen label check`, navId:"nav-fs-allergens", urgency:_al.toCheck});
+  if(_sc && _sc.openDeviations) priorities.push({dot:"🔴", text:`Close ${_sc.openDeviations} scheduled control deviation${_sc.openDeviations===1?'':'s'}${_sc.oldestOpenDays?` (oldest ${_sc.oldestOpenDays} d)`:''}`, navId:"nav-fs-sc-deviations", urgency:1+_sc.oldestOpenDays});
+  if(_sc && _sc.overdue) priorities.push({dot:"🔴", text:`${_sc.overdue} scheduled control${_sc.overdue===1?'':'s'} overdue`, navId:"nav-fs-sc-due", urgency:_sc.overdue});
+  if(_sc && _sc.awaiting) priorities.push({dot:"🟡", text:`Verify ${_sc.awaiting} completed control${_sc.awaiting===1?'':'s'}`, navId:"nav-fs-sc-due", urgency:_sc.awaiting});
   if(_fs && _fs.overdue) priorities.push({dot:"🟡", text:`${_fs.overdue} monitoring point${_fs.overdue===1?'':'s'} overdue for a reading`, navId:"nav-fs-today", urgency:_fs.overdue});
   const priorityOrder = {"🔴":0,"🟡":1,"🟢":2};
   priorities.sort((a,b)=>priorityOrder[a.dot]-priorityOrder[b.dot] || b.urgency-a.urgency);
@@ -9770,7 +9771,7 @@ function renderDashboard(){
         {label:"HACCP Compliance", score:haccpScore, key:"haccp"},
         {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore, key:"recall"},
         {label:"Allergen Controls", score:allergenScore, key:"allergen"},
-        {label:"CIP Cleaning Compliance", score:cipScore, key:"cip"},
+        {label:"Scheduled Controls Compliance", score:cipScore, key:"cip"},
         {label:"Sensory Evaluation Pass Rate", score:sensoryScore, key:"sensory"}
       ])}
       ${kpiGroup("Laboratory", [
@@ -10068,8 +10069,9 @@ function renderMgmtReviewPerformance(){
   const totalTrainingR = _trnR ? _trnR.total : 0;
   const trainingGoodR = _trnR ? _trnR.complete : 0;
   const trainingPctR = totalTrainingR>=5 ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
-  const calibTotalR = state.calibrationRecords.length;
-  const calibOverdueR = state.calibrationRecords.filter(c=>c.nextDueDate && daysUntil(c.nextDueDate)<0).length;
+  const _scR = (typeof window.__scStats === 'function') ? window.__scStats() : null;
+  const calibTotalR = _scR ? _scR.calTotal : state.calibrationRecords.length;
+  const calibOverdueR = _scR ? _scR.calOverdue : state.calibrationRecords.filter(c=>c.nextDueDate && daysUntil(c.nextDueDate)<0).length;
   const employeeNamesR = new Set();
   state.trainingRecords.forEach(r=>{ if(r.employeeName) employeeNamesR.add(r.employeeName.trim().toLowerCase()); });
   const headcountR = (window.trainingDirectoryLoaded && window.trainingDirectoryLoaded()) ? window.trainingPeopleNames().length : employeeNamesR.size;
@@ -22488,6 +22490,284 @@ function showUpdateBanner(){
     var q = t.getAttribute('data-al-q'); if(q){ A[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-al-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
   }, true);
   window.alReset = function(){ A.products = []; A.status = {}; A.checks = []; A.changeovers = []; A.incidents = []; A.ncrs = []; A.profiles = []; A.loaded = false; A.loading = false; A.tried = false; A.error = ''; modal = null; mount(); };
+})();
+
+
+/* ===== Scheduled Controls (stage 1): one engine for CIP, calibration, pest control, verification, drills and other recurring checks ===== */
+(function(){
+  if(window.__scInstalled) return;
+  window.__scInstalled = true;
+  var TYPES = [['cip','CIP / cleaning'],['calibration','Calibration'],['pest','Pest control'],['verification','Verification'],['drill','Drill / exercise'],['other','Other']];
+  var S = { controls:[], status:{}, completions:[], verifications:[], deviations:[], ncrs:[], profiles:[], loaded:false, loading:false, tried:false, error:'', view:'due', type:'', q:'', devFilter:'open' };
+  var modal = null;
+  var DEVSTAT = { open:['Open: needs containment','rust'], contained:['Contained: needs impact assessment','amber'], assessed:['Assessed: needs root cause and closure','navy'], closed:['Closed','green'] };
+  var IMPACT = [['no_impact','No product or equipment results affected'],['product_affected','Product or results were affected'],['not_applicable','Not applicable']];
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function myRole(){ try{ if(currentProfile) return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){} return ''; }
+  function canRecord(){ return ['admin','quality manager','approver','department manager','employee'].indexOf(myRole()) !== -1; }
+  function canDecide(){ return ['admin','quality manager','approver','department manager'].indexOf(myRole()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(myRole()) !== -1; }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ if(!iso) return '—'; var d = new Date(iso); if(isNaN(d)) return String(iso).slice(0, 16); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function day(iso){ return when(iso).slice(0, 10); }
+  function person(id){ for(var i = 0; i < S.profiles.length; i++){ if(S.profiles[i].id === id) return S.profiles[i].full_name || 'Unnamed user'; } return id ? 'Unknown user' : '—'; }
+  function ctl(id){ for(var i = 0; i < S.controls.length; i++){ if(S.controls[i].id === id) return S.controls[i]; } return null; }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function st(c){ return S.status[c.id] || {}; }
+  function activeControls(){ return S.controls.filter(function(c){ return c.status === 'active'; }); }
+  function daysTo(iso){ return Math.floor((new Date(iso).getTime() - Date.now()) / 86400000); }
+  function state(c){
+    var s = st(c);
+    if(!s.due_at) return ['', 'neutral', 9999];
+    var d = daysTo(s.due_at);
+    if(s.open_deviations > 0) return ['Open deviation', 'rust', -1000];
+    if(s.overdue) return ['Overdue ' + Math.max(1, -d) + ' d', 'rust', d];
+    if(d <= 7) return ['Due in ' + Math.max(0, d) + ' d', 'amber', d];
+    return ['On schedule (due ' + day(s.due_at) + ')', 'green', d];
+  }
+  function pendingFor(c){ var done = {}; S.verifications.forEach(function(v){ done[v.completion_id] = 1; }); return S.completions.filter(function(x){ return x.control_id === c.id && x.result === 'pass' && c.needs_verification && !done[x.id]; }); }
+
+  async function load(){
+    if(S.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    S.loading = true; S.tried = true; S.error = '';
+    try{
+      var res = await Promise.all([
+        fetchAllRows('sc_controls', function(q){ return q.order('code', { ascending:true }); }),
+        supabaseClient.from('sc_control_status').select('*'),
+        supabaseClient.from('sc_completions').select('*').order('done_at', { ascending:false }).limit(1500),
+        supabaseClient.from('sc_verifications').select('*').order('verified_at', { ascending:false }).limit(1500),
+        fetchAllRows('sc_deviations', function(q){ return q.order('created_at', { ascending:false }); }),
+        supabaseClient.from('ncrs').select('id,reference_number,title').order('created_at', { ascending:false }).limit(500),
+        supabaseClient.rpc('get_org_directory')
+      ]);
+      var err = null; for(var i = 0; i < 5; i++){ if(res[i].error){ err = res[i].error; break; } }
+      if(err) S.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'Scheduled Controls is not installed yet. Run sc_controls_run_this.sql in Supabase.' : err.message;
+      else {
+        S.controls = res[0].data || []; S.status = {}; (res[1].data || []).forEach(function(s){ S.status[s.control_id] = s; });
+        S.completions = res[2].data || []; S.verifications = res[3].data || []; S.deviations = res[4].data || [];
+        S.ncrs = res[5].error ? [] : (res[5].data || []); S.profiles = res[6].error ? [] : (res[6].data || []); S.loaded = true;
+      }
+    }catch(ex){ S.error = (ex && ex.message) || String(ex); }
+    S.loading = false; rerender();
+  }
+  async function refresh(){ S.loading = false; await load(); }
+
+  /* ----- modal ----- */
+  function mount(){
+    var host = document.getElementById('sc-modal-host');
+    if(!host){ host = document.createElement('div'); host.id = 'sc-modal-host'; document.body.appendChild(host); }
+    host.innerHTML = modalHtml();
+  }
+  function openModal(c){ modal = c; mount(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'scf-' + x.id, c;
+      if(x.type === 'check') return '<label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:8px;"><input type="checkbox" id="' + id + '" style="width:auto;"' + (x.value ? ' checked' : '') + ' />' + e(x.label) + '</label>';
+      if(x.type === 'textarea') c = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" style="width:100%;box-sizing:border-box;" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') c = '<select id="' + id + '">' + (x.options || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else c = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value == null ? '' : x.value) + '" />';
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + c + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-sc-modal="overlay"><div class="modal-card" style="max-width:560px;max-height:92vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;white-space:pre-wrap;">' + e(modal.help) + '</p>' : '') + f +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-sc-modal="cancel">Cancel</button><button class="btn btn-primary" data-sc-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {};
+    modal.fields.forEach(function(x){ var el = document.getElementById('scf-' + x.id); if(!el) return; v[x.id] = x.type === 'check' ? !!el.checked : String(el.value || '').trim(); });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(cfg.prepare) await cfg.prepare(v);
+      var call = cfg.call(v), r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      var msg = cfg.done ? cfg.done(r.data) : null;
+      modal = null; mount(); toast(msg ? msg.text : (cfg.successText || 'Saved.'), msg && msg.error ? 'error' : undefined); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- actions ----- */
+  function actControl(c){
+    c = c || {};
+    openModal({ title:c.id ? 'Edit ' + c.code : 'New scheduled control', submitText:'Save control', successText:'Control saved.',
+      help:'A control is anything that must be done on a schedule. Set how often, and whether a second person must verify each completion (recommended for CIP).' + (c.id ? ' Changing the frequency or verification rule needs a reason.' : ''),
+      fields:[ { id:'code', label:'Code (for example CIP-01, TH-014, PEST-01)', value:c.code || '', required:true }, { id:'name', label:'What must be done', value:c.name || '', required:true },
+        { id:'control_type', label:'Type', type:'select', options:[['', '— choose —']].concat(TYPES), value:c.control_type || '', required:true },
+        { id:'subject', label:'Equipment, line or area', value:c.subject || '' }, { id:'location', label:'Location', value:c.location || '' },
+        { id:'frequency_days', label:'Every how many days (7 = weekly, 30 = monthly, 365 = yearly)', value:c.frequency_days, required:true },
+        { id:'method', label:'Method or procedure reference', type:'textarea', rows:2, value:c.method || '' }, { id:'criteria', label:'What counts as a pass', type:'textarea', rows:2, value:c.criteria || '' },
+        { id:'responsible_role', label:'Responsible role', value:c.responsible_role || '' },
+        { id:'needs_verification', label:'A second person must verify each completion', type:'check', value:c.needs_verification }, { id:'needs_reference', label:'A certificate or report reference is required (calibration)', type:'check', value:c.needs_reference },
+        { id:'status', label:'Status', type:'select', options:[['active', 'Active'], ['inactive', 'Inactive']], value:c.status || 'active' },
+        { id:'change_reason', label:'Reason for changing frequency or verification rule (required once completions exist)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Saving a control changes your food safety schedule. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'sc_control_save', args:{ p_id:c.id || newId(), p_f:v } }; } });
+  }
+  function actComplete(c){
+    openModal({ title:'Record: ' + c.code + ' ' + c.name, submitText:'Record', help:(c.criteria ? 'Pass means: ' + c.criteria + '\n' : '') + (c.method ? 'Method: ' + c.method + '\n' : '') + (c.needs_verification ? 'A second person must verify this before it counts.' : 'It is signed as you, now, and cannot be edited afterwards.') + '\nA fail opens a deviation.',
+      fields:[ { id:'result', label:'Result', type:'select', options:[['', '— choose —'], ['pass', 'Pass: done and acceptable'], ['fail', 'Fail: not done properly or out of tolerance']], required:true },
+        { id:'reference', label:c.needs_reference ? 'Certificate or report reference (required for a pass)' : 'Reference (optional)' }, { id:'note', label:'Note (required for a fail)', type:'textarea', rows:2 } ],
+      call:function(v){ return { fn:'sc_complete', args:{ p_id:newId(), p_control:c.id, p_result:v.result, p_reference:nul(v.reference), p_note:nul(v.note) } }; },
+      done:function(d){ return d && d.result === 'fail' ? { text:'Recorded as FAILED. Deviation ' + d.deviation_ref + ' opened. Record containment now.', error:true } : { text:d && d.awaiting_verification ? 'Recorded. A second person must now verify it.' : 'Recorded.' }; } });
+  }
+  function actVerify(c, x){
+    openModal({ title:'Verify: ' + c.code + ' ' + c.name, submitText:'Sign verification', help:'Done by ' + person(x.done_by) + ' on ' + when(x.done_at) + (x.reference ? ' (ref ' + x.reference + ')' : '') + (x.note ? '\n' + x.note : '') + '\nYou cannot verify what you did yourself, unless nobody else is authorised. A fail opens a deviation.',
+      fields:[ { id:'result', label:'Is it acceptable?', type:'select', options:[['', '— choose —'], ['pass', 'Yes: verified'], ['fail', 'No: not acceptable']], required:true }, { id:'note', label:'Note (required for a fail)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Verification is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'sc_verify', args:{ p_id:newId(), p_completion:x.id, p_result:v.result, p_note:nul(v.note) } }; },
+      done:function(d){ return d && d.result === 'fail' ? { text:'Verification FAILED. Deviation ' + d.deviation_ref + ' opened.', error:true } : { text:'Verified.' }; } });
+  }
+  function actContain(d){
+    openModal({ title:'Containment for ' + d.ref, submitText:'Record containment', successText:'Containment recorded.', help:d.description,
+      fields:[ { id:'action', label:'Immediate action taken (at least 10 characters)', type:'textarea', required:true } ],
+      call:function(v){ return { fn:'sc_dev_contain', args:{ p_id:d.id, p_action:v.action } }; } });
+  }
+  function actAssess(d){
+    openModal({ title:'Assess impact: ' + d.ref, submitText:'Sign assessment', successText:'Impact assessed.', help:d.description + '\nContained: ' + (d.immediate_action || '') + '\nFor a calibration, review results measured since the last good calibration. For CIP, review product made since the last verified clean.\nYou cannot assess a result you recorded yourself, unless nobody else is authorised.',
+      fields:[ { id:'impact', label:'Impact', type:'select', options:[['', '— choose —']].concat(IMPACT), required:true }, { id:'note', label:'How you assessed it (at least 10 characters)', type:'textarea', required:true } ],
+      prepare:async function(){ await signed('Impact assessment is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'sc_dev_assess', args:{ p_id:d.id, p_impact:v.impact, p_note:v.note } }; } });
+  }
+  function actLinkNcr(d){
+    openModal({ title:'Link an NCR to ' + d.ref, submitText:'Link NCR', successText:'NCR linked.', help:'Raise the NCR first (button on the deviation), then link it here. It is required before closing when product was affected.',
+      fields:[ { id:'ncr', label:'NCR', type:'select', options:[['', '— choose —']].concat(S.ncrs.map(function(n){ return [n.id, (n.reference_number || 'NCR') + ' · ' + String(n.title || '').slice(0, 70)]; })), required:true } ],
+      call:function(v){ return { fn:'sc_dev_link_ncr', args:{ p_id:d.id, p_ncr:v.ncr } }; } });
+  }
+  function actClose(d){
+    openModal({ title:'Close ' + d.ref, submitText:'Sign and close', successText:'Deviation closed.', help:'Closing confirms the cause was found and the fix is in place.',
+      fields:[ { id:'root', label:'Root cause (at least 15 characters)', type:'textarea', required:true }, { id:'act', label:'Corrective action that stops it happening again (at least 15 characters)', type:'textarea', required:true }, { id:'note', label:'Closure note (optional)', type:'textarea', rows:2 } ],
+      prepare:async function(){ await signed('Closing a deviation is a signature. Enter your password to confirm it is you.'); },
+      call:function(v){ return { fn:'sc_dev_close', args:{ p_id:d.id, p_root:v.root, p_action:v.act, p_note:nul(v.note) } }; } });
+  }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){
+    var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; });
+    return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-sc="' + e(action) + '"' + d + '>' + e(text) + '</button>';
+  }
+  function tile(n, l, tone){ return '<div style="flex:1 1 118px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function typeFilter(){ return '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['', 'All types']].concat(TYPES).map(function(x){ return '<button class="status-pill ' + (S.type === x[0] ? 'active' : '') + '" data-sc="type" data-v="' + x[0] + '">' + e(x[1]) + '</button>'; }).join('') + '</div>'; }
+  function inType(c){ return !S.type || c.control_type === S.type; }
+  function openDevs(){ return S.deviations.filter(function(d){ return d.status !== 'closed'; }); }
+  function tabs(){
+    var od = openDevs().length, aw = Object.keys(S.status).filter(function(k){ return S.status[k].awaiting_verification; }).length;
+    return '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + [['due', 'What is due' + (aw ? ' (' + aw + ' to verify)' : '')], ['register', 'Control register'], ['history', 'History'], ['deviations', 'Deviations' + (od ? ' (' + od + ')' : '')]].map(function(x){ return '<button class="status-pill ' + (S.view === x[0] ? 'active' : '') + '" data-sc="view" data-v="' + x[0] + '">' + e(x[1]) + '</button>'; }).join('') + '</div>';
+  }
+  function dueView(){
+    var list = activeControls().filter(inType).sort(function(a, b){ return state(a)[2] - state(b)[2]; });
+    var over = list.filter(function(c){ return st(c).overdue; }).length, soon = list.filter(function(c){ var s = state(c); return s[1] === 'amber'; }).length, aw = list.filter(function(c){ return st(c).awaiting_verification; }).length;
+    var head = '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(list.length, 'active controls') + tile(over, 'overdue', over ? 'rust' : '') + tile(soon, 'due within 7 days', soon ? 'amber' : '') + tile(aw, 'awaiting verification', aw ? 'amber' : '') + '</div>' + typeFilter();
+    if(!list.length) return head + '<div class="card p4"><p class="muted-italic" style="margin:0;">No scheduled controls in this view. ' + (isQm() ? 'Open “Control register” and add your CIP, calibration, pest, verification and drill schedules.' : 'Ask an Admin or Quality Manager to set them up.') + '</p></div>';
+    return head + list.map(function(c){
+      var s = state(c), x = st(c), pend = pendingFor(c);
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div><div class="audit-title">' + e(c.code) + ' · ' + e(c.name) + ' ' + tag('neutral', lbl(TYPES, c.control_type).split(' /')[0]) + '</div><div class="audit-sub">' + e([c.subject, c.location].filter(Boolean).join(' · ')) + ' · every ' + e(c.frequency_days) + ' d · last valid ' + e(x.last_valid_at ? day(x.last_valid_at) : (c.baseline_at ? day(c.baseline_at) + ' (imported baseline)' : 'never')) + '</div></div><div>' + tag(s[1], s[0]) + (x.awaiting_verification ? ' ' + tag('amber', 'Awaiting verification') : '') + '</div></div>' +
+        '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + (canRecord() ? bt('complete', { id:c.id }, 'Record completion', s[1] !== 'green') : '') + (canDecide() && pend.length ? pend.slice(0, 3).map(function(p){ return bt('verify', { id:c.id, x:p.id }, 'Verify (done ' + day(p.done_at) + ')', true); }).join('') : '') + '</div></div>'; }).join('');
+  }
+  function registerView(){
+    var list = S.controls.filter(function(c){ return inType(c) && (!S.q || (c.code + ' ' + c.name + ' ' + (c.subject || '') + ' ' + (c.location || '')).toLowerCase().indexOf(S.q.toLowerCase()) !== -1); });
+    var head = typeFilter() + '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;"><input data-sc-q="q" placeholder="Search code, name, equipment" value="' + e(S.q) + '" style="font-size:12px;max-width:220px;" />' + (isQm() ? bt('newcontrol', {}, '+ New control', true) : '') + '</div>';
+    if(!list.length) return head + '<p class="muted-italic">No controls in this view.</p>';
+    return head + list.map(function(c){
+      return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div><div class="audit-title">' + e(c.code) + ' · ' + e(c.name) + ' ' + tag('neutral', lbl(TYPES, c.control_type).split(' /')[0]) + (c.status !== 'active' ? ' ' + tag('neutral', 'Inactive') : '') + '</div>' +
+        '<div class="audit-sub">every ' + e(c.frequency_days) + ' d' + (c.needs_verification ? ' · second-person verification' : '') + (c.needs_reference ? ' · certificate reference' : '') + (c.responsible_role ? ' · ' + e(c.responsible_role) : '') + '</div>' +
+        (c.baseline_note ? '<div class="muted-italic" style="font-size:11px;">' + e(c.baseline_note) + '</div>' : '') + '</div><div>' + (isQm() ? bt('editcontrol', { id:c.id }, 'Edit') : '') + '</div></div></div>'; }).join('');
+  }
+  function historyView(){
+    var vmap = {}; S.verifications.forEach(function(v){ vmap[v.completion_id] = v; });
+    var list = S.completions.filter(function(x){ var c = ctl(x.control_id); return c && inType(c); });
+    var head = typeFilter() + '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + bt('csv', {}, '⬇ CSV') + '</div><p class="muted-italic" style="font-size:11px;margin:0 0 8px;">Completions cannot be edited or deleted. Showing the latest ' + Math.min(list.length, 200) + ' of ' + list.length + '.</p>';
+    if(!list.length) return head + '<p class="muted-italic">No completions recorded yet.</p>';
+    return head + list.slice(0, 200).map(function(x){ var c = ctl(x.control_id) || { code:'?', name:'' }, v = vmap[x.id];
+      return '<div class="card" style="margin-bottom:6px;padding:8px 12px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:12.5px;"><div><strong>' + e(c.code) + '</strong> ' + e(c.name) + '</div><div>' + tag(x.result === 'pass' ? 'green' : 'rust', x.result === 'pass' ? 'Pass' : 'FAIL') + '</div></div>' +
+        '<div class="muted-italic" style="font-size:11px;">' + e(when(x.done_at)) + ' · ' + e(person(x.done_by)) + (x.reference ? ' · ref ' + e(x.reference) : '') + (x.note ? ' · ' + e(x.note) : '') +
+        (v ? ' · verified ' + e(v.result === 'pass' ? 'OK' : 'FAILED') + ' by ' + e(person(v.verified_by)) + ' ' + e(day(v.verified_at)) + (v.self_verified ? ' (same person: nobody else was authorised)' : '') : (c.needs_verification && x.result === 'pass' ? ' · awaiting verification' : '')) + '</div></div>'; }).join('');
+  }
+  function devCard(d){
+    var s = DEVSTAT[d.status] || [d.status, 'neutral'], c = ctl(d.control_id) || { code:'?' }, ncr = S.ncrs.filter(function(n){ return n.id === d.ncr_id; })[0], b = '';
+    var steps = '<div style="font-size:12px;margin-top:6px;">' + (d.contained_at ? '<div>Contained by ' + e(person(d.contained_by)) + ' · ' + e(when(d.contained_at)) + ': ' + e(d.immediate_action) + '</div>' : '') +
+      (d.assessed_at ? '<div>Impact: <strong>' + e(lbl(IMPACT, d.impact).split(':')[0]) + '</strong> · ' + e(person(d.assessed_by)) + (d.self_assessed ? ' <span style="color:var(--amber);">(assessed by the person who recorded it: nobody else was authorised)</span>' : '') + ' · ' + e(d.impact_note) + '</div>' : '') +
+      (ncr ? '<div>NCR: ' + e(ncr.reference_number || 'NCR') + ' · ' + e(ncr.title || '') + '</div>' : '') + (d.closed_at ? '<div>Closed by ' + e(person(d.closed_by)) + ' · ' + e(when(d.closed_at)) + '. Root cause: ' + e(d.root_cause) + ' Corrective action: ' + e(d.corrective_action) + '</div>' : '') + '</div>';
+    if(d.status === 'open' && canRecord()) b += bt('contain', { id:d.id }, 'Record containment', true);
+    if(d.status === 'contained' && canDecide()) b += bt('assess', { id:d.id }, 'Assess impact', true);
+    if(d.status !== 'closed' && canDecide()){
+      var nb = ''; try{ if(typeof ncrBtn === 'function') nb = ncrBtn({ title:'Control failure ' + d.ref + ': ' + c.code, description:d.description, source:'process_deviation', severity:'Major', area:c.location || '', link_type:'food_safety', link_reference:d.ref + ' — ' + d.description, record_id:String(d.id) }); }catch(_){}
+      b += nb + bt('linkncr', { id:d.id }, ncr ? 'Change linked NCR' : 'Link NCR');
+    }
+    if(d.status === 'assessed' && isQm()) b += bt('closedev', { id:d.id }, 'Close deviation', true);
+    return '<div class="card" style="margin-bottom:10px;padding:12px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title">' + e(d.ref) + ' · ' + e(d.description) + '</div>' + tag(s[1], s[0]) + '</div>' + steps + (b ? '<div class="flex-wrap" style="gap:6px;margin-top:8px;">' + b + '</div>' : '') + '</div>';
+  }
+  function deviationsView(){
+    var f = S.devFilter, list = S.deviations.filter(function(d){ var c = ctl(d.control_id); return (!c || inType(c)) && (f === 'all' ? true : f === 'open' ? d.status !== 'closed' : d.status === f); });
+    return typeFilter() + '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['open', 'Not closed'], ['closed', 'Closed'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (f === x[0] ? 'active' : '') + '" data-sc="devfilter" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>' + (list.length ? list.map(devCard).join('') : '<p class="muted-italic">No deviations in this view.</p>');
+  }
+  function exportCsv(){
+    var vmap = {}; S.verifications.forEach(function(v){ vmap[v.completion_id] = v; });
+    var rows = [['Time', 'Code', 'Control', 'Type', 'Result', 'Reference', 'Done by', 'Note', 'Verification', 'Verified by', 'Verified at']].concat(S.completions.filter(function(x){ var c = ctl(x.control_id); return c && inType(c); }).map(function(x){ var c = ctl(x.control_id), v = vmap[x.id]; return [when(x.done_at), c.code, c.name, c.control_type, x.result, x.reference, person(x.done_by), x.note, v ? v.result : '', v ? person(v.verified_by) : '', v ? when(v.verified_at) : '']; }));
+    var csv = rows.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var url = URL.createObjectURL(new Blob([csv], { type:'text/csv' })), a = document.createElement('a'); a.href = url; a.download = 'scheduled-controls-history.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  window.renderScheduledControls = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use scheduled controls.</p></div>';
+      if(window.__scView){ S.view = window.__scView; window.__scView = null; }
+      if(window.__scType !== undefined && window.__scType !== null){ S.type = window.__scType; window.__scType = null; }
+      if(!S.loaded && !S.loading && !S.tried) setTimeout(load, 0);
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">🗓️ Scheduled Controls</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">CIP, calibration, pest control, verification and drills on one schedule. Completions are signed and cannot be edited. A failed result opens a deviation. A missed control shows as overdue.</p>';
+      if(S.error) return head + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(S.error) + '</p></div>';
+      if(!S.loaded) return head + '<p class="muted-italic">Loading…</p>';
+      return head + tabs() + (S.view === 'register' ? registerView() : S.view === 'history' ? historyView() : S.view === 'deviations' ? deviationsView() : dueView());
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Scheduled controls page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.scEnsureLoaded = function(){ if(!S.loaded && !S.loading && !S.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.__scStats = function(){
+    window.scEnsureLoaded(); if(!S.loaded) return null;
+    var act = activeControls(), good = act.filter(function(c){ var x = st(c); return !x.overdue && !(x.open_deviations > 0); }).length;
+    var cal = act.filter(function(c){ return c.control_type === 'calibration'; }), open = openDevs();
+    var oldest = open.reduce(function(m, d){ var a = Math.floor((Date.now() - new Date(d.created_at).getTime()) / 86400000); return a > m ? a : m; }, 0);
+    return { controls:act.length, good:good, overdue:act.filter(function(c){ return st(c).overdue; }).length, awaiting:act.filter(function(c){ return st(c).awaiting_verification; }).length, openDeviations:open.length, oldestOpenDays:oldest, calTotal:cal.length, calOverdue:cal.filter(function(c){ return st(c).overdue; }).length };
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-sc]') ? null : t.closest('[data-sc-modal]');
+    if(m){ var k0 = m.getAttribute('data-sc-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-sc]'); if(!el) return;
+    if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    var a = el.getAttribute('data-sc'), id = el.getAttribute('data-id');
+    ev.preventDefault(); ev.stopPropagation();
+    if(a === 'reload'){ S.loading = false; S.tried = false; load(); }
+    else if(a === 'view'){ S.view = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'type'){ S.type = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'devfilter'){ S.devFilter = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'csv') exportCsv();
+    else if(a === 'newcontrol') actControl();
+    else { var c = ctl(id), d = S.deviations.filter(function(x){ return x.id === id; })[0];
+      if(a === 'editcontrol' && c) actControl(c); else if(a === 'complete' && c) actComplete(c);
+      else if(a === 'verify' && c){ var x = S.completions.filter(function(y){ return y.id === el.getAttribute('data-x'); })[0]; if(x) actVerify(c, x); }
+      else if(a === 'contain' && d) actContain(d); else if(a === 'assess' && d) actAssess(d); else if(a === 'linkncr' && d) actLinkNcr(d); else if(a === 'closedev' && d) actClose(d); }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var q = t.getAttribute('data-sc-q'); if(q){ S[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-sc-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
+  }, true);
+  window.scReset = function(){ S.controls = []; S.status = {}; S.completions = []; S.verifications = []; S.deviations = []; S.ncrs = []; S.profiles = []; S.loaded = false; S.loading = false; S.tried = false; S.error = ''; modal = null; mount(); };
 })();
 
 </script>
