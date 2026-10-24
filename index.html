@@ -1978,6 +1978,7 @@ function renderHiraTab(){
         <h2 class="serif" style="margin:0;font-size:18px;">⚠️ HIRA Assessments</h2>
         ${canCreateHira(role) ? `<button class="btn btn-primary" data-action="open-hira-modal">+ New HIRA Assessment</button>` : ''}
       </div>
+      ${window.ohsAuthNote?window.ohsAuthNote():''}
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hazard Identification & Risk Assessment. Nothing is pre-rated; a control lowers the risk only once it is Verified with evidence. Note: this register uses its own 5×5 bands, which differ from the Risk Management register.</p>
       ${hiraRecords.length===0 ? `<p class="muted-italic">No HIRA assessments yet.</p>` : hiraRecords.map(h => `
         <div class="top-border" style="padding:10px 0;">
@@ -2029,6 +2030,7 @@ function renderPtwTab(){
         <h2 class="serif" style="margin:0;font-size:18px;">📋 Permit to Work</h2>
         ${canCreatePermit(role) ? `<button class="btn btn-primary" data-action="open-permit-modal">+ Issue Permit to Work</button>` : ''}
       </div>
+      ${window.ohsAuthNote?window.ohsAuthNote():''}
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hot work, confined space, electrical isolation, heights, excavation and general high-risk work permits.</p>
       ${permitRecords.length===0 ? `<p class="muted-italic">No active permits.</p>` : permitRecords.map(p => `
         <div class="top-border" style="padding:10px 0;">
@@ -2145,6 +2147,48 @@ window.ohsFitnessOverride = function(){
 };
 document.addEventListener('click', e=>{ if(e.target.closest && e.target.closest('[data-ohs-fit-refresh]')){ window.__ohsFit = null; render(); } });
 
+
+
+/* ---- Authority: permit and HIRA approval depends on a current signed appointment ---- */
+window.__ohsAuth = window.__ohsAuth || {data:null, loading:false, err:null};
+function ohsAuthEnsure(force){
+  const a = window.__ohsAuth;
+  if(!cloudReady() || a.loading || (a.data && !force)) return;
+  a.loading = true;
+  supabaseClient.rpc('ohs_authority_status').then(r=>{ a.loading=false; if(r.error) a.err=r.error.message; else { a.data=r.data; a.err=null; } render(); });
+}
+window.ohsAuthBanner = function(){
+  ohsAuthEnsure();
+  const a = window.__ohsAuth, d = a.data;
+  if(a.err) return `<div class="card p4" style="margin-bottom:12px;"><p style="color:var(--rust);font-size:12.5px;margin:0;">${esc(a.err)}</p></div>`;
+  if(!d) return `<div class="card p4" style="margin-bottom:12px;"><p class="muted-italic" style="margin:0;font-size:12px;">Loading authority status…</p></div>`;
+  const isAdmin = String((currentUser()&&currentUser().role)||'').toLowerCase()==='admin';
+  const pr = d.problems||{};
+  return `<div class="card p4" style="margin-bottom:12px;border-color:${d.enforced?'var(--green)':'var(--amber)'};">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+      <strong style="font-size:13px;">${d.enforced?'🔒 Authority check is ON':'⚠ Authority check is OFF'}</strong>
+      <span class="flex-wrap">${isAdmin?`<button class="btn btn-ghost" style="font-size:12px;" data-ohs-auth-toggle="${d.enforced?'off':'on'}">${d.enforced?'Switch off':'Switch on'}</button>`:''}<button class="btn btn-ghost" style="font-size:12px;" data-ohs-auth-refresh>🔄</button></span>
+    </div>
+    <p class="muted-italic" style="font-size:12px;margin:6px 0;">${d.enforced?'Authorising or restarting a permit, closing it out, approving a HIRA and restoring a failed control need a current signed appointment with competence evidence.':'Anyone with the right app role can still authorise permits and approve HIRAs. Switch it on once the appointments below are complete.'}</p>
+    <div style="font-size:12px;"><strong>Valid authority holders (${(d.holders||[]).length}):</strong> ${(d.holders||[]).length ? (d.holders||[]).map(h=>`${esc(h.name)} — ${esc((h.role||'').split(' (')[0])}${h.review_date?` (review ${esc(h.review_date)})`:''}`).join('; ') : '<em>none</em>'}</div>
+    ${(pr.unsigned||pr.no_competence||pr.past_review) ? `<div style="font-size:12px;margin-top:4px;color:#8a6d1a;">Needs attention: ${pr.unsigned||0} unsigned · ${pr.no_competence||0} without competence evidence · ${pr.past_review||0} past review date</div>` : ''}
+    <div class="muted-italic" style="font-size:11px;margin-top:4px;">Appointee Name must match the person's account full name. Counts as authority: CEO, s16(2) assignee, machinery supervision, construction supervisor (provisional until legal review).</div>
+  </div>`;
+};
+window.ohsAuthNote = function(){
+  ohsAuthEnsure();
+  const d = window.__ohsAuth.data;
+  if(!d || !d.enforced || (d.me&&d.me.has_authority)) return '';
+  return `<div class="ohs-blocker" style="margin-bottom:10px;">Authority check is ON and you do not hold a current signed appointment, so you cannot authorise, restart or close permits, or approve HIRAs.</div>`;
+};
+document.addEventListener('click', async e=>{
+  const t = e.target.closest && e.target.closest('[data-ohs-auth-toggle],[data-ohs-auth-refresh]'); if(!t) return;
+  if(t.hasAttribute('data-ohs-auth-refresh')){ ohsAuthEnsure(true); return; }
+  const on = t.dataset.ohsAuthToggle==='on';
+  const r = await supabaseClient.rpc('ohs_set_enforcement',{p_on:on});
+  if(r.error){ alert(r.error.message); return; }
+  ohsAuthEnsure(true);
+});
 
 /* ---- OHS lifecycle actions: stop work, revalidate, close out, control failure / restore ---- */
 window.__ohsHist = window.__ohsHist || {};
@@ -7629,6 +7673,7 @@ const GENERIC_MODULES = [
   { key:"ohs-appointments", stateArr:"ohsAppointments", icon:"📝", title:"OHS Appointments",
     blurb:"Appointments and delegated authority: the legal duty, the formal appointment, the person's competence, and what they may actually decide are recorded separately. Under OHSA s16(2) an assignment does not remove the CEO's responsibility. Titles and provisions below are provisional until your legal adviser confirms them. Nothing here is deleted — records are archived with a reason.",
     cloudSynced:true, supabaseTable:"ohs_appointments", archive:true, filterFn:r=>r.archived!=='true',
+    extraStats:()=>window.ohsAuthBanner?window.ohsAuthBanner():'',
     sortField:"appointmentDate",
     fields:[
       {id:"employee", label:"Appointee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
