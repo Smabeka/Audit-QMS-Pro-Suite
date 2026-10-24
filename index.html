@@ -6346,7 +6346,7 @@ const MODULE_TAB_MAP = {
 };
 
 const COMPLIANCE_MAPPING = [
-  { standard:"ISO 9001:2015", clauses:[
+  { sid:"iso9001", standard:"ISO 9001:2015", clauses:[
     { clause:"4", title:"Context of the Organization", primary:["Risk Management"], supporting:["Management Review","Document Control"], coverage:"High" },
     { clause:"4.1", title:"Understanding the organization and its context", primary:["Risk Management"], supporting:["Management Review"], coverage:"High" },
     { clause:"4.2", title:"Understanding the needs of interested parties", primary:["Interested Parties"], supporting:["Risk Management","Management Review"], coverage:"High" },
@@ -6379,7 +6379,7 @@ const COMPLIANCE_MAPPING = [
     { clause:"10.2", title:"Nonconformity and corrective action", primary:["CAPA"], supporting:["Audit Management"], coverage:"High" },
     { clause:"10.3", title:"Continual improvement", primary:["Management Review","CAPA"], supporting:["Quality Cycle"], coverage:"High" }
   ]},
-  { standard:"ISO 13485:2016", clauses:[
+  { sid:"iso13485", note:"Provisional: have someone competent in medical-device quality systems verify this mapping. A laboratory or traceability module alone does not establish fulfilment of the associated requirements.", standard:"ISO 13485:2016", clauses:[
     { clause:"4", title:"Quality Management System", primary:["Document Control","Quality Cycle"], supporting:["All modules"], coverage:"High" },
     { clause:"4.2", title:"Documentation requirements", primary:["Document Control"], supporting:["Audit Management"], coverage:"High" },
     { clause:"5", title:"Management Responsibility", primary:["Management Review"], supporting:["Document Control","People Compliance"], coverage:"High" },
@@ -6400,7 +6400,7 @@ const COMPLIANCE_MAPPING = [
     { clause:"8.3", title:"Control of nonconforming product", primary:["CAPA"], supporting:["Traceability"], coverage:"High" },
     { clause:"8.5", title:"Improvement", primary:["CAPA"], supporting:["Risk Management","Management Review"], coverage:"High" }
   ]},
-  { standard:"ISO 22000:2018", clauses:[
+  { sid:"iso22000", standard:"ISO 22000:2018", clauses:[
     { clause:"4", title:"Context of the Organization", primary:["Risk Management"], supporting:["Management Review","Document Control"], coverage:"High" },
     { clause:"5", title:"Leadership", primary:["Management Review"], supporting:["Document Control","People Compliance"], coverage:"High" },
     { clause:"6", title:"Planning", primary:["Risk Management","KPI Metrics"], supporting:["Management Review"], coverage:"High" },
@@ -6417,7 +6417,7 @@ const COMPLIANCE_MAPPING = [
     { clause:"9.3", title:"Management review (incl. FSMS checklist refresh)", primary:["Management Review","FSMS Checklist"], supporting:["All modules"], coverage:"High" },
     { clause:"10", title:"Improvement", primary:["CAPA","Management Review"], supporting:["Risk Management","KPI Metrics"], coverage:"High" }
   ]},
-  { standard:"BRCGS Food Safety (Issue 9)", clauses:[
+  { sid:"brcgs9", standard:"BRCGS Food Safety (Issue 9)", clauses:[
     { clause:"1", title:"Senior Management Commitment", primary:["Management Review"], supporting:["Document Control"], coverage:"High" },
     { clause:"2", title:"Food Safety Plan — HACCP", primary:["FoodSafe Tracker"], supporting:["Risk Management"], coverage:"High" },
     { clause:"3.4", title:"Internal Audits", primary:["Audit Management"], supporting:["CAPA"], coverage:"High" },
@@ -6429,33 +6429,26 @@ const COMPLIANCE_MAPPING = [
     { clause:"7", title:"Personnel (training, hygiene, medical)", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
     { clause:"9", title:"Traded Goods (where applicable)", primary:["Supplier Management"], supporting:["Traceability"], coverage:"Medium" }
   ]},
-  { standard:"FSSC 22000 (v6, add-on requirements)", clauses:[
-    { clause:"2.5.1", title:"Food Fraud Vulnerability Assessment", primary:["Risk Management"], supporting:["Supplier Management"], coverage:"Medium" },
-    { clause:"2.5.2", title:"Food Defense (TACCP)", primary:["Risk Management"], supporting:["FoodSafe Tracker"], coverage:"Medium" },
-    { clause:"2.5.3", title:"Allergen Management", primary:["FoodSafe Tracker"], supporting:["Traceability"], coverage:"High" },
-    { clause:"2.5.4", title:"Environmental Monitoring Programme", primary:["Laboratory"], supporting:["FoodSafe Tracker"], coverage:"High" },
-    { clause:"2.5.6", title:"Management of Purchased Materials & Services", primary:["Supplier Management"], supporting:["Audit Management"], coverage:"High" },
-    { clause:"2.5.8", title:"Labelling & Logo Management", primary:["Document Control"], supporting:["Change Control"], coverage:"Medium" }
+  { sid:"fssc6", standard:"FSSC 22000 Version 6 — selected additional requirements (not the complete set)", note:"Version 6 numbering. FSSC has also published Version 7: add it as a separate, versioned library and manage the transition per customer. The scheme has other additional requirements (2.5.5 and 2.5.8 to 2.5.18) that are not mapped here.", edition:"Version 6", clauses:[
+    { clause:"2.5.1", title:"Management of purchased services and materials", primary:["Supplier Management"], supporting:["Audit Management"], coverage:"High", v:1, id:"fssc6-purchased" },
+    { clause:"2.5.2", title:"Labelling of products and printed materials", primary:["Document Control"], supporting:["Change Control"], coverage:"Medium", v:1, id:"fssc6-labelling" },
+    { clause:"2.5.3", title:"Food defence", primary:["Risk Management"], supporting:["FoodSafe Tracker"], coverage:"Medium", v:1, id:"fssc6-food-defence" },
+    { clause:"2.5.4", title:"Mitigation of food fraud", primary:["Risk Management"], supporting:["Supplier Management"], coverage:"Medium", v:1, id:"fssc6-food-fraud" },
+    { clause:"2.5.6", title:"Allergen management", primary:["FoodSafe Tracker"], supporting:["Traceability"], coverage:"High", v:1, id:"fssc6-allergen" },
+    { clause:"2.5.7", title:"Environmental monitoring", primary:["Laboratory"], supporting:["FoodSafe Tracker"], coverage:"High", v:1, id:"fssc6-env-monitoring" }
   ]},
-  { standard:"R638 — Foodstuffs, Cosmetics & Disinfectants Act (SA Food Hygiene Regs)", clauses:[
-    { clause:"§2", title:"Premises & Equipment Hygiene", primary:["FoodSafe Tracker"], supporting:["Audit Management"], coverage:"High" },
-    { clause:"§3", title:"Food Handler Health & Medical Certification", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
-    { clause:"§4", title:"Food Handler Training", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
-    { clause:"§5", title:"Water Quality Monitoring", primary:["Laboratory"], supporting:["FoodSafe Tracker"], coverage:"Medium" },
-    { clause:"§6", title:"Pest Control", primary:["FoodSafe Tracker"], supporting:["Audit Management"], coverage:"Medium" },
-    { clause:"§7", title:"HACCP-based Food Safety Management", primary:["FoodSafe Tracker"], supporting:["Risk Management"], coverage:"High" },
-    { clause:"§8", title:"Certificate of Acceptability / Local Authority Compliance", primary:["Document Control"], supporting:["Management Review"], coverage:"Medium" }
+  { sid:"r638", standard:"R638 of 2018 — Regulations governing general hygiene requirements for food premises, the transport of food and related matters", note:"Mapped to regulation headings only (Government Notice R638 of 2018). Confirm the exact sub-regulation before relying on a row. Medical certification, HACCP, training and water or pest-control duties are not mapped here because they have not been confirmed against the regulation text.", legal:true, edition:"Notice R638 of 2018", clauses:[
+    { clause:"Reg 3", title:"Certificate of acceptability", primary:["Document Control"], supporting:["Management Review"], coverage:"Medium", v:1 },
+    { clause:"Reg 5", title:"Standards and requirements for food premises", primary:["FoodSafe Tracker"], supporting:["Audit Management"], coverage:"Medium", v:1 },
+    { clause:"Reg 6", title:"Standards and requirements for facilities on food premises", primary:["FoodSafe Tracker"], supporting:["Audit Management"], coverage:"Medium", v:1 },
+    { clause:"Reg 7", title:"Standards and requirements for food containers, appliances and equipment", primary:["FoodSafe Tracker"], supporting:["Calibration"], coverage:"Medium", v:1 },
+    { clause:"Reg 8", title:"Standards and requirements for the display, storage and temperature of food", primary:["FoodSafe Tracker"], supporting:["Laboratory"], coverage:"Medium", v:1 },
+    { clause:"Reg 9", title:"Standards and requirements for protective clothing", primary:["People Compliance"], supporting:["Document Control"], coverage:"Medium", v:1 },
+    { clause:"Reg 10", title:"Duties of person in charge of food premises", primary:["People Compliance"], supporting:["Document Control","Management Review"], coverage:"Medium", v:1 },
+    { clause:"Reg 11", title:"Duties of a food handler", primary:["People Compliance"], supporting:["Document Control"], coverage:"Medium", v:1 },
+    { clause:"Reg 13", title:"Standards and requirements for the transport of food", primary:["Traceability"], supporting:["FoodSafe Tracker"], coverage:"Medium", v:1 }
   ]},
-  { standard:"Occupational Health and Safety Act 85 of 1993 (SA)", clauses:[
-    { clause:"§8", title:"Hazard Identification & Risk Assessment", primary:["Risk Management"], supporting:["Audit Management"], coverage:"High" },
-    { clause:"§8", title:"Incident / Injury Reporting", primary:["CAPA"], supporting:["Risk Management"], coverage:"Medium" },
-    { clause:"§9", title:"PPE Management", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
-    { clause:"§9", title:"Medical Surveillance", primary:["People Compliance"], supporting:["Laboratory"], coverage:"High" },
-    { clause:"§13", title:"Training & Induction", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
-    { clause:"§9", title:"Emergency Preparedness", primary:["Risk Management"], supporting:["Management Review"], coverage:"Low" },
-    { clause:"§16", title:"OHS Committee & Reporting", primary:["Document Control"], supporting:["Management Review"], coverage:"Medium" }
-  ]},
-  { standard:"ISO 14001:2015 (Environmental Management)", clauses:[
+  { sid:"iso14001", standard:"ISO 14001:2015 (Environmental Management)", clauses:[
     { clause:"6.1.2", title:"Environmental Aspects & Impacts", primary:["Risk Management"], supporting:["Document Control"], coverage:"Medium" },
     { clause:"6.1.3", title:"Legal & Other Requirements", primary:["Document Control"], supporting:["Management Review"], coverage:"Medium" },
     { clause:"6.2", title:"Environmental Objectives", primary:["Quality Objectives"], supporting:["Management Review"], coverage:"Medium → High" },
@@ -6464,7 +6457,7 @@ const COMPLIANCE_MAPPING = [
     { clause:"9.1", title:"Monitoring & Measurement", primary:["KPI Metrics"], supporting:["Laboratory"], coverage:"Medium" },
     { clause:"9.3", title:"Management Review (environmental inputs)", primary:["Management Review"], supporting:["Document Control"], coverage:"High" }
   ]},
-  { standard:"ISO/IEC 17025:2017 (Testing & Calibration Laboratories)", clauses:[
+  { sid:"iso17025", note:"Provisional: have someone competent in laboratory accreditation verify this mapping. A laboratory module alone does not establish fulfilment of the associated requirements.", standard:"ISO/IEC 17025:2017 (Testing & Calibration Laboratories)", clauses:[
     { clause:"4", title:"Impartiality & Confidentiality", primary:["Document Control"], supporting:["Management Review"], coverage:"Medium" },
     { clause:"6.2", title:"Personnel Competence", primary:["People Compliance"], supporting:["Audit Management"], coverage:"High" },
     { clause:"6.4", title:"Equipment Calibration & Traceability", primary:["Calibration"], supporting:["Laboratory"], coverage:"High" },
@@ -6476,26 +6469,32 @@ const COMPLIANCE_MAPPING = [
     { clause:"7.10", title:"Nonconforming Work", primary:["CAPA"], supporting:["Laboratory"], coverage:"High" },
     { clause:"8.8", title:"Internal Audits", primary:["Audit Management"], supporting:["CAPA"], coverage:"High" }
   ]},
-  { standard:"OHS Act 85 of 1993 (incl. GNR.84 General Administrative Regulations & Construction Regulations)", clauses:[
-    { clause:"Sec. 8", title:"General duty of employer to employees", primary:["HIRA Assessments"], supporting:["Document Control","CAPA"], coverage:"High" },
-    { clause:"Sec. 9", title:"General duty of employer to non-employees", primary:["HIRA Assessments"], supporting:["Permit to Work"], coverage:"Medium" },
+  { sid:"ohsa", standard:"Occupational Health and Safety Act 85 of 1993 and regulations (selected requirements)", note:"Legal references are only as reliable as the Verified tag shown on each row. Rows marked Provisional must be checked provision by provision against the Act and regulations by a competent person.", legal:true, edition:"Act 85 of 1993; Construction Regulations 2014 (Government Notice R84 of 7 February 2014)", clauses:[
+    { clause:"Sec. 8", title:"General duties of employers to their employees", primary:["HIRA Assessments"], supporting:["Document Control","CAPA"], coverage:"High" },
+    { clause:"Sec. 9", title:"General duties of employers and self-employed persons to persons other than employees", primary:["HIRA Assessments"], supporting:["Permit to Work"], coverage:"Medium" },
     { clause:"Sec. 13", title:"Duty to inform of hazards", primary:["HIRA Assessments"], supporting:["Medical Fitness Matrix","People Compliance"], coverage:"Medium" },
-    { clause:"Sec. 16(1)/16(2)", title:"CEO duty & assignment of duties", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
-    { clause:"Sec. 17", title:"Health & Safety Representatives", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
-    { clause:"Sec. 19", title:"Health & Safety Committees", primary:["OHS Appointments"], supporting:["Management Review"], coverage:"Medium" },
+    { clause:"Sec. 16", title:"Assignment of duties by the chief executive officer", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
+    { clause:"Sec. 17", title:"Health and safety representatives", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
+    { clause:"Sec. 20", title:"Health and safety committees (corrected from Sec. 19: confirm)", primary:["OHS Appointments"], supporting:["Management Review"], coverage:"Medium" },
     { clause:"Sec. 24", title:"Reporting of incidents to the Chief Inspector", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
-    { clause:"GNR.84 (GAR) Reg 2(1)", title:"Appointment of Health & Safety Manager", primary:["OHS Appointments"], supporting:["Document Control"], coverage:"High" },
-    { clause:"GNR.84 (GAR) Reg 2(7)", title:"Duties & functions of appointees", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"High" },
-    { clause:"GNR.84 (GAR) Reg 8/9", title:"Incident recording & investigation", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
-    { clause:"General Safety Reg. 3", title:"Risk assessment", primary:["HIRA Assessments"], supporting:["Risk Management"], coverage:"High" },
-    { clause:"Driven Machinery / General Safety Regs — Medical Surveillance", title:"Fitness certification for hazardous exposures", primary:["Medical Fitness Matrix"], supporting:["People Compliance"], coverage:"High" },
-    { clause:"Construction Reg. 4", title:"Notification of construction work", primary:["Construction Notification & Permits"], supporting:["Document Control"], coverage:"High" },
-    { clause:"Construction Reg. 5", title:"Health & Safety Specification and Plan", primary:["Construction Notification & Permits"], supporting:["Risk Management"], coverage:"High" },
-    { clause:"Construction Reg. 8", title:"Appointment of Construction Supervisor (CR8)", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"High" },
-    { clause:"Construction Reg. 21", title:"Fire precautions on construction sites", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"Medium" },
-    { clause:"General Machinery Reg. — Permit systems", title:"Permit-to-work for high-risk tasks", primary:["Permit to Work"], supporting:["HIRA Assessments"], coverage:"High" }
+    { clause:"Provision to be confirmed", title:"Training and induction of employees", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
+    { clause:"Provision to be confirmed", title:"Personal protective equipment management", primary:["People Compliance"], supporting:["Document Control"], coverage:"High" },
+    { clause:"Provision to be confirmed", title:"Emergency preparedness", primary:["Emergency Preparedness"], supporting:["Risk Management","Management Review"], coverage:"Medium" },
+    { clause:"Provision to be confirmed", title:"Appointment of competent persons and their duties (General Administrative Regulations)", primary:["OHS Appointments"], supporting:["Document Control","People Compliance"], coverage:"High" },
+    { clause:"Provision to be confirmed", title:"Incident recording and investigation (General Administrative Regulations)", primary:["CAPA"], supporting:["OHS Appointments"], coverage:"Medium" },
+    { clause:"Provision to be confirmed", title:"Medical surveillance and fitness certification for hazardous exposures", primary:["Medical Fitness Matrix"], supporting:["People Compliance"], coverage:"High" },
+    { clause:"Provision to be confirmed", title:"Permit systems for high-risk tasks", primary:["Permit to Work"], supporting:["HIRA Assessments"], coverage:"High" },
+    { clause:"General Safety Reg. 3", title:"First aid (corrected: this regulation does not cover risk assessment)", primary:["OHS Appointments"], supporting:["People Compliance"], coverage:"Medium" },
+    { clause:"Construction Reg. 4", title:"Notification of construction work", primary:["Construction Notification & Permits"], supporting:["Document Control"], coverage:"High", v:1 },
+    { clause:"Construction Reg. 5", title:"Duties of client (includes the health and safety specification; sub-regulation to be confirmed)", primary:["Construction Notification & Permits"], supporting:["Risk Management"], coverage:"High", v:1 },
+    { clause:"Construction Reg. 7", title:"Duties of principal contractor and contractor (includes the health and safety plan; sub-regulation to be confirmed)", primary:["Construction Notification & Permits"], supporting:["Risk Management"], coverage:"Medium", v:1 },
+    { clause:"Construction Reg. 8(1)", title:"Management and supervision: construction manager", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"High", v:1 },
+    { clause:"Construction Reg. 8(5)", title:"Management and supervision: construction health and safety officer (sub-regulation number supplied in review: confirm)", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"High" },
+    { clause:"Construction Reg. 8(7)", title:"Management and supervision: construction supervisor (sub-regulation number supplied in review: confirm)", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"High" },
+    { clause:"Construction Reg. 9", title:"Risk assessment for construction work (with control, monitoring and review plans)", primary:["HIRA Assessments"], supporting:["Risk Management"], coverage:"High", v:1 },
+    { clause:"Construction Reg. 29", title:"Fire precautions on construction sites", primary:["OHS Appointments"], supporting:["Construction Notification & Permits"], coverage:"Medium", v:1 }
   ]},
-  { standard:"Mine Health and Safety Act 29 of 1996 (SAMRASS statistics system)", clauses:[
+  { sid:"mhsa", legal:true, note:"Provisional: confirm each reporting form reference against the current Mine Health and Safety Act requirements.", standard:"Mine Health and Safety Act 29 of 1996 (SAMRASS statistics system)", clauses:[
     { clause:"SAMRASS 1 & 2", title:"Accident / injury reporting", primary:["SAMRASS Incident Reporting"], supporting:["CAPA","Medical Fitness Matrix"], coverage:"Medium" },
     { clause:"SAMRASS 3A–3D", title:"Fall of ground / rockburst reporting", primary:["SAMRASS Incident Reporting"], supporting:["HIRA Assessments"], coverage:"Medium" },
     { clause:"SAMRASS 4", title:"Short-shift injuries", primary:["SAMRASS Incident Reporting"], supporting:["OHS Appointments"], coverage:"Medium" },
@@ -9181,7 +9180,7 @@ function render(){
         : tab==="quality-objectives" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="quality-objectives"))
         : tab==="interested-parties" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="interested-parties"))
         : tab==="change-control" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderChangeControl) ? window.renderChangeControl() : renderGenericModule(GENERIC_MODULES.find(m=>m.key==="change-control")))
-        : tab==="compliance-framework" ? renderComplianceFramework()
+        : tab==="compliance-framework" ? window.renderFrameworkMap()
         : tab==="validation-qualification" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="validation-qualification"))
         : tab==="communication-log" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="communication-log"))
         : tab==="design-development" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="design-development"))
@@ -23827,6 +23826,162 @@ function showUpdateBanner(){
     }
   }, true);
   window.rkReset = function(){ R.risks = []; R.assess = []; R.actions = []; R.verifs = []; R.decs = []; R.links = []; R.logs = []; R.st = {}; R.profiles = []; R.loaded = false; R.loading = false; R.tried = false; R.error = ''; modal = null; mount(); };
+})();
+
+
+
+/* ===== Standards & Compliance Framework (stage 1): selected-requirements map, three separate statuses, signed site assessments ===== */
+(function(){
+  if(window.__fwInstalled) return;
+  window.__fwInstalled = true;
+  var LIB_VERSION = 'library 2026-10-24';
+  var EVIDENCE = {
+    'Management Review':'Review inputs, conclusions, decisions, resource commitments and action follow-up',
+    'Document Control':'Approved, current documents with review and approval records', 'CAPA':'Corrective action records with root cause, action evidence and effectiveness check',
+    'Risk Management':'Risk assessments with scores, treatment actions, verification and review records', 'Audit Management':'Audit programme, audit reports, findings and closure evidence',
+    'People Compliance':'Training, competence and induction records', 'Supplier Management':'Supplier approval, evaluation and certificate records',
+    'Traceability':'Batch records, trace and recall exercise results', 'FoodSafe Tracker':'Monitoring readings, deviations, scheduled-control records and verification',
+    'Laboratory':'Test results, sampling records and proficiency testing outcomes', 'Calibration':'Calibration certificates and due-date records', 'Calibration Dashboard':'Calibration certificates and due-date records',
+    'KPI Metrics':'Defined measures with targets and results', 'Quality Objectives':'Objectives with owners, targets and progress', 'Quality Cycle':'Process definitions and operational control records',
+    'Change Control':'Change requests with impact assessment, approval and implementation records', 'Communication Log':'Records of what was communicated, to whom, when and how',
+    'Interested Parties':'Register of interested parties and their requirements', 'Design & Development':'Design plan, inputs, outputs, review, verification and validation records',
+    'Validation & Qualification':'Validation and qualification protocols and reports', 'Regulatory Reporting':'Regulatory notifications and responses', 'Emergency Preparedness':'Emergency plans, drill records and follow-up actions',
+    'Sensory':'Signed sensory evaluations and follow-up decisions', 'FSMS Checklist':'Signed periodic FSMS reviews with evidence status', 'HIRA Assessments':'Hazard identification and risk assessments with controls and reviews',
+    'Permit to Work':'Issued, closed permits with conditions', 'OHS Appointments':'Written appointments, acceptance and competence evidence', 'Medical Fitness Matrix':'Fitness certificates and surveillance records',
+    'Construction Notification & Permits':'Notifications, permits, health and safety specification and plan', 'SAMRASS Incident Reporting':'Incident reports and statistics returns',
+    'Analytics':'Trend reports', 'Dashboard':'Management dashboard figures', 'Settings':'Scope and configuration records', 'All modules':'Records from the relevant workflows', 'All data modules':'Records from the relevant workflows'
+  };
+  var SUPPORT = { Available:['green', 'Available'], Partial:['amber', 'Partly supported'], Limited:['rust', 'Limited'] };
+  var IMPL = [['not_started', 'Not started'], ['in_progress', 'In progress'], ['implemented', 'Implemented'], ['not_applicable', 'Not applicable']];
+  var ASSESS = [['not_assessed', 'Not assessed'], ['adequate', 'Evidence adequate'], ['partly_adequate', 'Partly adequate'], ['inadequate', 'Evidence inadequate']];
+  var F = { latest:{}, history:[], profiles:[], loaded:false, loading:false, tried:false, installed:true, std:'', q:'', show:'all', open:null };
+  var modal = null;
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function role(){ try{ return String(currentProfile.role || '').trim().toLowerCase(); }catch(_){ return ''; } }
+  function canRecord(){ return ['admin', 'quality manager', 'approver'].indexOf(role()) !== -1; }
+  function tag(t, label, title){ return '<span class="tag tag-' + t + '"' + (title ? ' title="' + e(title) + '"' : '') + '>' + e(label) + '</span>'; }
+  function slug(s){ return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); }
+  function keyOf(std, c){ return c.id ? c.id : (std.sid + ':' + slug(c.clause) + ':' + slug(c.title)).slice(0, 120); }
+  function refText(std, c){ return std.standard + ' — ' + c.clause + ' ' + c.title; }
+  function supportOf(c){ var v = c.coverage || ''; return (v === 'High' || v === 'Very High') ? 'Available' : (v === 'Low' ? 'Limited' : 'Partial'); }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k; }
+  function person(id){ for(var i = 0; i < F.profiles.length; i++){ if(F.profiles[i].id === id) return F.profiles[i].full_name || 'Unnamed user'; } return id ? 'Unknown user' : '—'; }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ var d = new Date(iso); if(isNaN(d)) return String(iso || '—'); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function evidenceFor(c){ var seen = {}, out = []; (c.primary || []).concat(c.supporting || []).forEach(function(m){ var t = EVIDENCE[m]; if(t && !seen[t]){ seen[t] = 1; out.push(m + ': ' + t); } }); return out.slice(0, 4); }
+
+  async function load(){
+    if(F.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    F.loading = true; F.tried = true;
+    try{
+      var res = await Promise.all([ fetchAllRows('fw_latest', function(q){ return q; }), fetchAllRows('fw_assessments', function(q){ return q.order('created_at', { ascending:false }); }), supabaseClient.rpc('get_org_directory') ]);
+      if(res[0].error){ F.installed = !/does not exist|schema cache|relation|could not find/i.test(res[0].error.message || ''); }
+      else { F.installed = true; F.latest = {}; (res[0].data || []).forEach(function(r){ F.latest[r.map_key] = r; }); F.history = res[1].error ? [] : (res[1].data || []); F.profiles = res[2].error ? [] : (res[2].data || []); }
+    }catch(ex){ F.installed = false; }
+    F.loaded = true; F.loading = false; rerender();
+  }
+  async function refresh(){ F.loading = false; await load(); }
+
+  function mount(){ var host = document.getElementById('fw-modal-host'); if(!host){ host = document.createElement('div'); host.id = 'fw-modal-host'; document.body.appendChild(host); } host.innerHTML = modalHtml(); }
+  function closeModal(){ modal = null; mount(); }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'fwf-' + x.id, c;
+      if(x.type === 'textarea') c = '<textarea id="' + id + '" rows="3" style="width:100%;box-sizing:border-box;">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') c = '<select id="' + id + '">' + x.options.map(function(o){ return '<option value="' + e(o[0]) + '"' + (o[0] === x.value ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else c = '<input id="' + id + '" value="' + e(x.value || '') + '" style="width:100%;box-sizing:border-box;" />';
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + c + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-fw-modal="overlay"><div class="modal-card" style="max-width:560px;max-height:94vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:17px;color:var(--navy);">' + e(modal.title) + '</h3><p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;white-space:pre-wrap;">' + e(modal.help) + '</p>' + f +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-fw-modal="cancel">Cancel</button><button class="btn btn-primary" data-fw-modal="submit"' + (modal.busy ? ' disabled' : '') + '>Sign and record</button></div></div></div>';
+  }
+  function actAssess(std, c){
+    var key = keyOf(std, c), cur = F.latest[key] || {};
+    modal = { key:key, std:std, c:c, title:'Site assessment: ' + c.clause, help:refText(std, c) + '\n\nRecord what is true for YOUR site. This is a signed judgement. It does not prove conformity, legal compliance, certification or accreditation. Earlier entries stay in the history.',
+      fields:[ { id:'impl', label:'Site implementation', type:'select', options:IMPL, value:cur.implementation || 'not_started' }, { id:'as', label:'Evidence assessment', type:'select', options:ASSESS, value:cur.assessment || 'not_assessed' },
+        { id:'ev', label:'Evidence reviewed (record numbers, document references)', value:cur.evidence_refs || '' }, { id:'why', label:'Reason (at least 20 characters when assessing or when not applicable)', type:'textarea', value:'' } ] };
+    mount();
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    var v = {}; modal.fields.forEach(function(x){ var el = document.getElementById('fwf-' + x.id); v[x.id] = el ? String(el.value || '').trim() : ''; });
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(typeof confirmPasswordForAction === 'function'){ var ok = await confirmPasswordForAction('A site assessment is a signature. Enter your password to confirm it is you.'); if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.'); }
+      var r = await supabaseClient.rpc('fw_record', { p_key:cfg.key, p_f:{ implementation:v.impl, assessment:v.as, evidence_refs:v.ev || null, rationale:v.why || null, ref_snapshot:refText(cfg.std, cfg.c), library_version:LIB_VERSION + (cfg.std.edition ? ' · ' + cfg.std.edition : '') } });
+      if(r.error) throw new Error(r.error.message);
+      modal = null; mount(); toast('Site assessment recorded.'); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  function rows(){
+    var out = [];
+    COMPLIANCE_MAPPING.forEach(function(std){ if(F.std && std.sid !== F.std) return;
+      std.clauses.forEach(function(c){
+        if(F.q && (std.standard + ' ' + c.clause + ' ' + c.title).toLowerCase().indexOf(F.q.toLowerCase()) === -1) return;
+        var site = F.latest[keyOf(std, c)];
+        if(F.show === 'provisional' && c.v) return; if(F.show === 'unassessed' && site && site.assessment !== 'not_assessed') return; if(F.show === 'attention' && !(site && (site.assessment === 'inadequate' || site.assessment === 'partly_adequate'))) return;
+        out.push({ std:std, c:c, site:site });
+      }); });
+    return out;
+  }
+  function counts(){
+    var all = [], k = { avail:0, part:0, lim:0, ver:0, prov:0, impl:0, assessed:0, adequate:0, notAssessed:0 };
+    COMPLIANCE_MAPPING.forEach(function(std){ std.clauses.forEach(function(c){ all.push([std, c]); var s = supportOf(c); if(s === 'Available') k.avail++; else if(s === 'Partial') k.part++; else k.lim++; if(c.v) k.ver++; else k.prov++;
+      var site = F.latest[keyOf(std, c)]; if(site && site.implementation === 'implemented') k.impl++; if(site && site.assessment !== 'not_assessed'){ k.assessed++; if(site.assessment === 'adequate') k.adequate++; } else k.notAssessed++; }); });
+    k.total = all.length; return k;
+  }
+  function tile(n, l){ return '<div style="flex:1 1 120px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:19px;font-weight:700;color:var(--navy);">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function rowHtml(r){
+    var std = r.std, c = r.c, site = r.site, key = keyOf(std, c), sp = SUPPORT[supportOf(c)], open = F.open === key, ev = evidenceFor(c), impl = site ? lbl(IMPL, site.implementation) : 'Not recorded', asTag = site ? lbl(ASSESS, site.assessment) : 'Not assessed';
+    var asTone = !site ? 'neutral' : (site.assessment === 'adequate' ? 'green' : site.assessment === 'inadequate' ? 'rust' : site.assessment === 'partly_adequate' ? 'amber' : 'neutral');
+    var hist = open ? F.history.filter(function(h){ return h.map_key === key; }) : [];
+    return '<div style="padding:10px 0;border-bottom:1px solid var(--line2);"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;"><div style="min-width:0;font-size:13px;"><strong>' + e(c.clause) + '</strong> — ' + e(c.title) + '</div>' +
+      '<div class="flex-wrap" style="gap:4px;">' + tag(sp[0], 'Software: ' + sp[1], 'What AuditQMS offers for this requirement across all customers. It is not a conformity rating.') + (c.v ? tag('green', 'Reference checked', 'Number and heading checked against the published text on 24 Oct 2026. Confirm against the official document before relying on it.') : tag('amber', 'Provisional', 'Not yet verified against the exact edition. Confirm before relying on it.')) + '</div></div>' +
+      '<div class="flex-wrap" style="margin-top:6px;gap:6px;">' + c.primary.map(function(m){ return moduleChip(m); }).join('') + c.supporting.map(function(m){ return '<span style="opacity:.6;">' + moduleChip(m) + '</span>'; }).join('') + '</div>' +
+      (ev.length ? '<div class="muted-italic" style="font-size:11.5px;margin-top:4px;">Evidence to look for: ' + ev.map(e).join(' · ') + '</div>' : '') +
+      '<div class="flex-wrap" style="margin-top:6px;gap:6px;align-items:center;">' + tag('neutral', 'Site: ' + impl) + tag(asTone, 'Evidence: ' + asTag) + (site ? '<span class="muted-italic" style="font-size:11px;">' + e(person(site.assessed_by)) + ' · ' + e(when(site.created_at)) + '</span>' : '') +
+      (F.installed && canRecord() ? ' <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" data-fw="assess" data-key="' + e(key) + '">Site assessment</button>' : '') + (site ? ' <button class="btn btn-ghost" style="font-size:11px;padding:3px 8px;" data-fw="toggle" data-key="' + e(key) + '">' + (open ? 'Hide' : 'History') + '</button>' : '') + '</div>' +
+      (site && site.ref_snapshot && site.ref_snapshot !== refText(std, c) ? '<div style="font-size:11.5px;color:var(--amber);margin-top:4px;">This assessment was made against: ' + e(site.ref_snapshot) + '. The reference has since been corrected: review it again.</div>' : '') +
+      (open ? '<div style="margin-top:6px;">' + hist.map(function(h){ return '<div style="font-size:12px;border-top:1px solid var(--line2);padding:4px 0;">' + e(when(h.created_at)) + ' · ' + e(person(h.assessed_by)) + ' · ' + e(lbl(IMPL, h.implementation)) + ' · ' + e(lbl(ASSESS, h.assessment)) + (h.evidence_refs ? ' · evidence: ' + e(h.evidence_refs) : '') + (h.rationale ? '<div class="muted-italic">' + e(h.rationale) + '</div>' : '') + '<div class="muted-italic" style="font-size:10.5px;">' + e(h.library_version) + '</div></div>'; }).join('') + '</div>' : '') + '</div>';
+  }
+  window.renderFrameworkMap = function(){
+    try{
+      if(!F.loaded && !F.loading && !F.tried) setTimeout(load, 0);
+      var k = counts(), list = rows(), byStd = {};
+      list.forEach(function(r){ (byStd[r.std.sid] = byStd[r.std.sid] || { std:r.std, rows:[] }).rows.push(r); });
+      var out = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;"><h2 class="serif" style="font-size:18px;margin:0;">📐 Standards & Compliance Framework</h2></div>' +
+        '<p class="muted-italic" style="margin:0 0 6px;font-size:13px;">Maps selected requirements to supporting AuditQMS functions and evidence. Mapping does not establish conformity, legal compliance, certification or accreditation.</p>' +
+        '<p class="muted-italic" style="margin:0 0 12px;font-size:12px;">Three separate questions are shown for every requirement: what the software offers (the same for every customer), what your site has implemented, and whether someone reviewed adequate evidence. This library lists <strong>selected requirements</strong>, not the complete standards. Parent headings and detailed clauses are both listed, so the counts below are not a measure of coverage. Rows marked Provisional have not yet been verified against the exact edition.</p>' +
+        (F.installed ? '' : '<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:10px;"><p style="margin:0;font-size:12.5px;">Site assessments are not installed yet. Run fw_framework_run_this.sql in Supabase to record site implementation and evidence assessments. The mapping below still works.</p></div>') +
+        '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(k.total, 'selected requirements listed') + tile(k.avail + ' / ' + k.part + ' / ' + k.lim, 'software: available / partly / limited') + tile(k.ver + ' / ' + k.prov, 'reference checked / provisional') + tile(k.impl, 'implemented at your site') + tile(k.assessed + ' (' + k.adequate + ' adequate)', 'evidence assessed') + tile(k.notAssessed, 'not yet assessed') + '</div>' +
+        '<div class="card p4" style="margin-bottom:12px;"><div class="flex-wrap" style="gap:6px;"><select data-fw-sel="std" style="font-size:12px;"><option value="">All standards</option>' + COMPLIANCE_MAPPING.map(function(s){ return '<option value="' + s.sid + '"' + (F.std === s.sid ? ' selected' : '') + '>' + e(s.standard.length > 60 ? s.standard.slice(0, 57) + '…' : s.standard) + '</option>'; }).join('') + '</select>' +
+        '<select data-fw-sel="show" style="font-size:12px;">' + [['all', 'All rows'], ['provisional', 'Provisional references only'], ['unassessed', 'Not yet assessed at my site'], ['attention', 'Partly adequate or inadequate']].map(function(o){ return '<option value="' + o[0] + '"' + (F.show === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>' +
+        '<input data-fw-q="q" placeholder="Search clause or requirement" value="' + e(F.q) + '" style="font-size:12px;max-width:220px;" /></div></div>';
+      Object.keys(byStd).forEach(function(sid){ var g = byStd[sid], s = g.std;
+        out += '<div class="card p4" style="margin-bottom:16px;"><h3 class="serif" style="font-size:16px;margin:0 0 4px;">' + e(s.standard) + '</h3>' + (s.edition ? '<div class="muted-italic" style="font-size:11.5px;">Edition or version: ' + e(s.edition) + '</div>' : '') +
+          (s.note ? '<div style="font-size:12px;background:#fff4e5;border:1px solid var(--amber);border-radius:6px;padding:6px 8px;margin:6px 0;">' + e(s.note) + '</div>' : '') + g.rows.map(rowHtml).join('') + '</div>'; });
+      if(!list.length) out += '<p class="muted-italic">No requirements in this view.</p>';
+      out += '<div class="card p4"><h3 class="serif" style="font-size:16px;margin:0 0 8px;">🧭 Known limits</h3><p style="font-size:13px;margin:0;">Related modules are available for previously identified development items. Mapping accuracy, workflow verification and customer evidence assessment remain subject to review. Do not calculate a compliance percentage from the number of rows.</p></div>';
+      return out;
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Framework page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.fwReset = function(){ F.latest = {}; F.history = []; F.profiles = []; F.loaded = false; F.loading = false; F.tried = false; modal = null; mount(); };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-fw]') ? null : t.closest('[data-fw-modal]');
+    if(m){ var k0 = m.getAttribute('data-fw-modal'); if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; } ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-fw]'); if(!el) return;
+    var a = el.getAttribute('data-fw'), key = el.getAttribute('data-key'); ev.preventDefault(); ev.stopPropagation();
+    if(a === 'toggle'){ F.open = F.open === key ? null : key; rerender(); return; }
+    if(a === 'assess'){ for(var i = 0; i < COMPLIANCE_MAPPING.length; i++){ for(var j = 0; j < COMPLIANCE_MAPPING[i].clauses.length; j++){ if(keyOf(COMPLIANCE_MAPPING[i], COMPLIANCE_MAPPING[i].clauses[j]) === key){ actAssess(COMPLIANCE_MAPPING[i], COMPLIANCE_MAPPING[i].clauses[j]); return; } } } }
+  }, true);
+  document.addEventListener('input', function(ev){ var t = ev.target; if(!t || !t.getAttribute) return; var q = t.getAttribute('data-fw-q'); if(q){ F[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-fw-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } } }, true);
+  document.addEventListener('change', function(ev){ var t = ev.target; if(!t || !t.getAttribute) return; var s = t.getAttribute('data-fw-sel'); if(s){ F[s] = t.value; rerender(); } }, true);
 })();
 
 </script>
