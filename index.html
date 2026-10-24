@@ -9174,7 +9174,7 @@ function render(){
         : tab==="regulatory-reports" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="regulatory-reports"))
         : tab==="emergency-preparedness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="emergency-preparedness"))
         : tab==="calibration-dashboard" ? renderCalibrationDashboard()
-        : tab==="fsms-checklist" ? renderFsmsChecklist()
+        : tab==="fsms-checklist" ? window.renderFsmsReview()
         : tab==="ohs-hira" ? renderHiraTab()
         : tab==="ohs-ptw" ? renderPtwTab()
         : tab==="ohs-appointments" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-appointments"))
@@ -9508,6 +9508,7 @@ function renderDashboard(){
   if(_ncr && _ncr.overdue.length) alerts.push(`⚠️ ${_ncr.overdue.length} NCR${_ncr.overdue.length===1?'':'s'} past due date`);
   if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
   if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
+  { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   const _cm = (typeof window.__cmStats === 'function') ? window.__cmStats() : null;
   if(_cm && _cm.late) alerts.push(`⚠️ ${_cm.late} customer complaint${_cm.late===1?'':'s'} past the response deadline`);
   if(_cm && _cm.regNeeded) alerts.push(`⚠️ ${_cm.regNeeded} complaint${_cm.regNeeded===1?'':'s'} need a regulatory notification decision`);
@@ -23285,6 +23286,138 @@ function showUpdateBanner(){
     var s = t.getAttribute('data-sn-sel'); if(s){ N[s] = t.value; rerender(); }
   }, true);
   window.snReset = function(){ N.evals = []; N.fus = []; N.ncrs = []; N.profiles = []; N.loaded = false; N.loading = false; N.tried = false; N.error = ''; modal = null; mount(); };
+})();
+
+
+
+/* ===== FSMS Checklist with live evidence (stage 1): server-computed evidence, signed immutable reviews ===== */
+(function(){
+  if(window.__fmInstalled) return;
+  window.__fmInstalled = true;
+  var VALID_DAYS = 180;
+  var LINKS = { haccp:['nav-fs-points', 'Monitoring points'], prp:['nav-fs-sc-due', 'Scheduled controls'], allergen:['nav-fs-allergens', 'Allergen register'], emergency:['nav-fs-sc-due', 'Scheduled controls'], communication:['nav-sensory-3', 'Customer complaints'],
+    risk:['nav-risk', 'Risk register'], training:['nav-people-training', 'Training'], supplier:['nav-suppliers-list', 'Suppliers'], recall:['nav-trace-recall', 'Recalls'], audit:['nav-audit-register', 'Audit register'], capa:['nav-capa', 'CAPA'] };
+  var STATE = { ok:['green', 'Evidenced'], attention:['rust', 'Needs attention'], none:['amber', 'Nothing set up yet'], manual:['neutral', 'Manual: no automatic evidence'] };
+  var M = { ev:[], reviews:[], profiles:[], loaded:false, loading:false, tried:false, error:'', answers:{}, summary:'', open:null, busy:false };
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function canSign(){ try{ return ['admin', 'quality manager', 'approver'].indexOf(String(currentProfile.role || '').trim().toLowerCase()) !== -1; }catch(_){ return false; } }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function when(iso){ var d = new Date(iso); if(isNaN(d)) return String(iso || '—'); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function person(id){ for(var i = 0; i < M.profiles.length; i++){ if(M.profiles[i].id === id) return M.profiles[i].full_name || 'Unnamed user'; } return id ? 'Unknown user' : '—'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function needsNote(line, a){ return (a.confirmed === false) || line.state === 'attention' || line.state === 'none'; }
+
+  async function load(){
+    if(M.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    M.loading = true; M.tried = true; M.error = '';
+    try{
+      var res = await Promise.all([
+        supabaseClient.rpc('fsms_evidence'),
+        supabaseClient.from('fsms_reviews').select('*').order('reviewed_at', { ascending:false }).limit(50),
+        supabaseClient.rpc('get_org_directory')
+      ]);
+      var err = res[0].error || res[1].error;
+      if(err) M.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'The FSMS review is not installed yet. Run fsms_review_run_this.sql in Supabase.' : err.message;
+      else { M.ev = res[0].data || []; M.reviews = res[1].data || []; M.profiles = res[2].error ? [] : (res[2].data || []); M.loaded = true; }
+    }catch(ex){ M.error = (ex && ex.message) || String(ex); }
+    M.loading = false; rerender();
+  }
+  async function refresh(){ M.loading = false; await load(); }
+
+  function status(){
+    var r = M.reviews[0];
+    if(!r) return { tone:'rust', text:'Never reviewed with a signature', age:null };
+    var age = Math.floor((Date.now() - new Date(r.reviewed_at).getTime()) / 86400000);
+    return age > VALID_DAYS ? { tone:'rust', text:'Review overdue: signed ' + age + ' days ago (valid for ' + VALID_DAYS + ' days)', age:age } : { tone:'green', text:'Current: signed ' + age + ' day' + (age === 1 ? '' : 's') + ' ago, valid for ' + VALID_DAYS + ' days', age:age };
+  }
+  function start(){
+    M.answers = {}; M.summary = '';
+    M.ev.forEach(function(l){ M.answers[l.key] = { confirmed: l.state === 'ok' ? true : null, note:'' }; });
+    M.open = true; rerender();
+  }
+  function keep(){
+    var s = document.getElementById('fm-summary'); if(s) M.summary = s.value;
+    M.ev.forEach(function(l){ var n = document.getElementById('fm-note-' + l.key); if(n && M.answers[l.key]) M.answers[l.key].note = n.value; });
+  }
+  async function sign(){
+    if(M.busy) return; keep();
+    var items = [];
+    for(var i = 0; i < M.ev.length; i++){
+      var l = M.ev[i], a = M.answers[l.key];
+      if(!a || a.confirmed === null){ toast('Confirm or do not confirm: ' + l.text, 'error'); return; }
+      var note = String(a.note || '').trim();
+      if(needsNote(l, a) && note.length < 10){ toast('Give a reason (at least 10 characters) for: ' + l.text, 'error'); return; }
+      items.push({ key:l.key, confirmed:a.confirmed, note:note || null });
+    }
+    M.busy = true; rerender();
+    try{
+      if(typeof confirmPasswordForAction === 'function'){ var ok = await confirmPasswordForAction('Signing the FSMS review is a signature. Enter your password to confirm it is you.'); if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was recorded.'); }
+      var id = (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+      var r = await supabaseClient.rpc('fsms_review_sign', { p_id:id, p_f:{ summary:String(M.summary || '').trim() || null, items:items } });
+      if(r.error) throw new Error(r.error.message);
+      try{ if(typeof state !== 'undefined' && state.fsmsChecklist){ state.fsmsChecklist.needsReview = false; state.fsmsChecklist.needsReviewReason = ''; state.fsmsChecklist.lastReviewedAt = new Date().toISOString().slice(0, 10); if(typeof persist === 'function') persist(); } }catch(_){}
+      M.open = null; M.busy = false; toast('Review ' + r.data.ref + ' signed: ' + r.data.confirmed + ' of ' + r.data.total + ' lines confirmed.'); await refresh();
+    }catch(err){ M.busy = false; toast((err && err.message) || String(err), 'error'); rerender(); }
+  }
+
+  function lineHtml(l, withForm){
+    var s = STATE[l.state] || STATE.manual, lk = LINKS[l.key], a = M.answers[l.key] || {};
+    var form = '';
+    if(withForm){
+      form = '<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button type="button" class="btn ' + (a.confirmed === true ? 'btn-primary' : 'btn-ghost') + '" style="font-size:12px;padding:4px 10px;" data-fm="ans" data-k="' + e(l.key) + '" data-v="1">Confirmed</button>' +
+        '<button type="button" class="btn ' + (a.confirmed === false ? 'btn-primary' : 'btn-ghost') + '" style="font-size:12px;padding:4px 10px;" data-fm="ans" data-k="' + e(l.key) + '" data-v="0">Not confirmed</button></div>' +
+        '<textarea id="fm-note-' + e(l.key) + '" rows="2" style="width:100%;box-sizing:border-box;margin-top:6px;" placeholder="' + (needsNote(l, a) ? 'Reason required (at least 10 characters)' : 'Note (optional)') + '">' + e(a.note || '') + '</textarea>';
+    }
+    return '<div class="card" style="margin-bottom:8px;padding:10px 14px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><div class="audit-title" style="font-size:13px;">' + e(l.text) + '</div><div>' + tag(s[0], s[1]) + '</div></div>' +
+      '<div class="muted-italic" style="font-size:12px;margin-top:3px;">' + e(l.detail) + '</div>' + (lk && !withForm ? '<div style="margin-top:4px;"><button class="btn btn-ghost" style="font-size:11.5px;padding:3px 9px;" data-navid="' + e(lk[0]) + '">Open ' + e(lk[1]) + ' →</button></div>' : '') + form + '</div>';
+  }
+  function pastHtml(){
+    if(!M.reviews.length) return '<p class="muted-italic">No signed reviews yet.</p>';
+    return M.reviews.map(function(r){
+      return '<details class="card" style="margin-bottom:6px;padding:8px 12px;"><summary style="cursor:pointer;font-size:13px;"><strong>' + e(r.ref) + '</strong> · ' + e(when(r.reviewed_at)) + ' · ' + e(person(r.reviewed_by)) + ' · ' + r.confirmed + '/' + r.total + ' confirmed' + (r.attention ? ' · ' + r.attention + ' with evidence needing attention' : '') + '</summary>' +
+        (r.summary ? '<p style="font-size:12.5px;margin:6px 0;">' + e(r.summary) + '</p>' : '') +
+        (r.items || []).map(function(i){ var s = STATE[i.state] || STATE.manual; return '<div style="font-size:12px;padding:4px 0;border-top:1px solid var(--line2);">' + (i.confirmed ? '✅' : '⛔') + ' ' + e(i.text) + ' ' + tag(s[0], s[1]) + '<div class="muted-italic">' + e(i.detail) + (i.note ? ' · Reviewer: ' + e(i.note) : '') + '</div></div>'; }).join('') + '</details>';
+    }).join('');
+  }
+  window.renderFsmsReview = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use the FSMS checklist.</p></div>';
+      if(!M.loaded && !M.loading && !M.tried) setTimeout(load, 0);
+      var head = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">✅ FSMS Checklist</h2><div class="flex-wrap"><button class="btn btn-ghost" data-fm="reload">↻ Refresh evidence</button></div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Each line shows live evidence worked out by the system from the food safety modules. A signed review records that evidence together with your confirmation, and cannot be edited afterwards. Evidence shows controls were recorded and followed up; it cannot judge whether your plans are adequate.</p>';
+      if(M.error) return head + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(M.error) + '</p></div>';
+      if(!M.loaded) return head + '<p class="muted-italic">Loading…</p>';
+      var st = status(), flag = '';
+      try{ if(state.fsmsChecklist && state.fsmsChecklist.needsReview) flag = '<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:10px;"><p style="margin:0;font-size:13px;"><strong>🔔 Review due:</strong> ' + e(state.fsmsChecklist.needsReviewReason || 'A significant change or Management Review has occurred since the last checklist refresh.') + '</p></div>'; }catch(_){}
+      var att = M.ev.filter(function(l){ return l.state === 'attention'; }).length, auto = M.ev.filter(function(l){ return l.state !== 'manual'; }).length;
+      var top = '<div class="card p4" style="margin-bottom:10px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;"><div>' + tag(st.tone, st.text) + '<div class="muted-italic" style="font-size:12px;margin-top:4px;">' + auto + ' of ' + M.ev.length + ' lines have automatic evidence; ' + att + ' need attention now.' + (M.reviews[0] ? ' Last review ' + e(M.reviews[0].ref) + ' by ' + e(person(M.reviews[0].reviewed_by)) + '.' : '') + '</div></div>' +
+        (canSign() && !M.open ? '<button class="btn btn-primary" data-fm="start">Start a signed review</button>' : '') + '</div>' + (!canSign() ? '<p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">Only Admin, Quality Manager and Approver can sign a review.</p>' : '') + '</div>';
+      if(M.open){
+        return head + flag + top + '<h3 class="serif" style="font-size:15px;margin:10px 0 6px;">Signed review: confirm every line</h3>' + M.ev.map(function(l){ return lineHtml(l, true); }).join('') +
+          '<div class="card p4"><label class="field">Summary (optional)<textarea id="fm-summary" rows="2" style="width:100%;box-sizing:border-box;">' + e(M.summary) + '</textarea></label><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;"><button class="btn btn-ghost" data-fm="cancel">Cancel</button><button class="btn btn-primary" data-fm="sign"' + (M.busy ? ' disabled' : '') + '>Sign review</button></div></div>';
+      }
+      return head + flag + top + '<h3 class="serif" style="font-size:15px;margin:10px 0 6px;">Live evidence</h3>' + M.ev.map(function(l){ return lineHtml(l, false); }).join('') + '<h3 class="serif" style="font-size:15px;margin:14px 0 6px;">Signed reviews</h3>' + pastHtml();
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">FSMS page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.fmEnsureLoaded = function(){ if(!M.loaded && !M.loading && !M.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  window.__fmStats = function(){
+    window.fmEnsureLoaded(); if(!M.loaded) return null;
+    var st = status(); return { reviewed:!!M.reviews[0], overdue:!M.reviews[0] || st.age > VALID_DAYS, age:st.age, attention:M.ev.filter(function(l){ return l.state === 'attention'; }).length, confirmed:M.reviews[0] ? M.reviews[0].confirmed : 0, total:M.ev.length };
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var el = t.closest('[data-fm]'); if(!el) return;
+    var a = el.getAttribute('data-fm'); ev.preventDefault(); ev.stopPropagation();
+    if(a === 'reload'){ M.loading = false; M.tried = false; M.open = null; load(); }
+    else if(a === 'start') start();
+    else if(a === 'cancel'){ M.open = null; rerender(); }
+    else if(a === 'ans'){ keep(); var k = el.getAttribute('data-k'); M.answers[k].confirmed = el.getAttribute('data-v') === '1'; rerender(); }
+    else if(a === 'sign') sign();
+  }, true);
+  window.fmReset = function(){ M.ev = []; M.reviews = []; M.profiles = []; M.loaded = false; M.loading = false; M.tried = false; M.error = ''; M.open = null; M.answers = {}; M.busy = false; };
 })();
 
 </script>
