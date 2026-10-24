@@ -1160,6 +1160,11 @@ async function createHiraAssessment(hiraData) {
     residual_severity: hiraData.residual_severity,
     residual_likelihood: hiraData.residual_likelihood,
     applied_controls: hiraData.applied_controls,
+    assessment_type: hiraData.assessment_type,
+    inherent_rationale: hiraData.inherent_rationale,
+    residual_rationale: hiraData.residual_rationale,
+    controls_detail: hiraData.controls_detail,
+    scope: hiraData.scope,
     permit_required: hiraData.permit_required,
     status: hiraData.status,
     created_by: user ? user.id : null,
@@ -1336,6 +1341,9 @@ async function createPermit(permitData, hiraId = null) {
     gas_test_lel: permitData.gas_test_lel,
     gas_test_co: permitData.gas_test_co,
     gas_test_time: permitData.gas_test_time,
+    gas_test_detail: permitData.gas_test_detail || null,
+    permit_scope: permitData.permit_scope || 'Task / shift permit',
+    standing_ref: permitData.standing_ref || null,
     status: 'DRAFT', // always start as DRAFT; sign_permit() RPC transitions it
     created_by: user ? user.id : null,
   };
@@ -1580,58 +1588,48 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
     container.innerHTML = `<div class="ohs-modal-error">Your role (${escapeHtml(userRole)}) is not permitted to create HIRA assessments.</div>`;
     return;
   }
-
+  const blankSelect = (id, levels) => `<select id="${id}"><option value="">— choose —</option>${levels.map((l) => `<option value="${l.value}">${l.value} — ${escapeHtml(l.label)}</option>`).join('')}</select>`;
+  const CTRL_STATUS = ['Proposed', 'Implemented', 'Verified'];
   container.innerHTML = `
     <div class="ohs-modal-backdrop" data-role="backdrop">
-      <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="hira-modal-title">
+      <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="hira-modal-title" style="max-height:90vh;overflow:auto;">
         <h2 id="hira-modal-title">New HIRA Assessment</h2>
+        <p class="ohs-hint">Nothing is pre-rated. Choose every rating yourself and say why. A control only lowers the risk once it is marked Verified, with the evidence.</p>
 
-        <label class="ohs-field">
-          <span>Activity Description</span>
-          <textarea id="hira-activity" rows="2" required></textarea>
-        </label>
-
-        <label class="ohs-field">
-          <span>Location</span>
-          <input id="hira-location" type="text" required />
-        </label>
+        <label class="ohs-field"><span>Assessment type</span>
+          <select id="hira-type"><option value="">— choose —</option><option>Baseline</option><option>Issue-based</option><option>Task</option><option>Review</option></select></label>
+        <label class="ohs-field"><span>Activity and boundaries (what is and is not covered)</span><textarea id="hira-activity" rows="2"></textarea></label>
+        <label class="ohs-field"><span>Site / project / section and location</span><input id="hira-location" type="text" /></label>
+        <div class="ohs-field-row">
+          <label class="ohs-field"><span>Employer and contractor(s)</span><input id="hira-contractor" type="text" /></label>
+          <label class="ohs-field"><span>Procedure / drawing revision</span><input id="hira-revision" type="text" /></label>
+        </div>
+        <div class="ohs-field-row">
+          <label class="ohs-field"><span>Assessor / team</span><input id="hira-team" type="text" /></label>
+          <label class="ohs-field"><span>Workers consulted</span><input id="hira-consulted" type="text" /></label>
+        </div>
+        <label class="ohs-field"><span>Review triggers (e.g. change of method, incident, new equipment)</span><input id="hira-triggers" type="text" /></label>
 
         <div class="ohs-field-row">
-          <label class="ohs-field">
-            <span>Inherent Severity</span>
-            ${buildRatingSelect('hira-inherent-severity', SEVERITY_LEVELS)}
-          </label>
-          <label class="ohs-field">
-            <span>Inherent Likelihood</span>
-            ${buildRatingSelect('hira-inherent-likelihood', LIKELIHOOD_LEVELS)}
-          </label>
+          <label class="ohs-field"><span>Inherent severity</span>${blankSelect('hira-inherent-severity', SEVERITY_LEVELS)}</label>
+          <label class="ohs-field"><span>Inherent likelihood</span>${blankSelect('hira-inherent-likelihood', LIKELIHOOD_LEVELS)}</label>
         </div>
-
         <div id="hira-inherent-result" class="ohs-risk-badge" aria-live="polite"></div>
+        <label class="ohs-field"><span>Why this inherent rating? (hazard, event, consequence, people exposed)</span><textarea id="hira-inh-why" rows="2"></textarea></label>
 
         <fieldset class="ohs-controls-fieldset">
-          <legend>Applied Controls (select all that apply)</legend>
-          ${HIERARCHY_OF_CONTROLS.map(
-            (c) => `
-            <label class="ohs-checkbox">
-              <input type="checkbox" name="hira-control" value="${c.key}" />
-              ${escapeHtml(c.rank)}. ${escapeHtml(c.label)} — ${escapeHtml(c.description)}
-            </label>`
-          ).join('')}
+          <legend>Actual controls</legend>
+          <div id="hira-controls"></div>
+          <button type="button" id="hira-add-control" class="ohs-btn-secondary">+ Add a control</button>
+          <p class="ohs-hint">Proposed → Implemented → Verified. Only Verified controls count towards a lower residual rating.</p>
         </fieldset>
 
         <div class="ohs-field-row">
-          <label class="ohs-field">
-            <span>Residual Severity</span>
-            ${buildRatingSelect('hira-residual-severity', SEVERITY_LEVELS)}
-          </label>
-          <label class="ohs-field">
-            <span>Residual Likelihood</span>
-            ${buildRatingSelect('hira-residual-likelihood', LIKELIHOOD_LEVELS)}
-          </label>
+          <label class="ohs-field"><span>Residual severity</span>${blankSelect('hira-residual-severity', SEVERITY_LEVELS)}</label>
+          <label class="ohs-field"><span>Residual likelihood</span>${blankSelect('hira-residual-likelihood', LIKELIHOOD_LEVELS)}</label>
         </div>
-
         <div id="hira-residual-result" class="ohs-risk-badge" aria-live="polite"></div>
+        <label class="ohs-field"><span>Why this residual rating?</span><textarea id="hira-res-why" rows="2"></textarea></label>
         <div id="hira-blockers" class="ohs-blockers" aria-live="polite"></div>
 
         <div class="ohs-modal-actions">
@@ -1641,73 +1639,91 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
       </div>
     </div>
   `;
-
   const $ = (sel) => container.querySelector(sel);
-
-  const recalc = () => {
-    const inherentSeverity = Number($('#hira-inherent-severity').value);
-    const inherentLikelihood = Number($('#hira-inherent-likelihood').value);
-    const residualSeverity = Number($('#hira-residual-severity').value);
-    const residualLikelihood = Number($('#hira-residual-likelihood').value);
-    const appliedControlKeys = Array.from(container.querySelectorAll('input[name="hira-control"]:checked')).map((el) => el.value);
-
-    let result = null;
-    try {
-      result = evaluateHira({
-        severity: inherentSeverity,
-        likelihood: inherentLikelihood,
-        residualSeverity,
-        residualLikelihood,
-        appliedControlKeys,
-      });
-    } catch (e) {
-      $('#hira-blockers').textContent = e.message;
-      return null;
-    }
-
-    $('#hira-inherent-result').innerHTML = riskBadgeHtml('Inherent', result.inherent);
-    $('#hira-residual-result').innerHTML = riskBadgeHtml('Residual', result.residual);
-
-    const blockers = [];
-    if (!result.residual.acceptable) blockers.push('Residual risk score exceeds the acceptable threshold.');
-    if (result.residual.flagForReview) blockers.push('Only PPE (or no control) applied against a high residual score — flagged for independent review.');
-    $('#hira-blockers').innerHTML = blockers.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
-
-    return { result, appliedControlKeys, blockers };
+  const ctrlBox = $('#hira-controls');
+  const addControl = () => {
+    const row = document.createElement('div');
+    row.className = 'hira-ctrl';
+    row.style.cssText = 'border:1px solid #ddd;border-radius:6px;padding:8px;margin-bottom:8px;';
+    row.innerHTML = `
+      <label class="ohs-field"><span>Control (what exactly will be in place)</span><input class="c-text" type="text" /></label>
+      <div class="ohs-field-row">
+        <label class="ohs-field"><span>Type</span><select class="c-tier"><option value="">— choose —</option>${HIERARCHY_OF_CONTROLS.map((c) => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}</select></label>
+        <label class="ohs-field"><span>Owner</span><input class="c-owner" type="text" /></label>
+        <label class="ohs-field"><span>Due</span><input class="c-due" type="date" /></label>
+      </div>
+      <div class="ohs-field-row">
+        <label class="ohs-field"><span>Status</span><select class="c-status">${CTRL_STATUS.map((x) => `<option>${x}</option>`).join('')}</select></label>
+        <label class="ohs-field"><span>Evidence it works (needed for Verified)</span><input class="c-evidence" type="text" /></label>
+      </div>
+      <label class="ohs-checkbox"><input class="c-critical" type="checkbox" /> Critical control (failure must stop the work)</label>
+      <button type="button" class="ohs-btn-secondary c-remove">Remove this control</button>`;
+    row.querySelector('.c-remove').addEventListener('click', () => { row.remove(); recalc(); });
+    row.querySelectorAll('input,select').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+    ctrlBox.appendChild(row);
+    recalc();
   };
-
-  container.querySelectorAll('select, input[name="hira-control"]').forEach((el) => {
-    el.addEventListener('change', recalc);
-  });
-  recalc();
-
-  $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
-  $('[data-role="backdrop"]').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget && onCancel) onCancel();
-  });
-
-  $('[data-action="submit"]').addEventListener('click', () => {
-    const activity = $('#hira-activity').value.trim();
-    const location = $('#hira-location').value.trim();
-    if (!activity || !location) {
-      $('#hira-blockers').innerHTML = `<div class="ohs-blocker">Activity description and location are required.</div>`;
-      return;
+  const readControls = () => Array.from(ctrlBox.querySelectorAll('.hira-ctrl')).map((r) => ({
+    text: r.querySelector('.c-text').value.trim(), tier: r.querySelector('.c-tier').value, owner: r.querySelector('.c-owner').value.trim(),
+    due: r.querySelector('.c-due').value || null, status: r.querySelector('.c-status').value, evidence: r.querySelector('.c-evidence').value.trim(),
+    critical: r.querySelector('.c-critical').checked,
+  }));
+  const num = (id) => { const v = $(id).value; return v === '' ? null : Number(v); };
+  const recalc = () => {
+    const iS = num('#hira-inherent-severity'), iL = num('#hira-inherent-likelihood'), rS = num('#hira-residual-severity'), rL = num('#hira-residual-likelihood');
+    const ctrls = readControls();
+    const verifiedKeys = ctrls.filter((c) => c.status === 'Verified' && c.tier).map((c) => c.tier);
+    const problems = [];
+    let result = null;
+    $('#hira-inherent-result').innerHTML = ''; $('#hira-residual-result').innerHTML = '';
+    if (iS && iL) { try { $('#hira-inherent-result').innerHTML = riskBadgeHtml('Inherent', assessInherentRisk(iS, iL)); } catch (e) {} }
+    if (rS && rL) { try { $('#hira-residual-result').innerHTML = riskBadgeHtml('Residual', assessInherentRisk(rS, rL)); } catch (e) {} }
+    if (!(iS && iL)) problems.push('Choose the inherent severity and likelihood.');
+    if (!(rS && rL)) problems.push('Choose the residual severity and likelihood.');
+    if (!$('#hira-type').value) problems.push('Choose the assessment type.');
+    if (!$('#hira-activity').value.trim() || !$('#hira-location').value.trim()) problems.push('Activity and location are required.');
+    if (!$('#hira-inh-why').value.trim()) problems.push('Explain the inherent rating.');
+    if (!$('#hira-res-why').value.trim()) problems.push('Explain the residual rating.');
+    if (!ctrls.length) problems.push('Add at least one actual control.');
+    ctrls.forEach((c, i) => {
+      if (!c.text || !c.owner) problems.push(`Control ${i + 1}: describe it and name its owner.`);
+      if (!c.tier) problems.push(`Control ${i + 1}: choose the control type.`);
+      if (c.status === 'Verified' && !c.evidence) problems.push(`Control ${i + 1}: Verified needs the evidence.`);
+    });
+    let ready = false;
+    if (iS && iL && rS && rL) {
+      const inh = iS * iL, res = rS * rL;
+      if (res > inh) problems.push('Residual risk cannot be higher than inherent risk.');
+      if (res < inh && !verifiedKeys.length) problems.push('The residual rating is lower than the inherent rating, but no control is Verified. Verify a control or keep the residual equal to the inherent rating.');
+      try { result = evaluateHira({ severity: iS, likelihood: iL, residualSeverity: rS, residualLikelihood: rL, appliedControlKeys: verifiedKeys }); } catch (e) { result = null; }
+      ready = problems.length === 0 && !!result && result.readyForApproval;
+      if (result && !result.residual.acceptable) problems.push('Residual risk score is above the acceptable threshold — it will be saved as Under review, not sent for approval.');
+      if (result && result.residual.flagForReview) problems.push('Only PPE (or nothing) is verified against a high residual score — flagged for independent review.');
     }
-
-    const calc = recalc();
-    if (!calc) return;
-
+    $('#hira-blockers').innerHTML = problems.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
+    return { result, ctrls, ready, iS, iL, rS, rL, hardProblems: problems.filter((p) => !/saved as Under review|flagged for independent/.test(p)) };
+  };
+  container.querySelectorAll('select, input, textarea').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+  $('#hira-add-control').addEventListener('click', addControl);
+  addControl();
+  $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
+  $('[data-role="backdrop"]').addEventListener('click', (e) => { if (e.target === e.currentTarget && onCancel) onCancel(); });
+  $('[data-action="submit"]').addEventListener('click', () => {
+    const c = recalc();
+    if (c.hardProblems.length) return;
     onSubmit({
-      activity_description: activity,
-      location,
-      inherent_severity: Number($('#hira-inherent-severity').value),
-      inherent_likelihood: Number($('#hira-inherent-likelihood').value),
-      residual_severity: Number($('#hira-residual-severity').value),
-      residual_likelihood: Number($('#hira-residual-likelihood').value),
-      applied_controls: calc.appliedControlKeys,
-      permit_required: calc.result.permitRequired,
-      status: calc.result.readyForApproval ? 'PENDING_APPROVAL' : 'UNDER_REVIEW',
-      evaluation: calc.result,
+      activity_description: $('#hira-activity').value.trim(),
+      location: $('#hira-location').value.trim(),
+      assessment_type: $('#hira-type').value,
+      inherent_severity: c.iS, inherent_likelihood: c.iL, residual_severity: c.rS, residual_likelihood: c.rL,
+      inherent_rationale: $('#hira-inh-why').value.trim(), residual_rationale: $('#hira-res-why').value.trim(),
+      controls_detail: c.ctrls,
+      applied_controls: c.ctrls.filter((x) => x.status === 'Verified' && x.tier).map((x) => x.tier),
+      scope: { contractor: $('#hira-contractor').value.trim(), revision: $('#hira-revision').value.trim(), team: $('#hira-team').value.trim(),
+               consulted: $('#hira-consulted').value.trim(), review_triggers: $('#hira-triggers').value.trim() },
+      permit_required: c.result ? c.result.permitRequired : false,
+      status: c.ready ? 'PENDING_APPROVAL' : 'UNDER_REVIEW',
+      evaluation: c.result,
     });
   });
 }
@@ -1723,179 +1739,158 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
  * @param {(permitDraft: object) => void} opts.onSubmit
  * @param {() => void} opts.onCancel
  */
-function renderPermitModal(container, { userRole, hiraApproved = null, onSubmit, onCancel }) {
+function renderPermitModal(container, { userRole, hiraApproved = null, approvedHiras = [], onSubmit, onCancel }) {
   if (!canCreatePermit(userRole)) {
     container.innerHTML = `<div class="ohs-modal-error">Your role (${escapeHtml(userRole)}) is not permitted to create permits.</div>`;
     return;
   }
-
-  const supervisorAllowed = canGiveSupervisorSignoff(userRole);
-  const safetyOfficerAllowed = canGiveSafetyOfficerSignoff(userRole);
-
+  // Which gases must be measured for each permit type. Limits are NOT assumed: the person entering the permit states them with their source.
+  const GAS_FIELDS = {
+    HOT_WORK: [{ k: 'lel', label: 'LEL (%)', limits: ['max'] }],
+    CONFINED_SPACE: [{ k: 'o2', label: 'O2 (%)', limits: ['min', 'max'] }, { k: 'lel', label: 'LEL (%)', limits: ['max'] }, { k: 'co', label: 'CO (ppm)', limits: ['max'] }],
+  };
   container.innerHTML = `
     <div class="ohs-modal-backdrop" data-role="backdrop">
-      <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="ptw-modal-title">
-        <h2 id="ptw-modal-title">Issue Permit to Work</h2>
-
-        <label class="ohs-field">
-          <span>Permit Type</span>
-          <select id="ptw-type">
-            ${PERMIT_TYPES.map((p) => `<option value="${p.key}">${escapeHtml(p.label)}</option>`).join('')}
-          </select>
-        </label>
-
-        <label class="ohs-field">
-          <span>Location / Zone</span>
-          <input id="ptw-location" type="text" required />
-        </label>
-
-        <label class="ohs-field">
-          <span>Equipment ID (optional)</span>
-          <input id="ptw-equipment" type="text" />
-        </label>
-
+      <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="ptw-modal-title" style="max-height:90vh;overflow:auto;">
+        <h2 id="ptw-modal-title">New Permit to Work (saved as Draft)</h2>
+        <p class="ohs-hint">Nothing is pre-filled as safe. After saving, a Department Manager and a Quality Manager sign separately to authorise it.</p>
+        <label class="ohs-field"><span>Permit type</span>
+          <select id="ptw-type"><option value="">— choose —</option>${PERMIT_TYPES.map((p) => `<option value="${p.key}">${escapeHtml(p.label)}</option>`).join('')}</select></label>
+        <label class="ohs-field"><span>Linked approved HIRA (required)</span>
+          <select id="ptw-hira"><option value="">— choose —</option>${approvedHiras.map((h) => `<option value="${escapeHtml(h.id)}">${escapeHtml((h.activity_description || '').slice(0, 70))} — ${escapeHtml(h.location || '')}</option>`).join('')}</select></label>
+        <label class="ohs-field"><span>Location / zone</span><input id="ptw-location" type="text" /></label>
+        <label class="ohs-field"><span>Equipment ID (optional)</span><input id="ptw-equipment" type="text" /></label>
         <div class="ohs-field-row">
-          <label class="ohs-field">
-            <span>Valid From</span>
-            <input id="ptw-valid-from" type="datetime-local" required />
-          </label>
-          <label class="ohs-field">
-            <span>Valid To</span>
-            <input id="ptw-valid-to" type="datetime-local" required />
-          </label>
+          <label class="ohs-field"><span>Valid from</span><input id="ptw-valid-from" type="datetime-local" /></label>
+          <label class="ohs-field"><span>Valid to</span><input id="ptw-valid-to" type="datetime-local" /></label>
         </div>
+        <div class="ohs-field-row">
+          <label class="ohs-field"><span>Permit kind</span><select id="ptw-scope"><option>Task / shift permit</option><option>Standing authorisation</option></select></label>
+          <label class="ohs-field"><span>Standing authorisation reference (if standing)</span><input id="ptw-standing" type="text" /></label>
+        </div>
+        <p class="ohs-hint">A task or shift permit is limited to 24 hours. Longer cover must be a standing authorisation with its reference.</p>
 
         <div id="ptw-gas-section" style="display:none;">
           <fieldset>
-            <legend>Atmospheric Gas Test</legend>
+            <legend>Atmospheric gas test — actual measurement</legend>
             <div class="ohs-field-row">
-              <label class="ohs-field"><span>O2 (%)</span><input id="ptw-gas-o2" type="number" step="0.1" value="20.9" /></label>
-              <label class="ohs-field"><span>LEL (%)</span><input id="ptw-gas-lel" type="number" step="0.1" value="0" /></label>
-              <label class="ohs-field"><span>CO (ppm)</span><input id="ptw-gas-co" type="number" step="1" value="0" /></label>
+              <label class="ohs-field"><span>Tested by</span><input id="gas-tester" type="text" /></label>
+              <label class="ohs-field"><span>Tester competence evidence</span><input id="gas-comp" type="text" /></label>
             </div>
-            <p class="ohs-hint">Safe range: O2 ${GAS_TEST_LIMITS.O2_MIN}-${GAS_TEST_LIMITS.O2_MAX}% · LEL &lt;${GAS_TEST_LIMITS.LEL_MAX}% · CO &lt;${GAS_TEST_LIMITS.CO_MAX}ppm</p>
+            <div class="ohs-field-row">
+              <label class="ohs-field"><span>Instrument ID</span><input id="gas-inst" type="text" /></label>
+              <label class="ohs-checkbox"><input type="checkbox" id="gas-cal" /> Instrument calibration is current</label>
+            </div>
+            <div class="ohs-field-row">
+              <label class="ohs-field"><span>Test time</span><input id="gas-time" type="datetime-local" /></label>
+              <label class="ohs-field"><span>Place / sampling points</span><input id="gas-where" type="text" /></label>
+            </div>
+            <label class="ohs-field"><span>Source of the permitted limits (site procedure, standard, specialist)</span><input id="gas-source" type="text" /></label>
+            <div id="gas-readings"></div>
+            <label class="ohs-field"><span>Other gases / notes</span><input id="gas-other" type="text" /></label>
+            <div class="ohs-field-row">
+              <label class="ohs-field"><span>Re-testing</span><select id="gas-retest"><option value="">— choose —</option><option>Re-test at set interval</option><option>Continuous monitoring</option><option>Single test — conditions fixed</option></select></label>
+              <label class="ohs-field"><span>Interval / details</span><input id="gas-retest-detail" type="text" /></label>
+            </div>
           </fieldset>
         </div>
-
         <div id="ptw-firewatch-section" style="display:none;">
-          <label class="ohs-checkbox">
-            <input type="checkbox" id="ptw-firewatch" />
-            Fire watch personnel assigned on site
-          </label>
+          <label class="ohs-checkbox"><input type="checkbox" id="ptw-firewatch" /> Fire watch personnel assigned on site</label>
         </div>
-
-        <div class="ohs-signoff-section">
-          <div class="ohs-signoff-row">
-            <span>Supervisor Sign-off (Department Manager)</span>
-            <button type="button" id="ptw-supervisor-sign" class="ohs-btn-secondary" ${supervisorAllowed ? '' : 'disabled title="Your role cannot give this sign-off"'}>
-              Sign
-            </button>
-            <span id="ptw-supervisor-status" class="ohs-signoff-status">Not signed</span>
-          </div>
-          <div class="ohs-signoff-row">
-            <span>Safety Officer Sign-off (Quality Manager)</span>
-            <button type="button" id="ptw-safety-sign" class="ohs-btn-secondary" ${safetyOfficerAllowed ? '' : 'disabled title="Your role cannot give this sign-off"'}>
-              Sign
-            </button>
-            <span id="ptw-safety-status" class="ohs-signoff-status">Not signed</span>
-          </div>
-        </div>
-
         <div id="ptw-blockers" class="ohs-blockers" aria-live="polite"></div>
-
         <div class="ohs-modal-actions">
           <button type="button" data-action="cancel" class="ohs-btn-secondary">Cancel</button>
-          <button type="button" data-action="submit" class="ohs-btn-primary" disabled>Activate Permit</button>
+          <button type="button" data-action="submit" class="ohs-btn-primary">Save permit as Draft</button>
         </div>
       </div>
-    </div>
-  `;
-
+    </div>`;
   const $ = (sel) => container.querySelector(sel);
-  const state = { supervisorSigned: false, safetyOfficerSigned: false };
-
-  const toggleTypeSections = () => {
-    const config = PERMIT_TYPES.find((p) => p.key === $('#ptw-type').value);
-    $('#ptw-gas-section').style.display = config.requiresGasTest ? 'block' : 'none';
-    $('#ptw-firewatch-section').style.display = config.requiresFireWatch ? 'block' : 'none';
+  const drawGas = () => {
+    const type = $('#ptw-type').value;
+    const fields = GAS_FIELDS[type] || [];
+    $('#ptw-gas-section').style.display = fields.length ? 'block' : 'none';
+    $('#ptw-firewatch-section').style.display = type === 'HOT_WORK' ? 'block' : 'none';
+    $('#gas-readings').innerHTML = fields.map((g) => `
+      <div class="ohs-field-row">
+        <label class="ohs-field"><span>${g.label} — reading</span><input id="gr-${g.k}" type="number" step="0.1" /></label>
+        ${g.limits.includes('min') ? `<label class="ohs-field"><span>Permitted min</span><input id="gmin-${g.k}" type="number" step="0.1" /></label>` : ''}
+        ${g.limits.includes('max') ? `<label class="ohs-field"><span>Permitted max</span><input id="gmax-${g.k}" type="number" step="0.1" /></label>` : ''}
+      </div>`).join('');
+    container.querySelectorAll('#gas-readings input').forEach((el) => el.addEventListener('input', revalidate));
     revalidate();
   };
-
-  const revalidate = () => {
-    const permitType = $('#ptw-type').value;
-    const gasSection = $('#ptw-gas-section').style.display !== 'none';
-
-    const permitDraft = {
-      permit_type: permitType,
-      fire_watch_assigned: $('#ptw-firewatch').checked,
-      gas_test: gasSection
-        ? { o2: Number($('#ptw-gas-o2').value), lel: Number($('#ptw-gas-lel').value), co: Number($('#ptw-gas-co').value) }
-        : undefined,
-      supervisor_signed: state.supervisorSigned,
-      safety_officer_signed: state.safetyOfficerSigned,
-      hiraApproved,
-    };
-
-    const result = validatePermitForActivation(permitDraft);
-    $('#ptw-blockers').innerHTML = result.blockers.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
-    $('[data-action="submit"]').disabled = !result.canActivate;
-
-    return { permitDraft, result };
-  };
-
-  $('#ptw-type').addEventListener('change', toggleTypeSections);
-  container.querySelectorAll('#ptw-gas-o2, #ptw-gas-lel, #ptw-gas-co, #ptw-firewatch').forEach((el) => {
-    el && el.addEventListener('input', revalidate);
-    el && el.addEventListener('change', revalidate);
-  });
-
-  $('#ptw-supervisor-sign').addEventListener('click', () => {
-    if (!supervisorAllowed) return;
-    state.supervisorSigned = true;
-    $('#ptw-supervisor-status').textContent = `Signed by ${userRole} at ${new Date().toLocaleTimeString()}`;
-    $('#ptw-supervisor-sign').disabled = true;
-    revalidate();
-  });
-
-  $('#ptw-safety-sign').addEventListener('click', () => {
-    if (!safetyOfficerAllowed) return;
-    state.safetyOfficerSigned = true;
-    $('#ptw-safety-status').textContent = `Signed by ${userRole} at ${new Date().toLocaleTimeString()}`;
-    $('#ptw-safety-sign').disabled = true;
-    revalidate();
-  });
-
-  toggleTypeSections();
-
-  $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
-  $('[data-role="backdrop"]').addEventListener('click', (e) => {
-    if (e.target === e.currentTarget && onCancel) onCancel();
-  });
-
-  $('[data-action="submit"]').addEventListener('click', () => {
-    const location = $('#ptw-location').value.trim();
-    const validFrom = $('#ptw-valid-from').value;
-    const validTo = $('#ptw-valid-to').value;
-    if (!location || !validFrom || !validTo) {
-      $('#ptw-blockers').innerHTML = `<div class="ohs-blocker">Location, valid-from and valid-to are required.</div>`;
-      return;
+  const collect = () => {
+    const type = $('#ptw-type').value;
+    const problems = [];
+    if (!type) problems.push('Choose the permit type.');
+    if (!$('#ptw-hira').value) problems.push('Link an approved HIRA.');
+    if (!$('#ptw-location').value.trim()) problems.push('Location is required.');
+    const vf = $('#ptw-valid-from').value, vt = $('#ptw-valid-to').value;
+    if (!vf || !vt) problems.push('Choose when the permit starts and ends.');
+    else if (new Date(vt) <= new Date(vf)) problems.push('The end must be after the start.');
+    else if (new Date(vt) - new Date(vf) > 24 * 3600 * 1000 && !($('#ptw-scope').value === 'Standing authorisation' && $('#ptw-standing').value.trim())) problems.push('A task or shift permit is limited to 24 hours. Use a standing authorisation with its reference for longer cover.');
+    if (type === 'HOT_WORK' && !$('#ptw-firewatch').checked) problems.push('Fire watch must be assigned.');
+    let gas = null;
+    const fields = GAS_FIELDS[type] || [];
+    if (fields.length) {
+      const readings = {}, limits = {}; let within = true, complete = true;
+      fields.forEach((g) => {
+        const rv = ($('#gr-' + g.k) || {}).value;
+        if (rv === '' || rv == null) { complete = false; readings[g.k] = ''; return; }
+        readings[g.k] = rv;
+        const mn = g.limits.includes('min') ? $('#gmin-' + g.k).value : null, mx = g.limits.includes('max') ? $('#gmax-' + g.k).value : null;
+        if ((g.limits.includes('min') && mn === '') || (g.limits.includes('max') && mx === '')) { complete = false; return; }
+        limits[g.k] = { min: mn, max: mx };
+        const v = Number(rv);
+        if (mn !== null && v < Number(mn)) within = false;
+        if (mx !== null && v > Number(mx)) within = false;
+      });
+      if (!$('#gas-tester').value.trim() || !$('#gas-comp').value.trim()) problems.push('Gas test: who tested and their competence evidence.');
+      if (!$('#gas-inst').value.trim() || !$('#gas-cal').checked) problems.push('Gas test: instrument ID and calibration confirmation.');
+      if (!$('#gas-time').value || !$('#gas-where').value.trim()) problems.push('Gas test: test time and place / sampling points.');
+      if (!$('#gas-source').value.trim()) problems.push('Gas test: where the permitted limits come from.');
+      if (!$('#gas-retest').value) problems.push('Gas test: how re-testing / monitoring will be done.');
+      if (!complete) problems.push('Gas test: enter every reading and its permitted limit. Nothing is assumed safe.');
+      else if (!within) problems.push('A reading is outside the permitted limits — do not issue this permit.');
+      gas = {
+        tester: $('#gas-tester').value.trim(), tester_competence: $('#gas-comp').value.trim(), instrument_id: $('#gas-inst').value.trim(),
+        calibration_ok: $('#gas-cal').checked ? 'true' : 'false', tested_at: $('#gas-time').value, test_location: $('#gas-where').value.trim(),
+        limits_source: $('#gas-source').value.trim(), readings, limits, other: $('#gas-other').value.trim(),
+        retest: $('#gas-retest').value, retest_detail: $('#gas-retest-detail').value.trim(), within_limits: (complete && within) ? 'true' : 'false',
+      };
     }
-
-    const { permitDraft, result } = revalidate();
-    if (!result.canActivate) return;
-
+    return { problems, gas, type, vf, vt };
+  };
+  const revalidate = () => {
+    const c = collect();
+    $('#ptw-blockers').innerHTML = c.problems.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
+    return c;
+  };
+  $('#ptw-type').addEventListener('change', drawGas);
+  container.querySelectorAll('input, select').forEach((el) => { el.addEventListener('input', revalidate); el.addEventListener('change', revalidate); });
+  drawGas();
+  $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
+  $('[data-role="backdrop"]').addEventListener('click', (e) => { if (e.target === e.currentTarget && onCancel) onCancel(); });
+  $('[data-action="submit"]').addEventListener('click', () => {
+    const c = revalidate();
+    if (c.problems.length) return;
+    const rd = c.gas ? c.gas.readings : {};
     onSubmit({
-      permit_type: permitDraft.permit_type,
-      location,
+      permit_type: c.type,
+      hira_id: $('#ptw-hira').value,
+      location: $('#ptw-location').value.trim(),
       equipment_id: $('#ptw-equipment').value.trim() || null,
-      valid_from: new Date(validFrom).toISOString(),
-      valid_to: new Date(validTo).toISOString(),
-      fire_watch_assigned: permitDraft.fire_watch_assigned,
-      gas_test_o2: permitDraft.gas_test ? permitDraft.gas_test.o2 : null,
-      gas_test_lel: permitDraft.gas_test ? permitDraft.gas_test.lel : null,
-      gas_test_co: permitDraft.gas_test ? permitDraft.gas_test.co : null,
-      gas_test_time: permitDraft.gas_test ? new Date().toISOString() : null,
-      status: 'ACTIVE',
+      valid_from: new Date(c.vf).toISOString(),
+      valid_to: new Date(c.vt).toISOString(),
+      permit_scope: $('#ptw-scope').value,
+      standing_ref: $('#ptw-standing').value.trim() || null,
+      fire_watch_assigned: $('#ptw-firewatch').checked,
+      gas_test_detail: c.gas,
+      gas_test_o2: rd.o2 !== undefined && rd.o2 !== '' ? Number(rd.o2) : null,
+      gas_test_lel: rd.lel !== undefined && rd.lel !== '' ? Number(rd.lel) : null,
+      gas_test_co: rd.co !== undefined && rd.co !== '' ? Number(rd.co) : null,
+      gas_test_time: c.gas ? new Date(c.gas.tested_at).toISOString() : null,
+      status: 'DRAFT',
     });
   });
 }
@@ -1983,7 +1978,7 @@ function renderHiraTab(){
         <h2 class="serif" style="margin:0;font-size:18px;">⚠️ HIRA Assessments</h2>
         ${canCreateHira(role) ? `<button class="btn btn-primary" data-action="open-hira-modal">+ New HIRA Assessment</button>` : ''}
       </div>
-      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hazard Identification & Risk Assessment — OHS Act 85 of 1993 aligned risk matrix and hierarchy of controls.</p>
+      <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hazard Identification & Risk Assessment. Nothing is pre-rated; a control lowers the risk only once it is Verified with evidence. Note: this register uses its own 5×5 bands, which differ from the Risk Management register.</p>
       ${hiraRecords.length===0 ? `<p class="muted-italic">No HIRA assessments yet.</p>` : hiraRecords.map(h => `
         <div class="top-border" style="padding:10px 0;">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
@@ -1994,8 +1989,9 @@ function renderHiraTab(){
             <span class="tag tag-${hiraStatusTone(h.status)}" style="font-size:10px;">${esc(h.status)}</span>
           </div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
-            <span class="ohs-badge" style="background:${riskBandColorFor(h.inherent_severity, h.inherent_likelihood)};font-size:11px;">Inherent: ${h.inherent_severity*h.inherent_likelihood}</span>
-            <span class="ohs-badge" style="background:${riskBandColorFor(h.residual_severity, h.residual_likelihood)};font-size:11px;">Residual: ${h.residual_severity*h.residual_likelihood}</span>
+            ${(h.inherent_severity&&h.inherent_likelihood) ? `<span class="ohs-badge" style="background:${riskBandColorFor(h.inherent_severity, h.inherent_likelihood)};font-size:11px;">Inherent: ${h.inherent_severity*h.inherent_likelihood}</span>` : `<span class="tag tag-neutral" style="font-size:10px;">Inherent: not assessed</span>`}
+            ${(h.residual_severity&&h.residual_likelihood) ? `<span class="ohs-badge" style="background:${riskBandColorFor(h.residual_severity, h.residual_likelihood)};font-size:11px;">Residual: ${h.residual_severity*h.residual_likelihood}</span>` : `<span class="tag tag-neutral" style="font-size:10px;">Residual: not assessed</span>`}
+            ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<span class="tag tag-neutral" style="font-size:10px;">Controls: ${h.controls_detail.filter(c=>c.status==='Verified').length} verified / ${h.controls_detail.length}</span>` : `<span class="tag tag-amber" style="font-size:10px;">No actual controls recorded</span>`}
             ${h.permit_required ? `<span class="tag tag-amber" style="font-size:10px;">Permit Required</span>` : ''}
           </div>
           ${(h.status==="PENDING_APPROVAL" && canApproveHira(role)) ? `
@@ -2029,7 +2025,8 @@ function renderPtwTab(){
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hot work, confined space, electrical isolation, heights, excavation and general high-risk work permits.</p>
       ${permitRecords.length===0 ? `<p class="muted-italic">No active permits.</p>` : permitRecords.map(p => `
         <div class="top-border" style="padding:10px 0;">
-          ${permitExpiryBannerHtml(p.valid_to)}
+          ${(p.status==='ACTIVE'||p.status==='EXTENDED') ? permitExpiryBannerHtml(p.valid_to) : ''}
+          ${(p.status==='DRAFT' && new Date(p.valid_to)<new Date()) ? `<div class="ohs-blocker">Draft — validity window elapsed. This permit cannot be used; create a new one.</div>` : ''}
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
             <div>
               <div style="font-weight:600;">${esc(getPermitTypeConfig(p.permit_type).label)}</div>
@@ -2037,7 +2034,10 @@ function renderPtwTab(){
             </div>
             <span class="tag tag-${permitStatusTone(p.status)}" style="font-size:10px;">${esc(p.status)}</span>
           </div>
+          ${p.gas_test_detail ? `<div class="muted-italic" style="font-size:11.5px;margin-top:4px;">Gas test: ${esc(p.gas_test_detail.tester||'—')} · ${esc(p.gas_test_detail.instrument_id||'—')} · ${Object.entries(p.gas_test_detail.readings||{}).map(([k,v])=>esc(k.toUpperCase())+' '+esc(String(v))).join(', ')} · ${p.gas_test_detail.within_limits==='true'?'within stated limits':'NOT within limits'}</div>` : ''}
           <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+            ${(p.status==="DRAFT" && new Date(p.valid_to)>=new Date() && canGiveSupervisorSignoff(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="sign-permit" data-role-sign="SUPERVISOR" data-id="${p.id}">Sign as supervisor</button>` : ''}
+            ${(p.status==="DRAFT" && new Date(p.valid_to)>=new Date() && canGiveSafetyOfficerSignoff(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="sign-permit" data-role-sign="SAFETY_OFFICER" data-id="${p.id}">Sign as safety officer</button>` : ''}
             ${(p.status!=="CLOSED" && p.status!=="REVOKED" && canRevokePermit(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="revoke-permit" data-id="${p.id}">Revoke</button>` : ''}
             ${(p.status==="ACTIVE" || p.status==="EXTENDED") ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="close-permit" data-id="${p.id}">Close Out</button>` : ''}
           </div>
@@ -2067,9 +2067,9 @@ function openPermitModal(){
   root.innerHTML = '';
   renderPermitModal(root, {
     userRole: currentUser()?.role,
-    hiraApproved: null,
+    approvedHiras: (hiraRecords||[]).filter(h=>h.status==='APPROVED'),
     onSubmit: async (permitData) => {
-      const { data, error } = await createPermit(permitData, null);
+      const { data, error } = await createPermit(permitData, permitData.hira_id || null);
       if(error){ alert(`Failed to create permit: ${error.message}`); return; }
       root.innerHTML = '';
       await fetchHiraAndPermitRecords();
@@ -2093,6 +2093,11 @@ function bindHiraPtwTabHandlers(){
     if(error){ alert(`Could not reject: ${error.message}`); return; }
     await fetchHiraAndPermitRecords();
   });
+  document.querySelectorAll('[data-action="sign-permit"]').forEach(el=>el.onclick=async()=>{
+    const { error } = await signPermit(el.dataset.id, el.dataset.roleSign);
+    if(error){ alert(`Could not sign: ${error.message}`); return; }
+    await fetchHiraAndPermitRecords();
+  });
   document.querySelectorAll('[data-action="revoke-permit"]').forEach(el=>el.onclick=async()=>{
     const reason = prompt("Reason for revoking this permit:");
     if(reason===null) return;
@@ -2106,6 +2111,26 @@ function bindHiraPtwTabHandlers(){
     await fetchHiraAndPermitRecords();
   });
 }
+
+/* Operational fitness list for people who may not open the restricted health register */
+window.ohsFitnessOverride = function(){
+  const role = String((currentUser()&&currentUser().role)||'').toLowerCase();
+  if(['admin','quality manager','department manager'].includes(role)) return null;
+  if(!cloudReady()) return `<div class="card"><p class="muted-italic">Sign in to view fitness status.</p></div>`;
+  const st = window.__ohsFit || (window.__ohsFit = {rows:null, err:null, loading:false});
+  if(st.rows===null && !st.loading && !st.err){
+    st.loading = true;
+    supabaseClient.rpc('ohs_fitness_operational').then(r=>{ st.loading=false; if(r.error) st.err=r.error.message; else st.rows=r.data||[]; render(); });
+  }
+  const tone = f => ({Fit:'green','Fit with Restriction':'amber',Pending:'neutral'}[f]||'rust');
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><h2 class="serif" style="margin:0;font-size:18px;">🩺 Operational fitness status</h2><button class="btn btn-ghost" data-ohs-fit-refresh style="font-size:12px;">🔄 Refresh</button></div>
+    <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Fit / restricted / unfit, the work covered, restrictions, expiry and verification. Health detail is held in a restricted register.</p>
+    ${st.err ? `<p style="color:var(--rust);font-size:13px;">${esc(st.err)}</p>` : st.rows===null ? `<p class="muted-italic">Loading…</p>` : st.rows.length===0 ? `<p class="muted-italic">No fitness records.</p>` : st.rows.map(r=>`
+      <div class="top-border" style="padding:8px 0;display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+        <div><div style="font-weight:600;">${esc(r.employee||'—')}</div><div class="muted-italic" style="font-size:12px;">${esc(r.occupation||'—')} · covers: ${esc(r.task_scope||'not stated')}${r.restrictions?` · restrictions: ${esc(r.restrictions)}`:''} · expires ${esc(r.expiry_date||'—')} · ${esc(r.verification)}</div></div>
+        <span class="tag tag-${tone(r.fitness)}" style="font-size:10px;">${esc(r.fitness)}</span></div>`).join('')}</div>`;
+};
+document.addEventListener('click', e=>{ if(e.target.closest && e.target.closest('[data-ohs-fit-refresh]')){ window.__ohsFit = null; render(); } });
 
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
@@ -7278,7 +7303,10 @@ function renderCheckboxGroup(name, options, currentCsv){
 function genericInputEl(field, value, attrString){
   if(field.type==='select'){
     const opts = field.optionsFn ? field.optionsFn() : field.options;
-    return `<select ${attrString}>${opts.map(o=>`<option ${String(o)===String(value)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    const hasVal = value!=null && String(value)!=='';
+    const legacy = hasVal && !opts.some(o=>String(o)===String(value)) ? `<option selected>${esc(value)}</option>` : '';
+    const blank = field.blank ? `<option value="" ${hasVal?'':'selected'}>— select —</option>` : '';
+    return `<select ${attrString}>${blank}${legacy}${opts.map(o=>`<option ${String(o)===String(value)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
   }
   if(field.type==='date'){
     return `<input type="date" ${attrString} value="${esc(value||'')}" />`;
@@ -7386,7 +7414,7 @@ function renderGenericRow(cfg, r){
           ${cfg.key==="supplier-scar" ? renderScarEvidence(r) : ''}
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
             ${cfg.key==="lab-microbiology" ? `<button class="btn btn-ghost" data-print-micro-cert="${r.id}">🖨 Certificate</button>` : ''}
-            <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">Delete</button>
+            <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">${cfg.archive?'Archive':'Delete'}</button>
           </div>
         </div>
       ` : ''}
@@ -7394,6 +7422,7 @@ function renderGenericRow(cfg, r){
   `;
 }
 function renderGenericModule(cfg){
+  if(cfg.renderOverride){ const o = cfg.renderOverride(cfg); if(o!=null) return o; }
   if(window.trainingEnsureLoaded && cfg.fields && cfg.fields.some(f=>f.personPick)) window.trainingEnsureLoaded();
   const rawArr = state[cfg.stateArr] || [];
   const arr = cfg.filterFn ? rawArr.filter(cfg.filterFn) : rawArr;
@@ -7504,18 +7533,26 @@ const GENERIC_MODULES = [
     rowTag:r=>({label:r.condition||"—", tone:{New:"green",Good:"navy","Needs Replacement":"rust"}[r.condition]||"neutral"})
   },
   { key:"ohs-appointments", stateArr:"ohsAppointments", icon:"📝", title:"OHS Appointments",
-    blurb:"Statutory appointments under the OHS Act (GMR 2(1) employer/employer's rep, Health & Safety Reps, First Aiders, Fire Marshals, Incident Investigators, etc.) with review/expiry tracking.",
-    cloudSynced:true, supabaseTable:"ohs_appointments",
+    blurb:"Appointments and delegated authority: the legal duty, the formal appointment, the person's competence, and what they may actually decide are recorded separately. Under OHSA s16(2) an assignment does not remove the CEO's responsibility. Titles and provisions below are provisional until your legal adviser confirms them. Nothing here is deleted — records are archived with a reason.",
+    cloudSynced:true, supabaseTable:"ohs_appointments", archive:true, filterFn:r=>r.archived!=='true',
     sortField:"appointmentDate",
     fields:[
       {id:"employee", label:"Appointee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
-      {id:"role", label:"Appointment Type", type:"select", required:true, options:["Employer / CEO (Section 16(1))","16(2) Assignee","GMR 2(1) Health & Safety Manager","Health & Safety Committee Chair","Health & Safety Representative","First Aider","Fire Marshal / Fire Fighting Team","Incident Investigator","Risk Assessor","Chemical/Hazardous Substances Officer","Machinery/Equipment Supervisor","Construction Supervisor (CR8)","Other"]},
+      {id:"role", label:"Appointment Type", type:"select", required:true, blank:true, options:["Employer / CEO (OHSA s16(1))","Assignee of CEO duties (OHSA s16(2)) — CEO stays responsible","Machinery / equipment supervision (GMR 2(1)) — confirm title with legal adviser","Health & Safety Committee Chair","Health & Safety Representative","First Aider","Fire Marshal / Fire Fighting Team","Incident Investigator","Risk Assessor","Chemical/Hazardous Substances Officer","Construction Supervisor (Construction Regs — confirm regulation)","Other (describe in scope)"]},
+      {id:"legalProvision", label:"Legislation and provision (provisional until legal review)", placeholder:"e.g. OHSA s16(2)"},
+      {id:"legalEntitySite", label:"Legal entity and site covered"},
+      {id:"scope", label:"Scope of duties", full:true},
+      {id:"authorityLimits", label:"Authority, limits and resources given", full:true, placeholder:"What they may decide / stop / spend, and what needs escalation"},
+      {id:"competenceEvidence", label:"Competence evidence (training, certificate, experience)", full:true},
+      {id:"acceptedDate", label:"Date appointee accepted", type:"date"},
+      {id:"deputy", label:"Deputy / cover during absence"},
+      {id:"letterVersion", label:"Appointment letter version"},
       {id:"department", label:"Department / Area"},
-      {id:"appointmentDate", label:"Appointment Date", type:"date", default:"today"},
+      {id:"appointmentDate", label:"Effective Date", type:"date"},
       {id:"reviewDate", label:"Review / Expiry Date", type:"date"},
       {id:"appointedBy", label:"Appointed By"},
       {id:"trainingRef", label:"Supporting Training / Certificate Ref"},
-      {id:"letterSigned", label:"Appointment Letter Signed?", type:"select", options:["Yes","No"]},
+      {id:"letterSigned", label:"Appointment Letter Signed?", type:"select", options:["No","Yes"]},
       {id:"notes", label:"Notes", full:true}
     ],
     rowTitle:r=>r.employee||"Unnamed",
@@ -7529,19 +7566,24 @@ const GENERIC_MODULES = [
     }
   },
   { key:"ohs-medical-fitness", stateArr:"ohsMedicalFitness", icon:"🩺", title:"Medical Fitness Matrix",
-    blurb:"Occupational fitness certification per employee — occupation, exposures, required PPE and certificate expiry (Annexure 3 style).",
-    cloudSynced:true, supabaseTable:"ohs_medical_fitness",
+    blurb:"Restricted health register — only Admin, Quality Manager and Department Manager can open it. Supervisors and auditors see the operational fitness list (fit / restricted / unfit, restrictions, expiry, verification) without the health detail. A certificate covers the work and regime recorded on it; it is not treated as automatically valid across construction and mining. Records are archived, never deleted.",
+    cloudSynced:true, supabaseTable:"ohs_medical_fitness", archive:true, filterFn:r=>r.archived!=='true',
+    renderOverride:()=>window.ohsFitnessOverride?window.ohsFitnessOverride():null,
     sortField:"expiryDate",
     fields:[
       {id:"employee", label:"Employee Name", required:true, datalistId:"dl-people", datalistOptions:()=>(window.trainingPeopleNames?window.trainingPeopleNames():[]), personPick:true},
       {id:"occupation", label:"Occupation / Job Title", required:true},
+      {id:"taskScope", label:"Work this certificate covers", full:true, required:true, placeholder:"e.g. Work at heights, confined space entry, hot work"},
+      {id:"certificateRegime", label:"Regime the certificate was issued for", type:"select", options:["Not yet confirmed","General / OHSA","Construction","Mining (MHSA)"]},
       {id:"exposures", label:"Occupational Exposures", placeholder:"e.g. Noise, Dust, Chemicals, Heights, Confined Space", full:true},
       {id:"ppeRequired", label:"PPE Required", placeholder:"e.g. Hearing protection, Respirator, Harness", full:true},
-      {id:"fitnessStatus", label:"Fitness Status", type:"select", options:["Fit","Fit with Restriction","Temporarily Unfit","Unfit","Pending"]},
+      {id:"fitnessStatus", label:"Fitness Status", type:"select", options:["Pending","Fit","Fit with Restriction","Temporarily Unfit","Unfit"]},
       {id:"restrictions", label:"Restrictions (if any)", full:true},
-      {id:"examDate", label:"Exam Date", type:"date", default:"today"},
+      {id:"examDate", label:"Exam Date", type:"date"},
       {id:"expiryDate", label:"Certificate Expiry Date", type:"date", required:true},
-      {id:"medicalPractitioner", label:"Examining / Occupational Health Practitioner"}
+      {id:"medicalPractitioner", label:"Examining / Occupational Health Practitioner"},
+      {id:"verificationStatus", label:"Certificate verification", type:"select", options:["Not verified","Verified"]},
+      {id:"verificationNote", label:"How it was verified", placeholder:"e.g. original sighted, practitioner contacted"}
     ],
     rowTitle:r=>r.employee||"Unnamed",
     rowSub:r=>`${r.occupation||'—'} · exam ${r.examDate||'—'}`,
@@ -7553,34 +7595,40 @@ const GENERIC_MODULES = [
       const d = daysUntil(r.expiryDate);
       if(d<0) return {label:`Expired ${Math.abs(d)}d ago`, tone:"rust"};
       if(d<=30) return {label:`Expiring in ${d}d`, tone:"amber"};
+      if(r.fitnessStatus==="Fit with Restriction") return {label:"Fit w/ Restriction", tone:"amber"};
+      if(r.verificationStatus!=="Verified") return {label:"Fit — not verified", tone:"amber"};
       return {label:"Fit", tone:"green"};
     }
   },
   { key:"ohs-construction", stateArr:"ohsConstructionNotifications", icon:"🏗️", title:"Construction Notification & Permits",
-    blurb:"Notification of construction work and related permits under the Construction Regulations (Annexure 1 & 2 style records).",
-    cloudSynced:true, supabaseTable:"ohs_construction_notifications",
+    blurb:"A construction work permit application and a notification of construction work are separate legal steps with separate forms and references — record each as its own entry. Which applies, and the current form versions, must be confirmed with your legal adviser (provisional). Work cannot be marked started until the decision is recorded and the health and safety plan is approved. Records are archived, never deleted.",
+    cloudSynced:true, supabaseTable:"ohs_construction_notifications", archive:true, filterFn:r=>r.archived!=='true',
     sortField:"expectedStartDate",
     fields:[
+      {id:"recordType", label:"Record type", type:"select", required:true, blank:true, options:["Permit application (construction work permit)","Notification of construction work"]},
+      {id:"legalDecision", label:"Which applies to this project? (decision)", type:"select", options:["Not yet decided","Permit application required","Notification required","Both required","Neither required (reasoning in notes)"]},
       {id:"projectName", label:"Project / Site Name", required:true},
       {id:"principalContractor", label:"Principal Contractor", required:true},
       {id:"clientRep", label:"Client / Agent Representative"},
       {id:"constructionType", label:"Type of Construction Work", placeholder:"e.g. New build, Demolition, Excavation"},
-      {id:"notificationRef", label:"Dept. of Labour Notification Ref (Annexure 1)"},
-      {id:"notificationDate", label:"Notification Date", type:"date"},
+      {id:"notificationRef", label:"Notification reference (as issued)"},
+      {id:"notificationDate", label:"Submission date", type:"date"},
+      {id:"permitRef", label:"Permit reference (as issued)"},
+      {id:"submissionEvidence", label:"Evidence of submission", full:true, placeholder:"e.g. acknowledgement e-mail, receipt, portal screenshot reference"},
       {id:"expectedStartDate", label:"Expected Start Date", type:"date"},
       {id:"expectedDuration", label:"Expected Duration", placeholder:"e.g. 6 weeks"},
-      {id:"constructionSupervisor", label:"Appointed Construction Supervisor (CR8)"},
-      {id:"healthSafetyPlanApproved", label:"Health & Safety Plan Approved?", type:"select", options:["Yes","No","Pending"]},
-      {id:"status", label:"Status", type:"select", options:["Planned","Notified","In Progress","Completed","Closed"]},
+      {id:"constructionSupervisor", label:"Appointed construction supervisor (title per legal adviser)"},
+      {id:"healthSafetyPlanApproved", label:"Health & Safety Plan Approved?", type:"select", options:["Pending","Yes","No"]},
+      {id:"status", label:"Status", type:"select", options:["Planned","Submitted","Acknowledged","Permit granted","Work started","Completed","Closed"]},
       {id:"notes", label:"Notes", full:true}
     ],
     rowTitle:r=>r.projectName||"Unnamed Project",
-    rowSub:r=>`${r.principalContractor||'—'} · starts ${r.expectedStartDate||'—'}`,
-    rowTag:r=>({label:r.status||"Planned", tone:{Planned:"neutral",Notified:"navy","In Progress":"amber",Completed:"green",Closed:"green"}[r.status]||"neutral"})
+    rowSub:r=>`${r.recordType||'Type not set'} · ${r.principalContractor||'—'} · starts ${r.expectedStartDate||'—'}`,
+    rowTag:r=>({label:r.status||"Planned", tone:{Planned:"neutral",Submitted:"navy",Notified:"navy",Acknowledged:"navy","Permit granted":"green","Work started":"amber","In Progress":"amber",Completed:"green",Closed:"green"}[r.status]||"neutral"})
   },
   { key:"samrass-reporting", stateArr:"samrassReports", icon:"⛏️", title:"SAMRASS Incident Reporting",
-    blurb:"Internal capture of Mine Health & Safety Inspectorate statistics-system data (SAMRASS-equivalent fields) for accidents, dangerous occurrences and hygiene exposure — for your own records and to prep statutory submissions. This does not submit anything to the Inspectorate/DMRE.",
-    cloudSynced:true, supabaseTable:"samrass_reports",
+    blurb:"Internal capture of Mine Health & Safety Inspectorate statistics-system data (SAMRASS-equivalent fields) for accidents, dangerous occurrences and hygiene exposure — for your own records and to prep statutory submissions. This does not submit anything to the Inspectorate/DMRE. Capture a provisional record quickly — severity and reportability start as \"Not yet assessed\" and must be assessed before the record moves on. Check the official forms and code lists currently in force with your legal adviser (provisional). Records are archived, never deleted.",
+    cloudSynced:true, supabaseTable:"samrass_reports", archive:true, filterFn:r=>r.archived!=='true',
     sortField:"incidentDate",
     fields:[
       {id:"formType", label:"SAMRASS Form Type", type:"select", required:true, options:[
@@ -7600,31 +7648,40 @@ const GENERIC_MODULES = [
       {id:"incidentDate", label:"Incident Date", type:"date", default:"today"},
       {id:"incidentTime", label:"Incident Time"},
       {id:"employee", label:"Employee / Affected Person"},
+      {id:"identityStatus", label:"Identity of affected person", type:"select", options:["Recorded","Not yet confirmed","Identity withheld pending family notification"]},
       {id:"occupation", label:"Occupation"},
       {id:"shift", label:"Shift", type:"select", options:["Day","Afternoon","Night"]},
       {id:"causeCategory", label:"Cause Category", type:"select", options:["Fall of Ground / Rockburst","Machinery / Equipment","Transport / Tramming","Explosives","Fire / Explosion","Subsidence","Heat / Illness","Electrical","Hygiene Exposure","Other"]},
       {id:"natureOfInjury", label:"Nature of Injury / Illness / Occurrence", full:true},
-      {id:"severity", label:"Severity Classification", type:"select", options:["Fatal","Serious / Reportable","Lost Time Injury","Medical Treatment Case","First Aid Case","Dangerous Occurrence (no injury)"]},
+      {id:"severity", label:"Severity Classification", type:"select", options:["Not yet assessed","Fatal","Serious / Reportable","Lost Time Injury","Medical Treatment Case","First Aid Case","Dangerous Occurrence (no injury)"]},
       {id:"daysLost", label:"Shifts / Days Lost"},
       {id:"hygieneAgent", label:"Hygiene Agent (if exposure monitoring)", placeholder:"e.g. Noise, Respirable dust, Heat stress"},
       {id:"exposureReading", label:"Exposure Reading vs OEL", placeholder:"e.g. 92 dB(A) vs 85 dB(A) OEL"},
       {id:"immediateAction", label:"Immediate Action Taken", full:true},
       {id:"witnesses", label:"Witnesses"},
-      {id:"reportedToInspectorate", label:"Reported to Mine Health & Safety Inspectorate?", type:"select", options:["Yes","No","Pending"]},
-      {id:"inspectorateNotifiedDate", label:"Inspectorate Notification Date", type:"date"},
+      {id:"reportability", label:"Reportability assessment", type:"select", options:["Not yet assessed","Reportable - notify now","Reportable - routine submission","Not reportable (reason in notes)"]},
+      {id:"reportedToInspectorate", label:"Notification made to the Inspectorate?", type:"select", options:["Not yet assessed","No","Pending","Yes"]},
+      {id:"inspectorateNotifiedDate", label:"Notification date", type:"date"},
+      {id:"notificationMethod", label:"How it was notified", placeholder:"e.g. phone, e-mail, portal"},
+      {id:"notificationRecipient", label:"Who received it"},
+      {id:"submissionEvidence", label:"Evidence of notification", placeholder:"e.g. call log entry, acknowledgement e-mail"},
       {id:"inspectorateRef", label:"Inspectorate / DMRE Reference (once submitted externally)"},
       {id:"returnToWorkDate", label:"Return to Work Date (SAMRASS 9)", type:"date"},
       {id:"linkedCapaRef", label:"Linked CAPA / Investigation Reference"},
-      {id:"status", label:"Status", type:"select", options:["Draft","Internally Reviewed","Reported to Inspectorate","Closed"]},
+      {id:"status", label:"Status", type:"select", options:["Provisional","Internally Reviewed","Reported to Inspectorate","Closed"]},
       {id:"notes", label:"Notes", full:true}
     ],
     rowTitle:r=>`${r.formType||'SAMRASS Report'} — ${r.employee||r.mineSection||'Unnamed'}`,
-    rowSub:r=>`${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}`,
+    rowSub:r=>{
+      const miss=[]; if(!r.severity||r.severity==="Not yet assessed") miss.push('severity'); if(!r.reportability||r.reportability==="Not yet assessed") miss.push('reportability'); if(r.reportability==="Reportable - notify now" && r.reportedToInspectorate!=="Yes") miss.push('notification');
+      return `${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}${miss.length?` · ⚠ missing: ${miss.join(', ')}`:''}`;
+    },
     rowTag:r=>{
+      if(r.reportability==="Reportable - notify now" && r.reportedToInspectorate!=="Yes") return {label:"Notify now", tone:"rust"};
       if(r.severity==="Fatal") return {label:"Fatal", tone:"rust"};
       if(r.reportedToInspectorate==="Yes") return {label:"Reported", tone:"navy"};
       if(r.status==="Closed") return {label:"Closed", tone:"green"};
-      return {label:r.status||"Draft", tone: r.status==="Internally Reviewed" ? "amber" : "neutral"};
+      return {label:r.status||"Provisional", tone: r.status==="Internally Reviewed" ? "amber" : "neutral"};
     }
   },
   { key:"pest-control", stateArr:"pestControlLogs", icon:"🐀", title:"Pest Control",
@@ -14397,6 +14454,15 @@ function attachHandlers(){
     const [k,id] = el.dataset.genericDelete.split(':');
     const cfg = GENERIC_MODULES.find(m=>m.key===k);
     if(!cfg) return;
+    if(cfg.archive){
+      const why = (window.prompt('Why is this record being archived? (it stays in the history and is never deleted)')||'').trim();
+      if(why.length<10){ showToast('Give a reason of at least 10 characters to archive.'); return; }
+      const rec = state[cfg.stateArr].find(x=>x.id===id); if(!rec) return;
+      rec.archived='true'; rec.archivedAt=new Date().toISOString(); rec.archiveReason=why;
+      genericOpenId[k] = null;
+      if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
+      persist(); render(); return;
+    }
     state[cfg.stateArr] = state[cfg.stateArr].filter(x=>x.id!==id);
     genericOpenId[k] = null;
     if(cfg.cloudSynced) cloudSyncDelete(cfg, id);
