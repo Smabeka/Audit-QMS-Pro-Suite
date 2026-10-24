@@ -6992,6 +6992,19 @@ function riskLevelFromScore(score){
   if(score>=4) return "Medium";
   return "Low";
 }
+/* One shared definition of current risk exposure for every dashboard and report.
+   Uses the controlled Risk Management module when it is installed; otherwise falls back to the old register. */
+function riskExposure(){
+  const live = window.__rkStats && window.__rkStats();
+  if(live) return live;
+  const legacy = state.riskAssessments||[];
+  const act = legacy.filter(r=>RISK_NEEDS_ATTENTION_STATUSES.includes(r.status)).map(r=>({id:r.id, ref:r.refNo, label:r.hazard||'Untitled risk', level:r.riskLevel, category:(r.category==="Business"?"business":(r.category==="Food Safety"?"food_safety":"other")), status:r.status}));
+  const high = act.filter(x=>x.level==="High"||x.level==="Critical");
+  return { live:false, all:act, high, critical:act.filter(x=>x.level==="Critical"), businessHigh:high.filter(x=>x.category==="business"), active:act.length, openHighCritical:high.length,
+    unverified:0, treatmentOverdue:0, reviewOverdue:0, needsReview:0, drafts:0,
+    foodSafetyActive:act.filter(x=>x.category==="food_safety").length, foodSafetyTotal:legacy.filter(r=>r.category==="Food Safety").length,
+    score: legacy.length>0 ? Math.round(((legacy.length-high.length)/legacy.length)*1000)/10 : null };
+}
 const riskLevelColor = {Low:"green",Medium:"amber",High:"rust",Critical:"rust"};
 const riskLevelEmoji = {Low:"🟢",Medium:"🟡",High:"🟠",Critical:"🔴"};
 function csatStatus(avg){
@@ -7094,7 +7107,7 @@ function computeAutoMetricValue(autoType){
     case "audit_findings_closed_count":
       return allFindings.filter(f=>f.status==="Closed").length;
     case "open_high_critical_risks":
-      return state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status)).length;
+      return riskExposure().openHighCritical;
     default:
       return null;
   }
@@ -7256,6 +7269,7 @@ function changeControlOptionsList(){
   return ["None / Not linked", ...state.changeControls.map(c=>`${c.changeNumber?c.changeNumber+' — ':''}${c.title} (${c.status})`)];
 }
 function riskOptionsList(){
+  const _ro = window.__rkOptions && window.__rkOptions(); if(_ro) return ["None / Not linked", ..._ro];
   return ["None / Not linked", ...state.riskAssessments.map(r=>`${r.refNo?r.refNo+' — ':''}${r.hazard||r.area||'Untitled'} (${r.riskLevel||r.status||'—'})`)];
 }
 function renderCheckboxGroup(name, options, currentCsv){
@@ -9139,7 +9153,7 @@ function render(){
       </div>
       ` : ''}
       <main class="wrap">
-        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? renderRiskRegister() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? window.renderComplaints() : window.renderSensoryControls()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
+        ${tab==="dashboard" ? renderDashboard() : (tab==="fs-today"||tab==="fs-points"||tab==="fs-readings"||tab==="fs-deviations") ? window.renderFsControls() : (tab==="al-products"||tab==="al-changeovers"||tab==="al-incidents") ? window.renderAllergenControls() : (tab==="sc-due"||tab==="sc-register"||tab==="sc-history"||tab==="sc-deviations") ? window.renderScheduledControls() : tab==="audits" ? renderAudits() : tab==="checklists" ? renderChecklists() : tab==="risk" ? window.renderRiskControls() : tab==="metrics" ? renderMetrics() : tab==="capa" ? renderCapa() : tab==="capa-approval" ? renderCapaApprovalTab() : tab==="ncr" ? (typeof renderNcrRegister === "function" ? renderNcrRegister() : "") : tab==="audit-programme" ? (typeof renderAuditProgramme === "function" ? renderAuditProgramme() : "") : tab==="audit-competence" ? (typeof renderAuditCompetence === "function" ? renderAuditCompetence() : "") : tab==="audit-reports" ? (typeof renderAuditReports === "function" ? renderAuditReports() : "") : tab==="audit-metrics" ? (typeof renderAuditMetrics === "function" ? renderAuditMetrics() : "") : tab==="documents" ? renderDocuments() : tab==="training" || tab==="people-directory" || tab==="training-skills" || tab==="people-competency" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderTrainingModule) ? window.renderTrainingModule() : '<div class="card p4"><p class="muted-italic">Sign in to use training and people records.</p></div>') : tab==="haccp" ? renderHaccp() : tab==="recalls" ? ((typeof cloudReady==='function' && cloudReady() && currentCloudUser && window.renderRecallModule) ? window.renderRecallModule() : '<div class="card p4"><p class="muted-italic">Sign in to use product recalls.</p></div>') : tab==="suppliers" ? renderSuppliers() : tab==="allergens" ? renderAllergens() : tab==="cip" ? renderCip() : tab==="sensory" ? (sensorySubTab==="Customer Complaint" ? window.renderComplaints() : window.renderSensoryControls()) : tab==="traceability" ? renderTraceability() : tab==="foodsafe" ? renderFoodSafeTracker() : tab==="quality-cycle" ? renderQualityCycle() : tab==="analytics" ? renderAnalytics()
         : tab==="users" ? renderUsersModule()
         : tab==="audit-trail" ? renderAuditTrail()
         : tab==="people-medsurv" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="people-medsurv"))
@@ -9435,7 +9449,8 @@ function renderDashboard(){
   const critical = openFindings.filter(f=>f.severity==="Critical"||f.severity==="Major");
   const scored = audits.map(scoreOf).filter(s=>s!==null);
   const avgScore = scored.length ? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
-  const highRisks = state.riskAssessments.filter(r=>(r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+  const _rx = riskExposure();
+  const highRisks = _rx.high;
   const findingsWithDisputes = allFindings.filter(f=>(f.disputeEvents||[]).length>0);
   const pendingDisputeReview = findingsWithDisputes.filter(f=>{
     const events = f.disputeEvents;
@@ -9449,8 +9464,7 @@ function renderDashboard(){
 
   /* Overall Compliance Score — built from every module that exists in this app today. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
-  const totalRisks = state.riskAssessments.length;
-  const riskScore = totalRisks>0 ? Math.round(((totalRisks-highRisks.length)/totalRisks)*1000)/10 : null;
+  const riskScore = _rx.score;
   const metricsWithData = state.metrics.map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
   const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
   const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
@@ -9521,7 +9535,7 @@ function renderDashboard(){
   const moduleScores = [
     {label:"Audit Compliance", score:avgScore},
     {label:"CAPA Management", score:capaScore},
-    {label:"Risk Management", score:riskScore},
+    {label:"Risk Control Health", score:riskScore},
     {label:"KPI Metrics On-Target", score:metricsScore},
     {label:"Document Control", score:documentScore},
     {label:"Training Compliance", score:trainingScore},
@@ -9597,7 +9611,13 @@ function renderDashboard(){
   const priorities = [];
   { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
-  highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk", urgency:r.riskLevel==="Critical"?1000:500}));
+  highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.label||'Untitled risk'}`, navId:"nav-risk", urgency:r.level==="Critical"?1000:500}));
+  if(_rx.live){
+    if(_rx.treatmentOverdue) priorities.push({dot:"🔴", text:`${_rx.treatmentOverdue} risk${_rx.treatmentOverdue===1?' has':'s have'} overdue treatment actions`, navId:"nav-risk", urgency:60});
+    if(_rx.unverified) priorities.push({dot:"🟡", text:`Verify the controls on ${_rx.unverified} High/Critical risk${_rx.unverified===1?'':'s'}`, navId:"nav-risk", urgency:40});
+    if(_rx.reviewOverdue) priorities.push({dot:"🟡", text:`${_rx.reviewOverdue} risk review${_rx.reviewOverdue===1?' is':'s are'} overdue`, navId:"nav-risk", urgency:30});
+    if(_rx.drafts) priorities.push({dot:"🟡", text:`Assess ${_rx.drafts} draft risk${_rx.drafts===1?'':'s'}`, navId:"nav-risk", urgency:20});
+  }
   if(_trn && _trn.overdue) priorities.push({dot:"🔴", text:`Clear ${_trn.overdue} overdue training requirement${_trn.overdue===1?'':'s'}`, navId:"nav-people-training", urgency:1});
   if(_ncr) _ncr.overdue.forEach(n=>priorities.push({dot:"🔴", text:`Resolve overdue NCR: ${n.reference_number} — ${n.title}`, navId:"nav-ncr", urgency:1}));
   haccpVerificationOverdue.forEach(v=>priorities.push({dot:"🔴", text:`Verify HACCP: ${v.activityType||'Verification overdue'}`, navId:"nav-fs-verification", urgency:v.nextDueDate?-daysUntil(v.nextDueDate):0}));
@@ -9768,7 +9788,7 @@ function renderDashboard(){
         {label:"Overall Compliance Score", score:overallScore, key:"overall"},
         {label:"Audit Compliance", score:avgScore, key:"audit"},
         {label:"CAPA Completion", score:capaScore, key:"capa"},
-        {label:"Risk Management", score:riskScore, key:"risk"}
+        {label:"Risk Control Health", score:riskScore, key:"risk"}
       ])}
       ${kpiGroup("Operational Performance", [
         {label:"Training Compliance", score:trainingScore, key:"training"},
@@ -9864,11 +9884,11 @@ function renderDashboard(){
         const processBucket = processPct===null ? null : (processPct>=90 ? {emoji:"🟢",label:"On Target",tone:"green"} : processPct>=70 ? {emoji:"🟡",label:"Needs Attention",tone:"amber"} : {emoji:"🔴",label:"Off Target",tone:"rust"});
 
         // Business Risks — High/Critical risks in the Business category that still need attention
-        const businessHighRisks = state.riskAssessments.filter(r=>r.category==="Business" && (r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+        const businessHighRisks = riskExposure().businessHigh;
 
         // Regulatory Compliance — based on open Critical/Major findings from External audits and open Critical risks
         const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
-        const openCriticalRisks = state.riskAssessments.filter(r=>r.riskLevel==="Critical" && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+        const openCriticalRisks = riskExposure().critical;
         const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || openCriticalRisks.length>0)
           ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
           : externalOpenCriticalFindings.length>0
@@ -10019,9 +10039,9 @@ function mgmtReviewCore(){
   const capaTotal = allFindings.length;
   const capaClosed = allFindings.filter(f=>f.status==="Closed").length;
   const capaCompletionPct = capaTotal ? Math.round((capaClosed/capaTotal)*100) : null;
-  const businessHighRisks = state.riskAssessments.filter(r=>r.category==="Business" && (r.riskLevel==="High"||r.riskLevel==="Critical") && RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
-  const openRisks = state.riskAssessments.filter(r=>RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
-  const criticalOpenRisks = openRisks.filter(r=>r.riskLevel==="Critical");
+  const businessHighRisks = riskExposure().businessHigh;
+  const openRisks = riskExposure().all;
+  const criticalOpenRisks = riskExposure().critical;
   const custComplaints = state.sensoryEvaluations.filter(e=>(e.category||"Product Quality")==="Customer Complaint");
   const custComplaintsOpen = custComplaints.filter(e=>e.actionRequired).length;
   const csatAvg = state.csatEntries.length ? (state.csatEntries.reduce((sum,e)=>sum+(Number(e.score)||0),0)/state.csatEntries.length) : null;
@@ -10198,8 +10218,9 @@ function renderMgmtReviewCustomer(){
 
 function renderMgmtReviewRisk(){
   const d = mgmtReviewCore();
-  const foodSafetyRisks = state.riskAssessments.filter(r=>r.category==="Food Safety");
-  const foodSafetyOpen = foodSafetyRisks.filter(r=>RISK_NEEDS_ATTENTION_STATUSES.includes(r.status));
+  const _rxf = riskExposure();
+  const foodSafetyRisks = {length:_rxf.foodSafetyTotal};
+  const foodSafetyOpen = {length:_rxf.foodSafetyActive};
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Risk & Compliance</h3>
@@ -14335,21 +14356,8 @@ function attachHandlers(){
         logHistory(complaintAudit, `CAPA auto-generated from ${el.value} severity complaint: "${desc.slice(0,60)}${desc.length>60?'…':''}"`);
         logActivity(`CAPA auto-generated from a ${el.value} severity customer complaint`);
         if(el.value==="Critical"){
-          const likelihood = 3;
-          const sevScore = 5;
-          const riskScore = likelihood * sevScore;
-          const risk = {
-            id: uid(), refNo: "", date: today(), category: "Business", area: rec.classification || "",
-            hazard: `Customer complaint: ${desc}`, riskTo: "Customer / brand reputation", controls: "",
-            likelihood, severity: sevScore, riskScore, riskLevel: riskLevelFromScore(riskScore),
-            action: rec.correctiveAction || "", owner: "", dueDate: "", completedDate: "", status: "Open",
-            residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null,
-            sourceFindingId: finding.id
-          };
-          state.riskAssessments.unshift(risk);
-          rec.linkedRiskId = risk.id;
-          logActivity(`Risk assessment auto-logged from Critical customer complaint`);
-          pushRiskToCloud(risk);
+          if(window.rkDraftFromSource) window.rkDraftFromSource({ category:"business", area:rec.classification||"", source_text:`Customer complaint: ${desc}`.slice(0,480), draft_note:`Critical customer complaint: ${desc}`.slice(0,900), origin_type:"complaint", origin_ref:String(rec.id) });
+          logActivity(`Draft risk raised from Critical customer complaint`);
         }
       }
       if(cfg.cloudSynced) cloudSyncUpdate(cfg, rec);
@@ -15124,21 +15132,9 @@ function attachHandlers(){
     const findingId = uid();
     let linkedRiskId = null;
     if(severity==="Major" || severity==="Critical"){
-      const likelihood = 3; // audit findings don't carry an inherent likelihood rating, so a moderate default is used
-      const sevScore = severity==="Critical" ? 5 : 4;
-      const riskScore = likelihood * sevScore;
-      const risk = {
-        id: uid(), refNo: "", date: today(), category: "Quality", area: clause || a.area || "",
-        hazard: `Audit finding: ${desc}`, riskTo: "Product / process quality", controls: "",
-        likelihood, severity: sevScore, riskScore, riskLevel: riskLevelFromScore(riskScore),
-        action: actionText, owner, dueDate, completedDate: "", status: "Open",
-        residualLikelihood: "", residualSeverity: "", residualRiskScore: null, residualRiskLevel: null,
-        sourceFindingId: findingId
-      };
-      state.riskAssessments.unshift(risk);
-      linkedRiskId = risk.id;
-      logActivity(`Risk assessment auto-logged from audit finding: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
-      pushRiskToCloud(risk);
+      // Findings no longer create a finished risk with a guessed likelihood: they raise a DRAFT for someone to assess.
+      if(window.rkDraftFromSource) window.rkDraftFromSource({ category:"quality", area:clause || a.area || "", source_text:`Audit finding: ${desc}`.slice(0,480), draft_note:`${severity} audit finding in "${a.title||'audit'}": ${desc}`.slice(0,900), origin_type:"audit_finding", origin_ref:nextFindingRefNo(a) });
+      logActivity(`Draft risk raised from audit finding: ${desc.slice(0,40)}${desc.length>40?'…':''}`);
     }
     a.findings.push({
       id: findingId,
@@ -23418,6 +23414,419 @@ function showUpdateBanner(){
     else if(a === 'sign') sign();
   }, true);
   window.fmReset = function(){ M.ev = []; M.reviews = []; M.profiles = []; M.loaded = false; M.loading = false; M.tried = false; M.error = ''; M.open = null; M.answers = {}; M.busy = false; };
+})();
+
+
+
+/* ===== Risk Management (stage 1): described risks, approved scales, treatment plan, verified controls, signed acceptance ===== */
+(function(){
+  if(window.__rkInstalled) return;
+  window.__rkInstalled = true;
+  var CATS = [['health_safety','Health & Safety'],['quality','Quality'],['food_safety','Food Safety'],['environmental','Environmental'],['business','Business']];
+  var STATUS = { draft:['neutral','Draft: needs assessment'], open:['rust','Open'], treatment:['amber','Treatment in progress'], verification:['navy','Verification pending'], controlled:['green','Controlled: ongoing review'], closed:['neutral','Closed'], void:['neutral','Void'] };
+  var ACTIVE = ['open','treatment','verification','controlled'];
+  var LVL = { Low:'green', Medium:'amber', High:'rust', Critical:'rust' };
+  var TT = [['reduce','Reduce'],['avoid','Avoid or eliminate'],['transfer','Share or transfer']];
+  var CL = [['eliminate','1. Eliminate the hazard'],['substitute','2. Substitute'],['engineering','3. Engineering control'],['administrative','4. Administrative (procedure, training)'],['ppe','5. PPE']];
+  var AST = { pending:['neutral','Not started'], in_progress:['amber','In progress'], implemented:['green','Implemented'], cancelled:['neutral','Cancelled'] };
+  var LTYPES = [['audit_finding','Audit finding'],['capa','CAPA'],['ncr','NCR'],['complaint','Complaint'],['incident','Incident or near miss'],['supplier','Supplier'],['document','Document'],['change','Change'],['other','Other']];
+  var R = { risks:[], assess:[], actions:[], verifs:[], decs:[], links:[], logs:[], st:{}, profiles:[], scales:null, loaded:false, loading:false, tried:false, error:'', view:'register', cat:'', lvl:'', status:'active', q:'', openId:null, sims:{} };
+  var modal = null;
+  function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]; }); }
+  function toast(m, t){ if(typeof showToast === 'function') showToast(m, t); else alert(m); }
+  function rerender(){ if(typeof render === 'function') render(); }
+  function role(){ try{ return String((currentProfile && currentProfile.role) || '').trim().toLowerCase(); }catch(_){ return ''; } }
+  function isMgr(){ return ['admin','quality manager','approver','department manager'].indexOf(role()) !== -1; }
+  function isQm(){ return ['admin','quality manager'].indexOf(role()) !== -1; }
+  function isDecider(){ return ['admin','quality manager','approver'].indexOf(role()) !== -1; }
+  function canRecord(){ return isMgr() || role() === 'employee'; }
+  function myId(){ try{ return currentProfile && currentProfile.id; }catch(_){ return null; } }
+  function nul(v){ v = String(v == null ? '' : v).trim(); return v === '' ? null : v; }
+  function newId(){ return (typeof uid === 'function') ? uid() : (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()); }
+  function pad(n){ return ('0' + n).slice(-2); }
+  function ymd(d){ return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function today(){ return ymd(new Date()); }
+  function plusDays(n){ return ymd(new Date(Date.now() + n * 86400000)); }
+  function when(iso){ if(!iso) return '—'; var d = new Date(iso); if(isNaN(d)) return String(iso).slice(0, 16); return ymd(d) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function person(id, txt){ for(var i = 0; i < R.profiles.length; i++){ if(R.profiles[i].id === id) return R.profiles[i].full_name || 'Unnamed user'; } return txt || (id ? 'Unknown user' : '—'); }
+  function lbl(list, k){ for(var i = 0; i < list.length; i++){ if(list[i][0] === k) return list[i][1]; } return k || '—'; }
+  function tag(t, label){ return '<span class="tag tag-' + t + '">' + e(label) + '</span>'; }
+  function cap(s){ return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+  function label(r){ return r.event_text || r.source_text || 'Untitled risk'; }
+  function stOf(r){ return R.st[r.id] || {}; }
+  function levelOf(sc, l, s){ var x = l * s, b = x >= 17 ? 'Critical' : x >= 10 ? 'High' : x >= 5 ? 'Medium' : 'Low'; return (s === 5 && (b === 'Low' || b === 'Medium')) ? 'High' : b; }
+
+  async function load(){
+    if(R.loading) return;
+    if(typeof cloudReady !== 'function' || !cloudReady()) return;
+    R.loading = true; R.tried = true; R.error = '';
+    try{
+      var t = function(n, b){ return fetchAllRows(n, b || function(q){ return q; }); };
+      var res = await Promise.all([ t('rk_risks', function(q){ return q.order('created_at', { ascending:false }); }), t('rk_assessments', function(q){ return q.order('seq', { ascending:true }); }), t('rk_actions', function(q){ return q.order('seq', { ascending:true }); }),
+        t('rk_verifications', function(q){ return q.order('created_at', { ascending:false }); }), t('rk_decisions', function(q){ return q.order('created_at', { ascending:false }); }), t('rk_links', function(q){ return q.order('added_at', { ascending:false }); }),
+        t('rk_risk_status'), supabaseClient.rpc('rk_scales'), supabaseClient.rpc('get_org_directory'), supabaseClient.from('rk_log').select('*').order('at', { ascending:false }).limit(1500) ]);
+      var err = res[0].error || res[1].error || res[2].error || res[6].error;
+      if(err) R.error = /does not exist|schema cache|relation|could not find/i.test(err.message || '') ? 'Risk Management is not installed yet. Run rk_risks_run_this.sql in Supabase.' : err.message;
+      else {
+        R.risks = res[0].data || []; R.assess = res[1].data || []; R.actions = res[2].data || []; R.verifs = res[3].error ? [] : (res[3].data || []); R.decs = res[4].error ? [] : (res[4].data || []); R.links = res[5].error ? [] : (res[5].data || []);
+        R.st = {}; (res[6].data || []).forEach(function(s){ R.st[s.risk_id] = s; });
+        R.scales = res[7].error ? null : res[7].data; R.profiles = res[8].error ? [] : (res[8].data || []); R.logs = res[9].error ? [] : (res[9].data || []);
+        buildSims(); R.loaded = true;
+      }
+    }catch(ex){ R.error = (ex && ex.message) || String(ex); }
+    R.loading = false; rerender();
+  }
+  async function refresh(){ R.loading = false; await load(); }
+
+  /* possible duplicates: words in common between the risk events of two active risks */
+  function words(s){ var o = {}; String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).forEach(function(w){ if(w.length > 3) o[w] = 1; }); return o; }
+  function buildSims(){
+    R.sims = {}; var act = R.risks.filter(function(r){ return ACTIVE.indexOf(r.status) !== -1 || r.status === 'draft'; }), W = act.map(function(r){ return words(label(r) + ' ' + (r.source_text || '')); });
+    for(var i = 0; i < act.length; i++){ for(var j = i + 1; j < act.length; j++){
+      if(act[i].category !== act[j].category) continue;
+      var a = Object.keys(W[i]), inter = 0; a.forEach(function(w){ if(W[j][w]) inter++; });
+      var uni = a.length + Object.keys(W[j]).length - inter; if(uni && inter >= 3 && inter / uni >= 0.5){ (R.sims[act[i].id] = R.sims[act[i].id] || []).push(act[j]); (R.sims[act[j].id] = R.sims[act[j].id] || []).push(act[i]); }
+    } }
+  }
+
+  /* ----- modal ----- */
+  function mount(){ var host = document.getElementById('rk-modal-host'); if(!host){ host = document.createElement('div'); host.id = 'rk-modal-host'; document.body.appendChild(host); } host.innerHTML = modalHtml(); }
+  function closeModal(){ modal = null; mount(); }
+  function fval(id){ if(!modal) return ''; for(var i = 0; i < modal.fields.length; i++){ if(modal.fields[i].id === id) return modal.fields[i].value; } return ''; }
+  function liveHtml(){
+    if(!modal || !modal.live) return '';
+    var l = Number(fval('likelihood')), s = Number(fval('severity')); if(!l || !s) return '';
+    var lv = levelOf(null, l, s); return '<div id="rk-live" style="margin:6px 0;font-size:13px;">Result: ' + tag(LVL[lv], lv + ' (' + (l * s) + ')') + (s === 5 ? ' ' + tag('rust', 'Severity 5: specialist review') : '') + '</div>';
+  }
+  function modalHtml(){
+    if(!modal) return '';
+    var f = modal.fields.map(function(x){
+      var id = 'rkf-' + x.id, c, opts = typeof x.options === 'function' ? x.options() : x.options;
+      if(x.type === 'textarea') c = '<textarea id="' + id + '" rows="' + (x.rows || 3) + '" style="width:100%;box-sizing:border-box;" placeholder="' + e(x.placeholder || '') + '">' + e(x.value || '') + '</textarea>';
+      else if(x.type === 'select') c = '<select id="' + id + '" style="max-width:100%;">' + (opts || []).map(function(o){ return '<option value="' + e(o[0]) + '"' + (String(o[0]) === String(x.value) ? ' selected' : '') + '>' + e(o[1]) + '</option>'; }).join('') + '</select>';
+      else if(x.type === 'date') c = '<input type="date" id="' + id + '" value="' + e(x.value || '') + '" />';
+      else if(x.type === 'check') c = '<label style="font-size:13px;"><input type="checkbox" id="' + id + '"' + (x.value ? ' checked' : '') + ' /> ' + e(x.checkText || '') + '</label>';
+      else c = '<input id="' + id + '" placeholder="' + e(x.placeholder || '') + '" value="' + e(x.value == null ? '' : x.value) + '" style="width:100%;box-sizing:border-box;" />';
+      return '<div style="margin-bottom:8px;"><label style="font-size:11px;font-weight:700;color:var(--muted);display:block;margin-bottom:3px;">' + e(x.label) + '</label>' + (x.hint ? '<div style="font-size:11px;color:var(--muted);margin-bottom:3px;">' + e(x.hint) + '</div>' : '') + c + '</div>';
+    }).join('');
+    return '<div class="modal-overlay" data-rk-modal="overlay"><div class="modal-card" style="max-width:600px;max-height:94vh;overflow:auto;"><h3 class="serif" style="margin:0 0 6px;font-size:18px;color:var(--navy);">' + e(modal.title) + '</h3>' +
+      (modal.help ? '<p style="font-size:12.5px;color:var(--muted);margin:0 0 12px;white-space:pre-wrap;">' + e(modal.help) + '</p>' : '') + f + liveHtml() +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;"><button class="btn btn-ghost" data-rk-modal="cancel">Cancel</button><button class="btn btn-primary" data-rk-modal="submit"' + (modal.busy ? ' disabled' : '') + '>' + e(modal.submitText || 'Save') + '</button></div></div></div>';
+  }
+  function keepValues(){ if(!modal) return; modal.fields.forEach(function(x){ var el = document.getElementById('rkf-' + x.id); if(el) x.value = x.type === 'check' ? el.checked : el.value; }); }
+  function openModal(c){ modal = c; mount(); }
+  async function signed(msg){
+    if(typeof confirmPasswordForAction !== 'function') return true;
+    var ok = await confirmPasswordForAction(msg);
+    if(!ok) throw new Error('Not signed: the password was not confirmed. Nothing was changed.');
+    return true;
+  }
+  async function submitModal(){
+    if(!modal || modal.busy) return;
+    keepValues();
+    var v = {};
+    modal.fields.forEach(function(x){ v[x.id] = x.type === 'check' ? !!x.value : String(x.value == null ? '' : x.value).trim(); });
+    for(var i = 0; i < modal.fields.length; i++){ var x = modal.fields[i]; if(x.required && !v[x.id]){ toast('Please fill in: ' + x.label, 'error'); return; } }
+    modal.busy = true; mount(); var cfg = modal;
+    try{
+      if(cfg.sign) await signed(cfg.sign);
+      var call = cfg.call(v), r = await supabaseClient.rpc(call.fn, call.args);
+      if(r.error) throw new Error(r.error.message);
+      var msg = cfg.done ? cfg.done(r.data) : null;
+      modal = null; mount(); toast(msg ? msg.text : (cfg.successText || 'Saved.'), msg && msg.error ? 'error' : undefined); await refresh();
+    }catch(err){ modal.busy = false; mount(); toast((err && err.message) || String(err), 'error'); }
+  }
+
+  /* ----- scales ----- */
+  function likeOptions(){ var L = (R.scales && R.scales.likelihood) || []; return [['', '— choose —']].concat(L.map(function(x){ return [x.n, x.n + ' — ' + x.label + ': ' + x.text]; })); }
+  function sevOptions(cat){ var S = (R.scales && R.scales.severity) || {}, a = S[cat] || S.quality || [], names = (R.scales && R.scales.severity_labels) || []; return [['', '— choose —']].concat(a.map(function(t, i){ return [i + 1, (i + 1) + ' — ' + (names[i] || '') + ': ' + t]; })); }
+  var BASIS = function(){ return (R.scales && R.scales.basis) || ''; };
+
+  /* ----- actions (modals) ----- */
+  function riskById(id){ return R.risks.filter(function(x){ return x.id === id; })[0]; }
+  function ownerOptions(){ return [['', '— choose —']].concat(R.profiles.map(function(p){ return [p.id, p.full_name || 'Unnamed user']; })); }
+  function descFields(v){ v = v || {}; return [
+    { id:'source_text', label:'Source or hazard', hint:'What is the source? Example: failure of refrigeration equipment.', required:true, value:v.source_text || '' },
+    { id:'event_text', label:'Risk event', hint:'What could go wrong? Example: chilled product exposed to temperatures outside approved limits.', type:'textarea', rows:2, required:true, value:v.event_text || '' },
+    { id:'consequence_text', label:'Consequence', hint:'What would the harm or loss be?', type:'textarea', rows:2, required:true, value:v.consequence_text || '' },
+    { id:'exposed_text', label:'Who or what is exposed', required:true, value:v.exposed_text || '' } ]; }
+  function scoreFields(cat, withControls, pre){
+    pre = pre || {};
+    var f = []; if(withControls) f.push({ id:'existing_controls', label:'Existing controls in place now (write None if there are none)', type:'textarea', rows:2, required:true, value:pre.existing_controls || '' });
+    f.push({ id:'likelihood', label:'Likelihood', type:'select', options:likeOptions, refresh:'live', required:true, value:pre.likelihood || '' });
+    f.push({ id:'l_rationale', label:'Reason for the likelihood score', type:'textarea', rows:2, required:true, value:'' });
+    f.push({ id:'severity', label:'Severity', type:'select', options:function(){ return sevOptions(typeof cat === 'function' ? cat() : cat); }, refresh:'live', required:true, value:pre.severity || '' });
+    f.push({ id:'s_rationale', label:'Reason for the severity score', type:'textarea', rows:2, required:true, value:'' });
+    return f;
+  }
+  function actNew(draftRisk){
+    var catRef = function(){ return fval('category') || (draftRisk && draftRisk.category) || 'health_safety'; };
+    var fields = [ { id:'category', label:'Category', type:'select', options:CATS, value:(draftRisk && draftRisk.category) || 'health_safety', refresh:'full' }, { id:'area', label:'Area or task', value:(draftRisk && draftRisk.area) || '' } ]
+      .concat(descFields(draftRisk ? { source_text:draftRisk.source_text } : null))
+      .concat([ { id:'owner_id', label:'Risk owner (accountable)', type:'select', options:ownerOptions, value:myId() || '', required:true } ])
+      .concat(scoreFields(catRef, true))
+      .concat([ { id:'review_due', label:'Next review date', type:'date', value:plusDays(90), required:true } ]);
+    openModal({ title:draftRisk ? 'Assess draft risk ' + draftRisk.ref : 'New risk', submitText:'Register risk', live:true, fields:fields, successText:'Risk registered.',
+      help:(draftRisk ? 'Draft note: ' + (draftRisk.draft_note || '') + '\n\n' : '') + 'Describe the source, the event and the consequence separately, then score the risk with the controls you have now. ' + BASIS(),
+      call:function(v){ return { fn:'rk_create', args:{ p_id:draftRisk ? draftRisk.id : newId(), p_f:{ category:v.category, area:nul(v.area), source_text:v.source_text, event_text:v.event_text, consequence_text:v.consequence_text, exposed_text:v.exposed_text, owner_id:v.owner_id, existing_controls:v.existing_controls, likelihood:Number(v.likelihood), severity:Number(v.severity), l_rationale:v.l_rationale, s_rationale:v.s_rationale, review_due:v.review_due } } }; },
+      done:function(d){ return { text:'Registered ' + d.ref + ': ' + d.level + ' (' + d.score + ').' + (d.sev5_flag ? ' Severity 5: specialist review needed.' : '') }; } });
+  }
+  function actDraft(){
+    openModal({ title:'Raise a draft risk', submitText:'Raise draft', successText:'Draft raised for assessment.', help:'A draft is a suggestion for someone to assess. It does not count as a scored risk.',
+      fields:[ { id:'category', label:'Category', type:'select', options:CATS, value:'quality' }, { id:'area', label:'Area or task' }, { id:'source_text', label:'Source or hazard', required:true }, { id:'draft_note', label:'Why might this be a risk?', type:'textarea', rows:3, required:true },
+        { id:'origin_type', label:'Where did it come from? (optional)', type:'select', options:[['', '— not linked —']].concat(LTYPES) }, { id:'origin_ref', label:'Reference of that record (optional)' } ],
+      call:function(v){ return { fn:'rk_draft', args:{ p_id:newId(), p_f:{ category:v.category, area:nul(v.area), source_text:v.source_text, draft_note:v.draft_note, origin_type:nul(v.origin_type), origin_ref:nul(v.origin_ref) } } }; },
+      done:function(d){ return d.duplicate ? { text:'That record is already linked to ' + d.ref + '. No new draft was created.', error:true } : { text:'Draft ' + d.ref + ' raised.' }; } });
+  }
+  function actAssess(r){
+    var s = stOf(r), kinds = [['current', 'Current risk (with the controls in place now)'], ['target', 'Target risk (expected if the actions work: not counted as achieved)']];
+    openModal({ title:'Reassess ' + r.ref, submitText:'Record assessment', live:true, successText:'Assessment recorded.',
+      help:'Current score: ' + (s.level || '—') + ' (' + (s.score || '—') + '). Nothing is overwritten: each assessment is kept. A new current assessment cancels any acceptance. To show that actions reduced the risk, use "Verify controls" instead.',
+      fields:[ { id:'kind', label:'Assessment type', type:'select', options:kinds, value:'current' }, { id:'reason', label:'Why is the risk being reassessed?', type:'textarea', rows:2, required:true } ].concat(scoreFields(r.category, false)).concat([ { id:'review_due', label:'Next review date (current assessment)', type:'date', value:plusDays(90) } ]),
+      call:function(v){ return { fn:'rk_assess', args:{ p_id:r.id, p_f:{ kind:v.kind, reason:v.reason, likelihood:Number(v.likelihood), severity:Number(v.severity), l_rationale:v.l_rationale, s_rationale:v.s_rationale, review_due:nul(v.review_due) } } }; },
+      done:function(d){ return { text:'Recorded: ' + d.level + ' (' + d.score + ').' + (d.decision_reset ? ' The earlier acceptance no longer applies.' : '') }; } });
+  }
+  function actActionAdd(r){
+    var hs = r.category === 'health_safety';
+    openModal({ title:'Add treatment action to ' + r.ref, submitText:'Add action', successText:'Action added.',
+      help:hs ? 'Health and safety: choose the strongest control that is feasible. Administrative controls and PPE need a note on why stronger controls are not feasible.' : 'Each action has one owner and a due date. Accepting the remaining risk is a separate signed decision.',
+      fields:[ { id:'description', label:'Action', type:'textarea', rows:2, required:true }, { id:'treatment_type', label:'Treatment type', type:'select', options:TT, value:'reduce' },
+        { id:'control_level', label:hs ? 'Control level (required)' : 'Control level (optional)', type:'select', options:[['', '— not applicable —']].concat(CL), value:'' }, { id:'hierarchy_note', label:'Why not a stronger control? (needed for administrative or PPE)', type:'textarea', rows:2 },
+        { id:'owner_id', label:'Action owner', type:'select', options:ownerOptions, required:true }, { id:'due_on', label:'Due date', type:'date', value:plusDays(30), required:true } ],
+      call:function(v){ return { fn:'rk_action_add', args:{ p_risk:r.id, p_f:{ description:v.description, treatment_type:v.treatment_type, control_level:nul(v.control_level), hierarchy_note:nul(v.hierarchy_note), owner_id:v.owner_id, due_on:v.due_on } } }; } });
+  }
+  function actActionStep(a, op){
+    var map = { implement:['Mark action implemented', [ { id:'evidence_note', label:'Evidence that it was done (work order, log or document number)', type:'textarea', rows:2, required:true }, { id:'implemented_on', label:'Date implemented', type:'date', value:today() } ]],
+      cancel:['Cancel action', [ { id:'reason', label:'Reason for cancelling', type:'textarea', rows:2, required:true } ]], reschedule:['Change due date', [ { id:'due_on', label:'New due date', type:'date', required:true, value:plusDays(14) }, { id:'reason', label:'Reason', type:'textarea', rows:2, required:true } ]] };
+    if(op === 'start'){ doStep(a.id, 'start', {}); return; }
+    openModal({ title:map[op][0], submitText:'Save', successText:'Action updated.', fields:map[op][1], help:a.description,
+      call:function(v){ return { fn:'rk_action_update', args:{ p_id:a.id, p_op:op, p_f:{ evidence_note:nul(v.evidence_note), implemented_on:nul(v.implemented_on), reason:nul(v.reason), due_on:nul(v.due_on) } } }; } });
+  }
+  async function doStep(id, op, f){ try{ var r = await supabaseClient.rpc('rk_action_update', { p_id:id, p_op:op, p_f:f }); if(r.error) throw new Error(r.error.message); toast('Action updated.'); await refresh(); }catch(err){ toast(err.message || String(err), 'error'); } }
+  function actVerify(r){
+    var s = stOf(r), none = R.actions.filter(function(a){ return a.risk_id === r.id && a.state === 'implemented'; }).length === 0;
+    openModal({ title:'Verify controls: ' + r.ref, submitText:'Sign verification', live:true, sign:'Verifying controls is a signature. Enter your password to confirm it is you.',
+      help:'Check whether the controls actually work, then score the risk as you find it now. The verifier cannot be the person who implemented the actions (unless nobody else is eligible). Current score before verification: ' + (s.level || '—') + ' (' + (s.score || '—') + ').',
+      fields:[ { id:'method', label:'How were the controls checked? (test, observation, record review)', type:'textarea', rows:2, required:true }, { id:'result', label:'Result', type:'select', options:[['', '— choose —'], ['effective', 'Effective'], ['partly_effective', 'Only partly effective'], ['not_effective', 'Not effective']], required:true },
+        { id:'evidence_note', label:'Evidence (record, photo reference, test number)', type:'textarea', rows:2, required:true }, { id:'verified_on', label:'Date verified', type:'date', value:today() } ]
+        .concat(none ? [ { id:'existing_controls_only', label:'No actions were implemented', type:'check', checkText:'I am verifying the existing controls only' } ] : [])
+        .concat(scoreFields(r.category, false)).concat([ { id:'review_due', label:'Next review date (needed when effective)', type:'date', value:plusDays(90) } ]),
+      call:function(v){ return { fn:'rk_verify', args:{ p_id:r.id, p_f:{ method:v.method, result:v.result, evidence_note:v.evidence_note, verified_on:v.verified_on, existing_controls_only:!!v.existing_controls_only, likelihood:Number(v.likelihood), severity:Number(v.severity), l_rationale:v.l_rationale, s_rationale:v.s_rationale, review_due:nul(v.review_due) } } }; },
+      done:function(d){ return { text:'Verification recorded: ' + cap(d.result.replace('_', ' ')) + '. Risk now ' + d.level + ' (' + d.score + ').' + (d.needs_decision ? ' A decision on the remaining risk is needed.' : '') + (d.result !== 'effective' ? ' The risk was flagged for review.' : ''), error:d.result !== 'effective' }; } });
+  }
+  function actDecide(r){
+    var s = stOf(r);
+    openModal({ title:'Decide on the remaining risk: ' + r.ref, submitText:'Sign decision', sign:'Deciding on remaining risk is a signature. Enter your password to confirm it is you.',
+      help:'Remaining risk: ' + (s.level || '—') + ' (' + (s.score || '—') + '). Accepting a risk records who, why, the conditions and an expiry date. Acceptance never replaces legal or mandatory requirements. Critical or severity-5 risks: Admin or Quality Manager only.',
+      fields:[ { id:'decision', label:'Decision', type:'select', options:[['', '— choose —'], ['accepted', 'Accept the remaining risk'], ['further_treatment', 'Further treatment required']], required:true }, { id:'rationale', label:'Reason (at least 20 characters)', type:'textarea', rows:3, required:true },
+        { id:'conditions', label:'Conditions of acceptance (write None if there are none)', type:'textarea', rows:2 }, { id:'expires_on', label:'Acceptance expires on (accepting only)', type:'date', value:plusDays(180) } ],
+      call:function(v){ return { fn:'rk_decide', args:{ p_id:r.id, p_f:{ decision:v.decision, rationale:v.rationale, conditions:nul(v.conditions), expires_on:v.decision === 'accepted' ? v.expires_on : null } } }; }, successText:'Decision recorded.' });
+  }
+  function actLink(r){ openModal({ title:'Link a record to ' + r.ref, submitText:'Link', successText:'Linked.', help:'Several findings, complaints or incidents can relate to one risk. Link them here instead of creating a new risk.',
+    fields:[ { id:'type', label:'Type of record', type:'select', options:LTYPES, value:'audit_finding' }, { id:'ref', label:'Reference (for example F-2026-014 or NCR-0004)', required:true }, { id:'note', label:'Note (optional)' } ],
+    call:function(v){ return { fn:'rk_link', args:{ p_id:r.id, p_type:v.type, p_ref:v.ref, p_note:nul(v.note), p_record:null } }; } }); }
+  function actTrigger(r){ openModal({ title:'Flag ' + r.ref + ' for review', submitText:'Flag for review', successText:'Flagged for review.', help:'Use this when something has happened that may change the risk: an incident or near miss, a repeated complaint, a change to equipment, process, material or procedure. It does not change the score.',
+    fields:[ { id:'reason', label:'What happened?', type:'textarea', rows:3, required:true } ], call:function(v){ return { fn:'rk_trigger', args:{ p_id:r.id, p_reason:v.reason } }; } }); }
+  function actReview(r){ openModal({ title:'Complete review: ' + r.ref, submitText:'Record review', successText:'Review recorded.', help:'Use when the review finds the score still stands. If anything changed, reassess instead.',
+    fields:[ { id:'note', label:'What was reviewed and why the score still stands', type:'textarea', rows:3, required:true }, { id:'next', label:'Next review date', type:'date', value:plusDays(90), required:true } ], call:function(v){ return { fn:'rk_review', args:{ p_id:r.id, p_note:v.note, p_next:v.next } }; } }); }
+  function actDescribe(r){ openModal({ title:'Edit description: ' + r.ref, submitText:'Save description', successText:'Description saved (old text kept in the history).', help:r.imported ? 'This risk was imported from the old register. Describe the source, event and consequence separately.' : 'The old text is kept in the history.',
+    fields:[ { id:'category', label:'Category', type:'select', options:CATS, value:r.category }, { id:'area', label:'Area or task', value:r.area || '' } ].concat(descFields(r)),
+    call:function(v){ return { fn:'rk_describe', args:{ p_id:r.id, p_f:{ category:v.category, area:nul(v.area), source_text:v.source_text, event_text:v.event_text, consequence_text:v.consequence_text, exposed_text:v.exposed_text } } }; } }); }
+  function actOwner(r){ openModal({ title:'Change risk owner: ' + r.ref, submitText:'Change owner', successText:'Owner changed.', fields:[ { id:'owner', label:'New owner', type:'select', options:ownerOptions, required:true } ], call:function(v){ return { fn:'rk_reassign', args:{ p_id:r.id, p_owner:v.owner } }; } }); }
+  function actClose(r, isVoid){ openModal({ title:(isVoid ? 'Void ' : 'Close ') + r.ref, submitText:isVoid ? 'Void risk' : 'Close risk', successText:isVoid ? 'Risk voided.' : 'Risk closed.', sign:(isVoid ? 'Voiding' : 'Closing') + ' a risk is a signature. Enter your password to confirm it is you.',
+    help:isVoid ? 'Void a risk that was recorded in error or is a duplicate. Open actions are cancelled. Nothing is deleted.' : 'Close only a risk that no longer applies (for example a permanently removed activity). A controlled risk stays in the register for review. Open actions are cancelled.',
+    fields:[ { id:'reason', label:isVoid ? 'Reason (for a duplicate, name the risk it duplicates)' : 'Why does this risk no longer apply?', type:'textarea', rows:3, required:true } ], call:function(v){ return { fn:'rk_close', args:{ p_id:r.id, p_reason:v.reason, p_void:!!isVoid } }; } }); }
+  function actReopen(r){ openModal({ title:'Reopen ' + r.ref, submitText:'Reopen', successText:'Risk reopened and flagged for review.', fields:[ { id:'reason', label:'Why is it being reopened?', type:'textarea', rows:3, required:true } ], call:function(v){ return { fn:'rk_reopen', args:{ p_id:r.id, p_reason:v.reason } }; } }); }
+
+  /* ----- views ----- */
+  function bt(action, attrs, text, primary){ var d = ''; Object.keys(attrs || {}).forEach(function(k){ d += ' data-' + k + '="' + e(attrs[k]) + '"'; }); return '<button class="btn ' + (primary ? 'btn-primary' : 'btn-ghost') + '" style="font-size:11.5px;padding:4px 9px;" data-rk="' + e(action) + '"' + d + '>' + e(text) + '</button>'; }
+  function tile(n, l, tone){ return '<div style="flex:1 1 112px;border:1px solid var(--line,#ddd);border-radius:8px;padding:8px 10px;"><div style="font-size:20px;font-weight:700;color:' + (tone ? 'var(--' + tone + ')' : 'var(--navy)') + ';">' + e(n) + '</div><div style="font-size:11px;color:var(--muted);">' + e(l) + '</div></div>'; }
+  function reviewReasons(r){
+    var s = stOf(r), out = [];
+    if(s.review_overdue) out.push('Review date passed (' + r.review_due + ')');
+    if(r.review_trigger) out.push(r.review_trigger);
+    if(s.actions_overdue > 0) out.push(s.actions_overdue + ' action(s) overdue');
+    if(s.acceptance_expired) out.push('Acceptance expired');
+    if(s.assessment_kind === 'verified' && s.last_verification_result && s.last_verification_result !== 'effective') out.push('Last verification did not show the controls are effective');
+    return out;
+  }
+  function nextStep(r){
+    var s = stOf(r), n = R.actions.filter(function(a){ return a.risk_id === r.id && a.state !== 'cancelled'; }).length;
+    if(r.status === 'draft') return 'Assess this draft';
+    if(r.imported && !r.event_text) return 'Rewrite the risk event and consequence, then review the scores';
+    if(r.status === 'open') return (s.level === 'High' || s.level === 'Critical') ? 'Add treatment actions' : 'Add actions or verify the existing controls';
+    if(r.status === 'treatment') return s.actions_open > 0 ? 'Complete the open actions' : (r.residual_decision === 'further_treatment' ? 'Add further treatment actions' : 'Add actions and verify again');
+    if(r.status === 'verification') return s.verified ? 'Decide on the remaining risk' : 'Verify the controls';
+    if(r.status === 'controlled') return 'Controlled: keep the next review date';
+    return '';
+  }
+  function flagsHtml(r){
+    var s = stOf(r), out = '';
+    if(s.sev5_flag) out += ' ' + tag('rust', 'Severity 5: specialist review');
+    if(s.needs_review) out += ' ' + tag('amber', 'Needs review');
+    if(r.imported) out += ' ' + tag('neutral', 'Imported');
+    if(r.residual_decision === 'accepted' && s.acceptance_valid) out += ' ' + tag('neutral', 'Remaining risk accepted');
+    if(R.sims[r.id]) out += ' ' + tag('amber', 'Possible duplicate of ' + R.sims[r.id].map(function(x){ return x.ref; }).slice(0, 2).join(', '));
+    return out;
+  }
+  function filtered(){
+    return R.risks.filter(function(r){
+      var s = stOf(r);
+      if(R.cat && r.category !== R.cat) return false;
+      if(R.lvl && s.level !== R.lvl) return false;
+      if(R.status === 'active' && ACTIVE.indexOf(r.status) === -1) return false;
+      if(R.status === 'review' && !(s.needs_review)) return false;
+      if(R.status === 'draft' && r.status !== 'draft') return false;
+      if(R.status === 'closed' && r.status !== 'closed' && r.status !== 'void') return false;
+      if(R.q && (r.ref + ' ' + label(r) + ' ' + (r.source_text || '') + ' ' + (r.area || '')).toLowerCase().indexOf(R.q.toLowerCase()) === -1) return false;
+      return true;
+    });
+  }
+  function exposure(){ return window.__rkStats() || {}; }
+  function head(){
+    var x = exposure();
+    return '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(x.openHighCritical, 'open High / Critical', x.openHighCritical ? 'rust' : '') + tile(x.critical, 'of which Critical', x.critical ? 'rust' : '') + tile(x.unverified, 'High / Critical not verified', x.unverified ? 'amber' : '') +
+      tile(x.treatmentOverdue, 'with overdue actions', x.treatmentOverdue ? 'rust' : '') + tile(x.reviewOverdue, 'review overdue', x.reviewOverdue ? 'amber' : '') + tile(x.drafts, 'drafts to assess', x.drafts ? 'amber' : '') + '</div>' +
+      '<p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Counts use each risk\'s current assessment among ' + (x.active || 0) + ' active risks. A blank residual score is never counted as zero risk. A verified reassessment replaces the earlier score.</p>';
+  }
+  function registerView(){
+    var list = filtered();
+    var bar = '<div class="flex-wrap" style="gap:6px;margin-bottom:8px;">' + [['active', 'Active'], ['review', 'Needs review'], ['draft', 'Drafts'], ['closed', 'Closed or void'], ['all', 'All']].map(function(x){ return '<button class="status-pill ' + (R.status === x[0] ? 'active' : '') + '" data-rk="status" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>' +
+      '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;"><select data-rk-sel="cat" style="font-size:12px;"><option value="">All categories</option>' + CATS.map(function(c){ return '<option value="' + c[0] + '"' + (R.cat === c[0] ? ' selected' : '') + '>' + e(c[1]) + '</option>'; }).join('') + '</select>' +
+      '<select data-rk-sel="lvl" style="font-size:12px;"><option value="">All levels</option>' + ['Low', 'Medium', 'High', 'Critical'].map(function(c){ return '<option value="' + c + '"' + (R.lvl === c ? ' selected' : '') + '>' + c + '</option>'; }).join('') + '</select>' +
+      '<input data-rk-q="q" placeholder="Search ref, risk, area" value="' + e(R.q) + '" style="font-size:12px;max-width:190px;" />' + bt('csv', {}, '⬇ CSV') + (canRecord() ? bt('draft', {}, '+ Raise draft') : '') + (isMgr() ? bt('new', {}, '+ New risk', true) : '') + '</div>';
+    if(!list.length) return head() + bar + '<p class="muted-italic">No risks in this view.</p>';
+    return head() + bar + list.map(riskCard).join('');
+  }
+  function riskCard(r){
+    var s = stOf(r), open = R.openId === r.id, st = STATUS[r.status] || ['neutral', r.status], ns = nextStep(r);
+    return '<div class="card" style="margin-bottom:8px;overflow:hidden;"><button class="audit-row" data-rk="toggle" data-id="' + e(r.id) + '"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">' + (open ? '▾' : '›') + '</span><div style="min-width:0;"><div class="audit-title" style="font-size:13px;">' + e(r.ref) + ' · ' + e(label(r)) + '</div>' +
+      '<div class="audit-sub">' + e(lbl(CATS, r.category)) + (r.area ? ' · ' + e(r.area) : '') + ' · owner: ' + e(person(r.owner_id, r.owner_text)) + (r.review_due && ACTIVE.indexOf(r.status) !== -1 ? ' · review ' + e(r.review_due) : '') + '</div></div></div>' +
+      '<div class="flex-wrap">' + (s.level ? tag(LVL[s.level], s.level + ' ' + s.score + (s.assessment_kind === 'verified' ? ' (verified)' : '')) : '') + tag(st[0], st[1]) + flagsHtml(r) + '</div></button>' +
+      (ns && !open ? '<div style="padding:0 16px 8px;font-size:11.5px;color:var(--muted);">Next: ' + e(ns) + '</div>' : '') + (open ? '<div style="border-top:1px solid var(--line2);padding:14px 16px;">' + detail(r) + '</div>' : '') + '</div>';
+  }
+  function section(title, body){ return '<div class="card p4 top-border" style="margin-bottom:10px;"><h3 class="serif" style="font-size:14px;margin:0 0 8px;">' + title + '</h3>' + body + '</div>'; }
+  function detail(r){
+    var s = stOf(r), asses = R.assess.filter(function(a){ return a.risk_id === r.id; }), acts = R.actions.filter(function(a){ return a.risk_id === r.id; }), vers = R.verifs.filter(function(a){ return a.risk_id === r.id; }),
+      decs = R.decs.filter(function(a){ return a.risk_id === r.id; }), links = R.links.filter(function(a){ return a.risk_id === r.id; }), logs = R.logs.filter(function(a){ return a.risk_id === r.id; }), live = ACTIVE.indexOf(r.status) !== -1, b = '';
+    if(live && isMgr()) b += bt('assess', { id:r.id }, 'Reassess') + bt('actadd', { id:r.id }, '+ Action') + bt('verify', { id:r.id }, 'Verify controls', s.actions_open === 0 && s.actions_total + 0 >= 0 && r.status !== 'open' ? true : false) + bt('review', { id:r.id }, 'Complete review') + bt('describe', { id:r.id }, 'Edit description') + bt('owner', { id:r.id }, 'Change owner');
+    if(live && isDecider() && s.assessment_kind) b += bt('decide', { id:r.id }, 'Decision on remaining risk', r.status === 'verification' && s.verified);
+    if(live && canRecord()) b += bt('trigger', { id:r.id }, 'Flag for review') + bt('link', { id:r.id }, '+ Link record');
+    if(r.status === 'draft' && isMgr()) b = bt('assessdraft', { id:r.id }, 'Assess this draft', true) + bt('link', { id:r.id }, '+ Link record') + bt('describe', { id:r.id }, 'Edit description');
+    if(isQm() && ACTIVE.indexOf(r.status) !== -1) b += bt('close', { id:r.id }, 'Close') + bt('void', { id:r.id }, 'Void');
+    if(isQm() && r.status === 'draft') b += bt('void', { id:r.id }, 'Void draft');
+    if(isQm() && r.status === 'closed') b += bt('reopen', { id:r.id }, 'Reopen');
+    var reasons = reviewReasons(r), ns = nextStep(r);
+    var out = (ns ? '<p style="font-size:12.5px;margin:0 0 8px;"><strong>Next:</strong> ' + e(ns) + '</p>' : '') + (reasons.length ? '<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:10px;"><strong style="font-size:12.5px;">Needs review:</strong> <span style="font-size:12.5px;">' + reasons.map(e).join(' · ') + '</span></div>' : '') +
+      (R.sims[r.id] ? '<div class="card p4" style="margin-bottom:10px;"><span style="font-size:12.5px;">Similar active risks: ' + R.sims[r.id].map(function(x){ return '<strong>' + e(x.ref) + '</strong> ' + e(label(x)); }).join(' · ') + '. If one describes the same event, link the sources to one and void the other.</span></div>' : '') +
+      (b ? '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + b + '</div>' : '') +
+      section('Description', '<div style="font-size:12.5px;line-height:1.5;"><div><strong>Source or hazard:</strong> ' + e(r.source_text || '—') + '</div><div><strong>Risk event:</strong> ' + e(r.event_text || 'Not recorded: please rewrite') + '</div><div><strong>Consequence:</strong> ' + e(r.consequence_text || 'Not recorded: please rewrite') + '</div><div><strong>Exposed:</strong> ' + e(r.exposed_text || '—') + '</div>' + (r.draft_note ? '<div><strong>Draft note:</strong> ' + e(r.draft_note) + '</div>' : '') + (r.imported_note ? '<div class="muted-italic" style="margin-top:4px;">' + e(r.imported_note) + '</div>' : '') + (r.close_reason ? '<div><strong>Closed:</strong> ' + e(r.close_reason) + '</div>' : '') + '</div>') +
+      section('Assessments (each one is kept)', asses.length ? asses.slice().reverse().map(function(a){ return '<div style="font-size:12px;border-bottom:1px solid var(--line2);padding:4px 0;">' + tag(LVL[a.level], a.level + ' ' + a.score) + ' <strong>' + e(cap(a.kind)) + '</strong> · L' + a.likelihood + ' × S' + a.severity + ' · ' + e(a.assessed_on) + ' · ' + e(person(a.assessed_by)) + ' · matrix ' + e(a.matrix_version) + (a.sev5_flag ? ' · severity 5' : '') + (a.imported ? ' · imported' : '') +
+        '<div class="muted-italic">Likelihood: ' + e(a.l_rationale || '—') + ' · Severity: ' + e(a.s_rationale || '—') + (a.existing_controls ? ' · Controls: ' + e(a.existing_controls) : '') + '</div></div>'; }).join('') : '<p class="muted-italic">None.</p>') +
+      section('Treatment plan', acts.length ? acts.map(function(a){ var od = (a.state === 'pending' || a.state === 'in_progress') && a.due_on && a.due_on < today(), st = AST[a.state] || ['neutral', a.state], mine = a.owner_id === myId(), btns = '';
+        if((a.state === 'pending' || a.state === 'in_progress') && (isMgr() || mine)){ btns = (a.state === 'pending' ? bt('astep', { id:a.id, op:'start' }, 'Start') : '') + bt('astep', { id:a.id, op:'implement' }, 'Mark implemented', true) + (isMgr() ? bt('astep', { id:a.id, op:'reschedule' }, 'Change date') + bt('astep', { id:a.id, op:'cancel' }, 'Cancel') : ''); }
+        return '<div style="font-size:12.5px;border-bottom:1px solid var(--line2);padding:6px 0;"><div>' + e(a.seq) + '. ' + e(a.description) + ' ' + tag(st[0], st[1]) + (od ? ' ' + tag('rust', 'Overdue') : '') + '</div><div class="muted-italic" style="font-size:11px;">' + e(lbl(TT, a.treatment_type)) + (a.control_level ? ' · ' + e(lbl(CL, a.control_level)) : '') + ' · owner ' + e(person(a.owner_id, a.owner_text)) + ' · due ' + e(a.due_on || '—') + (a.evidence_note ? ' · evidence: ' + e(a.evidence_note) : '') + (a.cancel_reason ? ' · cancelled: ' + e(a.cancel_reason) : '') + (a.hierarchy_note ? ' · why not stronger: ' + e(a.hierarchy_note) : '') + '</div>' + (btns ? '<div class="flex-wrap" style="gap:6px;margin-top:4px;">' + btns + '</div>' : '') + '</div>'; }).join('') : '<p class="muted-italic">No actions yet.</p>') +
+      section('Control verification', vers.length ? vers.map(function(v){ return '<div style="font-size:12px;border-bottom:1px solid var(--line2);padding:4px 0;">' + tag(v.result === 'effective' ? 'green' : 'rust', cap(v.result.replace('_', ' '))) + ' ' + e(v.verified_on) + ' · ' + e(person(v.verified_by)) + (v.self_verified ? ' <span style="color:var(--amber);">(verified by an implementer: nobody else was eligible)</span>' : '') + '<div class="muted-italic">' + e(v.method) + ' · evidence: ' + e(v.evidence_note) + '</div></div>'; }).join('') : '<p class="muted-italic">Not verified yet. Completing an action is not proof that the risk is controlled.</p>') +
+      section('Decision on the remaining risk', '<div style="font-size:12.5px;margin-bottom:4px;">Current decision: <strong>' + e(r.residual_decision === 'accepted' ? (s.acceptance_valid ? 'Accepted' : 'Accepted (expired or no longer applies)') : r.residual_decision === 'further_treatment' ? 'Further treatment required' : 'Not yet decided') + '</strong></div>' + decs.map(function(d){ return '<div style="font-size:12px;border-bottom:1px solid var(--line2);padding:4px 0;">' + tag(d.decision === 'accepted' ? 'neutral' : 'amber', d.decision === 'accepted' ? 'Accepted' : 'Further treatment') + ' ' + e(when(d.created_at)) + ' · ' + e(person(d.decided_by)) + (d.self_decided ? ' (nobody else was eligible)' : '') + (d.expires_on ? ' · until ' + e(d.expires_on) : '') + '<div class="muted-italic">' + e(d.rationale) + (d.conditions ? ' · conditions: ' + e(d.conditions) : '') + '</div></div>'; }).join('')) +
+      section('Linked records', links.length ? links.map(function(l){ return '<div style="font-size:12px;padding:2px 0;">' + tag('neutral', lbl(LTYPES, l.link_type)) + ' ' + e(l.ref_text) + (l.note ? ' · ' + e(l.note) : '') + ' <span class="muted-italic">' + e(when(l.added_at)) + ' · ' + e(person(l.added_by)) + '</span></div>'; }).join('') : '<p class="muted-italic">No linked records.</p>') +
+      (logs.length ? '<details style="margin-top:6px;"><summary style="font-size:12px;cursor:pointer;">History (' + logs.length + ')</summary>' + logs.slice(0, 60).map(function(l){ return '<div style="font-size:11.5px;padding:2px 0;" class="muted-italic">' + e(when(l.at)) + ' · ' + e(person(l.actor_id)) + ' · ' + e(l.event.replace(/_/g, ' ')) + '</div>'; }).join('') + '</details>' : '');
+    return out;
+  }
+  function matrixView(){
+    var cnt = {}, act = R.risks.filter(function(r){ return ACTIVE.indexOf(r.status) !== -1; });
+    act.forEach(function(r){ var s = stOf(r); if(s.likelihood && s.severity){ var k = s.likelihood + '-' + s.severity; cnt[k] = (cnt[k] || 0) + 1; } });
+    var names = (R.scales && R.scales.severity_labels) || ['Minor', 'Limited', 'Serious', 'Major', 'Catastrophic'], lnames = ((R.scales && R.scales.likelihood) || []).map(function(x){ return x.label; });
+    var col = { Low:'#dff3e3', Medium:'#fff2cc', High:'#fbd5c8', Critical:'#f4a89a' }, t = '<table style="border-collapse:collapse;font-size:12px;width:100%;max-width:560px;"><tr><th></th>' + [1, 2, 3, 4, 5].map(function(s){ return '<th style="padding:4px;">S' + s + '<div style="font-weight:400;font-size:10px;">' + e(names[s - 1] || '') + '</div></th>'; }).join('') + '</tr>';
+    for(var l = 5; l >= 1; l--){ t += '<tr><th style="padding:4px;text-align:right;">L' + l + '<div style="font-weight:400;font-size:10px;">' + e(lnames[l - 1] || '') + '</div></th>' + [1, 2, 3, 4, 5].map(function(s){ var lv = levelOf(null, l, s), n = cnt[l + '-' + s] || 0; return '<td style="border:1px solid #fff;background:' + col[lv] + ';text-align:center;padding:10px 4px;"><div style="font-weight:700;">' + (l * s) + '</div><div style="font-size:11px;">' + (n ? n + ' risk' + (n === 1 ? '' : 's') : '·') + '</div></td>'; }).join('') + '</tr>'; }
+    t += '</table>';
+    var sc = R.scales || {}, sev = sc.severity || {};
+    return '<p class="muted-italic" style="font-size:11.5px;margin:0 0 8px;">Each active risk sits in the cell of its current assessment (rows: likelihood, columns: severity). Colours show the bands: Low 1–4, Medium 5–9, High 10–16, Critical 17–25. Severity 5 counts as at least High. The matrix is a ranking aid, not proof that a risk is acceptable. Version ' + e(sc.version || 'v1') + '.</p>' + t +
+      '<h3 class="serif" style="font-size:14px;margin:14px 0 6px;">Scale definitions (starting point for site approval)</h3><p style="font-size:12px;margin:0 0 6px;">' + e(BASIS()) + '</p>' +
+      '<table style="font-size:11.5px;border-collapse:collapse;width:100%;"><tr><th style="text-align:left;padding:3px;">Score</th><th style="text-align:left;padding:3px;">Health &amp; safety</th><th style="text-align:left;padding:3px;">Food safety</th><th style="text-align:left;padding:3px;">Quality / business</th><th style="text-align:left;padding:3px;">Environmental</th></tr>' +
+      [0, 1, 2, 3, 4].map(function(i){ return '<tr style="border-top:1px solid var(--line2);vertical-align:top;"><td style="padding:3px;">' + (i + 1) + ' ' + e(names[i] || '') + '</td><td style="padding:3px;">' + e((sev.health_safety || [])[i] || '') + '</td><td style="padding:3px;">' + e((sev.food_safety || [])[i] || '') + '</td><td style="padding:3px;">' + e((sev.quality || [])[i] || '') + '</td><td style="padding:3px;">' + e((sev.environmental || [])[i] || '') + '</td></tr>'; }).join('') + '</table>' +
+      '<ul style="font-size:12px;">' + ((sc.notes || []).map(function(n){ return '<li>' + e(n) + '</li>'; }).join('')) + '</ul>';
+  }
+  function exportCsv(){
+    var rows = [['Ref', 'Category', 'Status', 'Level', 'Score', 'Likelihood', 'Severity', 'Source', 'Risk event', 'Consequence', 'Exposed', 'Owner', 'Review due', 'Open actions', 'Verified', 'Remaining-risk decision']].concat(R.risks.map(function(r){ var s = stOf(r); return [r.ref, lbl(CATS, r.category), r.status, s.level, s.score, s.likelihood, s.severity, r.source_text, r.event_text, r.consequence_text, r.exposed_text, person(r.owner_id, r.owner_text), r.review_due, s.actions_open, s.verified ? 'yes' : 'no', r.residual_decision]; }));
+    var csv = rows.map(function(r){ return r.map(function(v){ return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var url = URL.createObjectURL(new Blob([csv], { type:'text/csv' })), a = document.createElement('a'); a.href = url; a.download = 'risk-register.csv'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  window.renderRiskControls = function(){
+    try{
+      if(typeof currentProfile === 'undefined' || !currentProfile) return '<div class="card p4"><p class="muted-italic">Sign in to use risk management.</p></div>';
+      if(!R.loaded && !R.loading && !R.tried) setTimeout(load, 0);
+      var top = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px;"><h2 class="serif" style="font-size:18px;margin:0;">⚠️ Risk Management</h2><div class="flex-wrap">' + bt('reload', {}, '↻ Refresh') + '</div></div>' +
+        '<p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Risks are scored on one approved matrix. Reducing a risk needs implemented actions and an effective verification. Accepting remaining risk is a signed, time-limited decision.</p>';
+      if(R.error) return top + '<div class="card p4"><p style="color:var(--rust);margin:0;">' + e(R.error) + '</p></div>';
+      if(!R.loaded) return top + '<p class="muted-italic">Loading…</p>';
+      return top + '<div class="flex-wrap" style="gap:6px;margin-bottom:10px;">' + [['register', 'Register'], ['matrix', 'Matrix and scales']].map(function(x){ return '<button class="status-pill ' + (R.view === x[0] ? 'active' : '') + '" data-rk="view" data-v="' + x[0] + '">' + x[1] + '</button>'; }).join('') + '</div>' + (R.view === 'matrix' ? matrixView() : registerView());
+    }catch(ex){ return '<div class="card p4"><p style="color:var(--rust);">Risk page error: ' + e(ex && ex.message || ex) + '</p></div>'; }
+  };
+  window.rkEnsureLoaded = function(){ if(!R.loaded && !R.loading && !R.tried && typeof cloudReady === 'function' && cloudReady()) setTimeout(load, 0); };
+  /* one shared definition of "current exposure" for every dashboard and report */
+  window.__rkStats = function(){
+    window.rkEnsureLoaded(); if(!R.loaded) return null;
+    var all = [], dr = 0, ft = 0, fa = 0;
+    R.risks.forEach(function(r){
+      if(r.status === 'draft'){ dr++; return; }
+      if(r.category === 'food_safety' && r.status !== 'void') ft++;
+      if(ACTIVE.indexOf(r.status) === -1) return;
+      var s = stOf(r); if(r.category === 'food_safety') fa++;
+      all.push({ id:r.id, ref:r.ref, label:label(r), level:s.level || 'Low', category:r.category, status:r.status, verified:!!s.verified, needsReview:!!s.needs_review, overdueActions:s.actions_overdue || 0, reviewOverdue:!!s.review_overdue });
+    });
+    var high = all.filter(function(x){ return x.level === 'High' || x.level === 'Critical'; }), crit = all.filter(function(x){ return x.level === 'Critical'; });
+    var healthy = all.filter(function(x){ return !x.needsReview && (x.level === 'Low' || x.level === 'Medium' || x.verified); }).length;
+    return { live:true, all:all, high:high, critical:crit, businessHigh:high.filter(function(x){ return x.category === 'business'; }), active:all.length, openHighCritical:high.length,
+      unverified:high.filter(function(x){ return !x.verified; }).length, treatmentOverdue:all.filter(function(x){ return x.overdueActions > 0; }).length, reviewOverdue:all.filter(function(x){ return x.reviewOverdue; }).length,
+      needsReview:all.filter(function(x){ return x.needsReview; }).length, drafts:dr, foodSafetyActive:fa, foodSafetyTotal:ft, score:all.length >= 5 ? Math.round(healthy / all.length * 1000) / 10 : null };
+  };
+  window.__rkOptions = function(){ window.rkEnsureLoaded(); if(!R.loaded) return null; return R.risks.filter(function(r){ return r.status !== 'void' && r.status !== 'draft'; }).map(function(r){ return r.ref + ' — ' + label(r) + ' (' + (stOf(r).level || r.status) + ')'; }); };
+  /* audit findings and complaints raise a DRAFT, not a finished risk */
+  window.rkDraftFromSource = async function(f){
+    try{
+      if(typeof cloudReady !== 'function' || !cloudReady()) return;
+      var r = await supabaseClient.rpc('rk_draft', { p_id:newId(), p_f:f });
+      if(r.error) throw new Error(r.error.message);
+      toast(r.data && r.data.duplicate ? 'This record is already linked to risk ' + r.data.ref + '.' : 'Draft risk ' + (r.data && r.data.ref) + ' raised for assessment in Risk Management.');
+      R.loading = false; load();
+    }catch(ex){ toast('Draft risk not raised: ' + ((ex && ex.message) || ex), 'error'); }
+  };
+  document.addEventListener('click', function(ev){
+    var t = ev.target; if(!t || !t.closest) return;
+    var m = t.closest('[data-rk]') ? null : t.closest('[data-rk-modal]');
+    if(m){ var k0 = m.getAttribute('data-rk-modal');
+      if(k0 === 'overlay'){ if(ev.target === m){ ev.preventDefault(); closeModal(); } return; }
+      ev.preventDefault(); if(k0 === 'cancel') closeModal(); else submitModal(); return; }
+    var el = t.closest('[data-rk]'); if(!el) return;
+    if(el.tagName === 'SELECT' || el.tagName === 'INPUT') return;
+    var a = el.getAttribute('data-rk'), id = el.getAttribute('data-id'), r = id ? riskById(id) : null;
+    ev.preventDefault(); ev.stopPropagation();
+    if(a === 'reload'){ R.loading = false; R.tried = false; load(); }
+    else if(a === 'view'){ R.view = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'status'){ R.status = el.getAttribute('data-v'); rerender(); }
+    else if(a === 'toggle'){ R.openId = R.openId === id ? null : id; rerender(); }
+    else if(a === 'csv') exportCsv();
+    else if(a === 'new') actNew(null);
+    else if(a === 'draft') actDraft();
+    else if(a === 'astep'){ var ac = R.actions.filter(function(x){ return x.id === id; })[0]; if(ac) actActionStep(ac, el.getAttribute('data-op')); }
+    else if(r){
+      if(a === 'assess') actAssess(r); else if(a === 'assessdraft') actNew(r); else if(a === 'actadd') actActionAdd(r); else if(a === 'verify') actVerify(r); else if(a === 'decide') actDecide(r); else if(a === 'link') actLink(r);
+      else if(a === 'trigger') actTrigger(r); else if(a === 'review') actReview(r); else if(a === 'describe') actDescribe(r); else if(a === 'owner') actOwner(r); else if(a === 'close') actClose(r, false); else if(a === 'void') actClose(r, true); else if(a === 'reopen') actReopen(r);
+    }
+  }, true);
+  document.addEventListener('input', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var q = t.getAttribute('data-rk-q'); if(q){ R[q] = t.value; var pos = t.selectionStart; rerender(); var again = document.querySelector('[data-rk-q="' + q + '"]'); if(again){ again.focus(); try{ again.setSelectionRange(pos, pos); }catch(_){} } }
+  }, true);
+  document.addEventListener('change', function(ev){
+    var t = ev.target; if(!t || !t.getAttribute) return;
+    var s = t.getAttribute('data-rk-sel'); if(s){ R[s] = t.value; rerender(); return; }
+    if(modal && t.id && t.id.indexOf('rkf-') === 0){
+      var id = t.id.slice(4), fld = modal.fields.filter(function(x){ return x.id === id; })[0];
+      if(fld && fld.refresh){ keepValues(); if(fld.refresh === 'full'){ var sv = modal.fields.filter(function(x){ return x.id === 'severity'; })[0]; if(sv) sv.value = ''; } mount(); }
+    }
+  }, true);
+  window.rkReset = function(){ R.risks = []; R.assess = []; R.actions = []; R.verifs = []; R.decs = []; R.links = []; R.logs = []; R.st = {}; R.profiles = []; R.loaded = false; R.loading = false; R.tried = false; R.error = ''; modal = null; mount(); };
 })();
 
 </script>
