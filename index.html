@@ -1164,6 +1164,7 @@ async function createHiraAssessment(hiraData) {
     inherent_rationale: hiraData.inherent_rationale,
     residual_rationale: hiraData.residual_rationale,
     controls_detail: hiraData.controls_detail,
+    hazards: hiraData.hazards || [],
     scope: hiraData.scope,
     permit_required: hiraData.permit_required,
     status: hiraData.status,
@@ -1588,14 +1589,12 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
     container.innerHTML = `<div class="ohs-modal-error">Your role (${escapeHtml(userRole)}) is not permitted to create HIRA assessments.</div>`;
     return;
   }
-  const blankSelect = (id, levels) => `<select id="${id}"><option value="">— choose —</option>${levels.map((l) => `<option value="${l.value}">${l.value} — ${escapeHtml(l.label)}</option>`).join('')}</select>`;
-  const CTRL_STATUS = ['Proposed', 'Implemented', 'Verified'];
+  const sel = (cls, levels) => `<select class="${cls}"><option value="">—</option>${levels.map((l) => `<option value="${l.value}">${l.value} — ${escapeHtml(l.label)}</option>`).join('')}</select>`;
   container.innerHTML = `
     <div class="ohs-modal-backdrop" data-role="backdrop">
       <div class="ohs-modal" role="dialog" aria-modal="true" aria-labelledby="hira-modal-title" style="max-height:90vh;overflow:auto;">
-        <h2 id="hira-modal-title">New HIRA Assessment</h2>
-        <p class="ohs-hint">Nothing is pre-rated. Choose every rating yourself and say why. A control only lowers the risk once it is marked Verified, with the evidence.</p>
-
+        <h2 id="hira-modal-title">New HIRA — task risk assessment</h2>
+        <p class="ohs-hint">One card per hazard. Nothing is pre-rated. Inherent = no controls. Current = with the controls already in place (you must confirm they work). Residual = after the additional controls, which only count once Verified with evidence.</p>
         <label class="ohs-field"><span>Assessment type</span>
           <select id="hira-type"><option value="">— choose —</option><option>Baseline</option><option>Issue-based</option><option>Task</option><option>Review</option></select></label>
         <label class="ohs-field"><span>Activity and boundaries (what is and is not covered)</span><textarea id="hira-activity" rows="2"></textarea></label>
@@ -1609,116 +1608,143 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
           <label class="ohs-field"><span>Workers consulted</span><input id="hira-consulted" type="text" /></label>
         </div>
         <label class="ohs-field"><span>Review triggers (e.g. change of method, incident, new equipment)</span><input id="hira-triggers" type="text" /></label>
-
-        <div class="ohs-field-row">
-          <label class="ohs-field"><span>Inherent severity</span>${blankSelect('hira-inherent-severity', SEVERITY_LEVELS)}</label>
-          <label class="ohs-field"><span>Inherent likelihood</span>${blankSelect('hira-inherent-likelihood', LIKELIHOOD_LEVELS)}</label>
-        </div>
-        <div id="hira-inherent-result" class="ohs-risk-badge" aria-live="polite"></div>
-        <label class="ohs-field"><span>Why this inherent rating? (hazard, event, consequence, people exposed)</span><textarea id="hira-inh-why" rows="2"></textarea></label>
-
-        <fieldset class="ohs-controls-fieldset">
-          <legend>Actual controls</legend>
-          <div id="hira-controls"></div>
-          <button type="button" id="hira-add-control" class="ohs-btn-secondary">+ Add a control</button>
-          <p class="ohs-hint">Proposed → Implemented → Verified. Only Verified controls count towards a lower residual rating.</p>
-        </fieldset>
-
-        <div class="ohs-field-row">
-          <label class="ohs-field"><span>Residual severity</span>${blankSelect('hira-residual-severity', SEVERITY_LEVELS)}</label>
-          <label class="ohs-field"><span>Residual likelihood</span>${blankSelect('hira-residual-likelihood', LIKELIHOOD_LEVELS)}</label>
-        </div>
-        <div id="hira-residual-result" class="ohs-risk-badge" aria-live="polite"></div>
-        <label class="ohs-field"><span>Why this residual rating?</span><textarea id="hira-res-why" rows="2"></textarea></label>
+        <div id="hira-hazards"></div>
+        <button type="button" id="hira-add-hazard" class="ohs-btn-secondary">+ Add a hazard</button>
+        <div id="hira-summary" class="ohs-risk-badge" aria-live="polite" style="margin-top:8px;"></div>
         <div id="hira-blockers" class="ohs-blockers" aria-live="polite"></div>
-
         <div class="ohs-modal-actions">
           <button type="button" data-action="cancel" class="ohs-btn-secondary">Cancel</button>
           <button type="button" data-action="submit" class="ohs-btn-primary">Save HIRA Assessment</button>
         </div>
       </div>
-    </div>
-  `;
-  const $ = (sel) => container.querySelector(sel);
-  const ctrlBox = $('#hira-controls');
-  const addControl = () => {
+    </div>`;
+  const $ = (sel2) => container.querySelector(sel2);
+  const box = $('#hira-hazards');
+  const addControl = (card) => {
     const row = document.createElement('div');
-    row.className = 'hira-ctrl';
-    row.style.cssText = 'border:1px solid #ddd;border-radius:6px;padding:8px;margin-bottom:8px;';
+    row.className = 'hz-ctrl';
+    row.style.cssText = 'border:1px dashed #bbb;border-radius:6px;padding:6px;margin:6px 0;';
     row.innerHTML = `
-      <label class="ohs-field"><span>Control (what exactly will be in place)</span><input class="c-text" type="text" /></label>
+      <label class="ohs-field"><span>Additional control (what exactly will be in place)</span><input class="c-text" type="text" /></label>
       <div class="ohs-field-row">
         <label class="ohs-field"><span>Type</span><select class="c-tier"><option value="">— choose —</option>${HIERARCHY_OF_CONTROLS.map((c) => `<option value="${c.key}">${escapeHtml(c.label)}</option>`).join('')}</select></label>
         <label class="ohs-field"><span>Owner</span><input class="c-owner" type="text" /></label>
         <label class="ohs-field"><span>Due</span><input class="c-due" type="date" /></label>
       </div>
       <div class="ohs-field-row">
-        <label class="ohs-field"><span>Status</span><select class="c-status">${CTRL_STATUS.map((x) => `<option>${x}</option>`).join('')}</select></label>
-        <label class="ohs-field"><span>Evidence it works (needed for Verified)</span><input class="c-evidence" type="text" /></label>
+        <label class="ohs-field"><span>Status</span><select class="c-status"><option>Proposed</option><option>Implemented</option><option>Verified</option></select></label>
+        <label class="ohs-field"><span>Evidence it works (for Verified)</span><input class="c-evidence" type="text" /></label>
       </div>
       <label class="ohs-checkbox"><input class="c-critical" type="checkbox" /> Critical control (failure must stop the work)</label>
-      <button type="button" class="ohs-btn-secondary c-remove">Remove this control</button>`;
+      <button type="button" class="ohs-btn-secondary c-remove">Remove control</button>`;
     row.querySelector('.c-remove').addEventListener('click', () => { row.remove(); recalc(); });
     row.querySelectorAll('input,select').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
-    ctrlBox.appendChild(row);
+    card.querySelector('.hz-ctrls').appendChild(row);
+  };
+  const addHazard = () => {
+    const card = document.createElement('div');
+    card.className = 'hz-card';
+    card.style.cssText = 'border:1px solid #999;border-radius:8px;padding:10px;margin:10px 0;';
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;"><strong class="hz-title">Hazard</strong><button type="button" class="ohs-btn-secondary hz-remove">Remove hazard</button></div>
+      <label class="ohs-field"><span>Task step</span><input class="h-task" type="text" /></label>
+      <label class="ohs-field"><span>Hazard / source</span><input class="h-hazard" type="text" /></label>
+      <label class="ohs-field"><span>Unwanted event</span><input class="h-event" type="text" /></label>
+      <label class="ohs-field"><span>Consequence</span><input class="h-cons" type="text" /></label>
+      <label class="ohs-field"><span>People exposed</span><input class="h-exposed" type="text" /></label>
+      <fieldset><legend>1. Inherent (no controls)</legend>
+        <div class="ohs-field-row"><label class="ohs-field"><span>Severity</span>${sel('h-is', SEVERITY_LEVELS)}</label><label class="ohs-field"><span>Likelihood</span>${sel('h-il', LIKELIHOOD_LEVELS)}</label></div>
+        <label class="ohs-field"><span>Why</span><input class="h-iwhy" type="text" /></label></fieldset>
+      <fieldset><legend>2. Current (controls already in place)</legend>
+        <label class="ohs-field"><span>Existing controls</span><input class="h-existing" type="text" /></label>
+        <label class="ohs-checkbox"><input class="h-existing-ok" type="checkbox" /> I confirmed these are in place and working</label>
+        <div class="ohs-field-row"><label class="ohs-field"><span>Severity</span>${sel('h-cs', SEVERITY_LEVELS)}</label><label class="ohs-field"><span>Likelihood</span>${sel('h-cl', LIKELIHOOD_LEVELS)}</label></div>
+        <label class="ohs-field"><span>Why</span><input class="h-cwhy" type="text" /></label></fieldset>
+      <fieldset><legend>3. Additional controls and residual</legend>
+        <div class="hz-ctrls"></div>
+        <button type="button" class="ohs-btn-secondary hz-add-ctrl">+ Add additional control</button>
+        <div class="ohs-field-row"><label class="ohs-field"><span>Residual severity</span>${sel('h-rs', SEVERITY_LEVELS)}</label><label class="ohs-field"><span>Residual likelihood</span>${sel('h-rl', LIKELIHOOD_LEVELS)}</label></div>
+        <label class="ohs-field"><span>Why</span><input class="h-rwhy" type="text" /></label></fieldset>
+      <div class="hz-badges ohs-risk-badge"></div>`;
+    card.querySelector('.hz-remove').addEventListener('click', () => { card.remove(); recalc(); });
+    card.querySelector('.hz-add-ctrl').addEventListener('click', () => { addControl(card); recalc(); });
+    card.querySelectorAll('input,select').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+    box.appendChild(card);
     recalc();
   };
-  const readControls = () => Array.from(ctrlBox.querySelectorAll('.hira-ctrl')).map((r) => ({
-    text: r.querySelector('.c-text').value.trim(), tier: r.querySelector('.c-tier').value, owner: r.querySelector('.c-owner').value.trim(),
-    due: r.querySelector('.c-due').value || null, status: r.querySelector('.c-status').value, evidence: r.querySelector('.c-evidence').value.trim(),
-    critical: r.querySelector('.c-critical').checked,
+  const v = (card, cls) => card.querySelector(cls).value.trim();
+  const n = (card, cls) => { const x = card.querySelector(cls).value; return x === '' ? null : Number(x); };
+  const readHazards = () => Array.from(box.querySelectorAll('.hz-card')).map((card) => ({
+    task_step: v(card, '.h-task'), hazard: v(card, '.h-hazard'), event: v(card, '.h-event'), consequence: v(card, '.h-cons'), exposed: v(card, '.h-exposed'),
+    inh_s: n(card, '.h-is'), inh_l: n(card, '.h-il'), inh_why: v(card, '.h-iwhy'),
+    existing_controls: v(card, '.h-existing'), existing_verified: card.querySelector('.h-existing-ok').checked ? 'true' : 'false',
+    cur_s: n(card, '.h-cs'), cur_l: n(card, '.h-cl'), cur_why: v(card, '.h-cwhy'),
+    res_s: n(card, '.h-rs'), res_l: n(card, '.h-rl'), res_why: v(card, '.h-rwhy'),
+    controls: Array.from(card.querySelectorAll('.hz-ctrl')).map((r) => ({
+      text: r.querySelector('.c-text').value.trim(), tier: r.querySelector('.c-tier').value, owner: r.querySelector('.c-owner').value.trim(),
+      due: r.querySelector('.c-due').value || null, status: r.querySelector('.c-status').value, evidence: r.querySelector('.c-evidence').value.trim(),
+      critical: r.querySelector('.c-critical').checked,
+    })),
   }));
-  const num = (id) => { const v = $(id).value; return v === '' ? null : Number(v); };
   const recalc = () => {
-    const iS = num('#hira-inherent-severity'), iL = num('#hira-inherent-likelihood'), rS = num('#hira-residual-severity'), rL = num('#hira-residual-likelihood');
-    const ctrls = readControls();
-    const verifiedKeys = ctrls.filter((c) => c.status === 'Verified' && c.tier).map((c) => c.tier);
+    const hz = readHazards();
     const problems = [];
-    let result = null;
-    $('#hira-inherent-result').innerHTML = ''; $('#hira-residual-result').innerHTML = '';
-    if (iS && iL) { try { $('#hira-inherent-result').innerHTML = riskBadgeHtml('Inherent', assessInherentRisk(iS, iL)); } catch (e) {} }
-    if (rS && rL) { try { $('#hira-residual-result').innerHTML = riskBadgeHtml('Residual', assessInherentRisk(rS, rL)); } catch (e) {} }
-    if (!(iS && iL)) problems.push('Choose the inherent severity and likelihood.');
-    if (!(rS && rL)) problems.push('Choose the residual severity and likelihood.');
     if (!$('#hira-type').value) problems.push('Choose the assessment type.');
     if (!$('#hira-activity').value.trim() || !$('#hira-location').value.trim()) problems.push('Activity and location are required.');
-    if (!$('#hira-inh-why').value.trim()) problems.push('Explain the inherent rating.');
-    if (!$('#hira-res-why').value.trim()) problems.push('Explain the residual rating.');
-    if (!ctrls.length) problems.push('Add at least one actual control.');
-    ctrls.forEach((c, i) => {
-      if (!c.text || !c.owner) problems.push(`Control ${i + 1}: describe it and name its owner.`);
-      if (!c.tier) problems.push(`Control ${i + 1}: choose the control type.`);
-      if (c.status === 'Verified' && !c.evidence) problems.push(`Control ${i + 1}: Verified needs the evidence.`);
+    if (!hz.length) problems.push('Add at least one hazard.');
+    let maxInh = null, maxRes = null;
+    const cards = box.querySelectorAll('.hz-card');
+    hz.forEach((h, i) => {
+      const t = `Hazard ${i + 1}`;
+      cards[i].querySelector('.hz-title').textContent = `Hazard ${i + 1}${h.task_step ? ' — ' + h.task_step : ''}`;
+      ['task_step', 'hazard', 'event', 'consequence', 'exposed'].forEach((k) => { if (!h[k]) problems.push(`${t}: ${k.replace('_', ' ')} is required.`); });
+      const rated = ['inh_s', 'inh_l', 'cur_s', 'cur_l', 'res_s', 'res_l'].every((k) => h[k]);
+      if (!rated) { problems.push(`${t}: choose all three ratings (severity and likelihood).`); cards[i].querySelector('.hz-badges').innerHTML = ''; return; }
+      if (!h.inh_why || !h.cur_why || !h.res_why) problems.push(`${t}: say why for each rating.`);
+      const inh = h.inh_s * h.inh_l, cur = h.cur_s * h.cur_l, res = h.res_s * h.res_l;
+      cards[i].querySelector('.hz-badges').innerHTML = riskBadgeHtml('Inherent', assessInherentRisk(h.inh_s, h.inh_l)) + ' ' + riskBadgeHtml('Current', assessInherentRisk(h.cur_s, h.cur_l)) + ' ' + riskBadgeHtml('Residual', assessInherentRisk(h.res_s, h.res_l));
+      if (cur > inh) problems.push(`${t}: current cannot be higher than inherent.`);
+      if (res > cur) problems.push(`${t}: residual cannot be higher than current.`);
+      if (cur < inh && (!h.existing_controls || h.existing_verified !== 'true')) problems.push(`${t}: current is lower than inherent — name the existing controls and confirm they are in place and working.`);
+      let verified = false;
+      h.controls.forEach((c, j) => {
+        if (!c.text || !c.owner || !c.tier) problems.push(`${t}, control ${j + 1}: description, type and owner are required.`);
+        if (c.status === 'Verified') { if (!c.evidence) problems.push(`${t}, control ${j + 1}: Verified needs the evidence.`); else verified = true; }
+      });
+      if (res < cur && !verified) problems.push(`${t}: residual is lower than current but no additional control is Verified.`);
+      if (!h.controls.length && !h.existing_controls) problems.push(`${t}: record the existing controls or add a control.`);
+      if (!maxInh || inh > maxInh.score) maxInh = { score: inh, s: h.inh_s, l: h.inh_l };
+      if (!maxRes || res > maxRes.score) maxRes = { score: res, s: h.res_s, l: h.res_l };
     });
-    let ready = false;
-    if (iS && iL && rS && rL) {
-      const inh = iS * iL, res = rS * rL;
-      if (res > inh) problems.push('Residual risk cannot be higher than inherent risk.');
-      if (res < inh && !verifiedKeys.length) problems.push('The residual rating is lower than the inherent rating, but no control is Verified. Verify a control or keep the residual equal to the inherent rating.');
-      try { result = evaluateHira({ severity: iS, likelihood: iL, residualSeverity: rS, residualLikelihood: rL, appliedControlKeys: verifiedKeys }); } catch (e) { result = null; }
-      ready = problems.length === 0 && !!result && result.readyForApproval;
-      if (result && !result.residual.acceptable) problems.push('Residual risk score is above the acceptable threshold — it will be saved as Under review, not sent for approval.');
-      if (result && result.residual.flagForReview) problems.push('Only PPE (or nothing) is verified against a high residual score — flagged for independent review.');
-    }
-    $('#hira-blockers').innerHTML = problems.map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
-    return { result, ctrls, ready, iS, iL, rS, rL, hardProblems: problems.filter((p) => !/saved as Under review|flagged for independent/.test(p)) };
+    let result = null;
+    if (maxInh && maxRes) {
+      $('#hira-summary').innerHTML = `Whole HIRA — ` + riskBadgeHtml('Highest inherent', assessInherentRisk(maxInh.s, maxInh.l)) + ' ' + riskBadgeHtml('Highest residual', assessInherentRisk(maxRes.s, maxRes.l));
+      try { result = evaluateHira({ severity: maxInh.s, likelihood: maxInh.l, residualSeverity: maxRes.s, residualLikelihood: maxRes.l, appliedControlKeys: hz.flatMap((h) => h.controls.filter((c) => c.status === 'Verified').map((c) => c.tier)) }); } catch (e) { result = null; }
+    } else $('#hira-summary').innerHTML = '';
+    const ready = problems.length === 0 && !!result && result.readyForApproval;
+    const soft = [];
+    if (problems.length === 0 && result && !result.residual.acceptable) soft.push('The highest residual score is above the acceptable threshold — it will be saved as Under review, not sent for approval.');
+    if (problems.length === 0 && result && result.residual.flagForReview) soft.push('Only PPE (or nothing) is verified against a high residual score — flagged for independent review.');
+    $('#hira-blockers').innerHTML = problems.concat(soft).map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
+    return { hz, problems, ready, maxInh, maxRes, result };
   };
-  container.querySelectorAll('select, input, textarea').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
-  $('#hira-add-control').addEventListener('click', addControl);
-  addControl();
+  container.querySelectorAll('#hira-type, #hira-activity, #hira-location').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+  $('#hira-add-hazard').addEventListener('click', addHazard);
+  addHazard();
   $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
   $('[data-role="backdrop"]').addEventListener('click', (e) => { if (e.target === e.currentTarget && onCancel) onCancel(); });
   $('[data-action="submit"]').addEventListener('click', () => {
     const c = recalc();
-    if (c.hardProblems.length) return;
+    if (c.problems.length) return;
     onSubmit({
       activity_description: $('#hira-activity').value.trim(),
       location: $('#hira-location').value.trim(),
       assessment_type: $('#hira-type').value,
-      inherent_severity: c.iS, inherent_likelihood: c.iL, residual_severity: c.rS, residual_likelihood: c.rL,
-      inherent_rationale: $('#hira-inh-why').value.trim(), residual_rationale: $('#hira-res-why').value.trim(),
-      controls_detail: c.ctrls,
-      applied_controls: c.ctrls.filter((x) => x.status === 'Verified' && x.tier).map((x) => x.tier),
+      inherent_severity: c.maxInh.s, inherent_likelihood: c.maxInh.l, residual_severity: c.maxRes.s, residual_likelihood: c.maxRes.l,
+      inherent_rationale: 'See hazard rows', residual_rationale: 'See hazard rows',
+      hazards: c.hz,
+      controls_detail: c.hz.flatMap((h) => h.controls.map((x) => Object.assign({ hazard: h.task_step }, x))),
+      applied_controls: c.hz.flatMap((h) => h.controls.filter((x) => x.status === 'Verified').map((x) => x.tier)),
       scope: { contractor: $('#hira-contractor').value.trim(), revision: $('#hira-revision').value.trim(), team: $('#hira-team').value.trim(),
                consulted: $('#hira-consulted').value.trim(), review_triggers: $('#hira-triggers').value.trim() },
       permit_required: c.result ? c.result.permitRequired : false,
@@ -1992,10 +2018,11 @@ function renderHiraTab(){
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
             ${(h.inherent_severity&&h.inherent_likelihood) ? `<span class="ohs-badge" style="background:${riskBandColorFor(h.inherent_severity, h.inherent_likelihood)};font-size:11px;">Inherent: ${h.inherent_severity*h.inherent_likelihood}</span>` : `<span class="tag tag-neutral" style="font-size:10px;">Inherent: not assessed</span>`}
             ${(h.residual_severity&&h.residual_likelihood) ? `<span class="ohs-badge" style="background:${riskBandColorFor(h.residual_severity, h.residual_likelihood)};font-size:11px;">Residual: ${h.residual_severity*h.residual_likelihood}</span>` : `<span class="tag tag-neutral" style="font-size:10px;">Residual: not assessed</span>`}
+            ${Array.isArray(h.hazards)&&h.hazards.length ? `<span class="tag tag-neutral" style="font-size:10px;">${h.hazards.length} hazard${h.hazards.length===1?'':'s'}</span>` : ''}
             ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<span class="tag tag-neutral" style="font-size:10px;">Controls: ${h.controls_detail.filter(c=>c.status==='Verified').length} verified / ${h.controls_detail.length}</span>` : `<span class="tag tag-amber" style="font-size:10px;">No actual controls recorded</span>`}
             ${h.permit_required ? `<span class="tag tag-amber" style="font-size:10px;">Permit Required</span>` : ''}
           </div>
-          ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<div style="margin-top:6px;font-size:12px;">${h.controls_detail.map((c,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="tag tag-${c.status==='Failed'?'rust':c.status==='Verified'?'green':'amber'}" style="font-size:10px;">${esc(c.status||'Proposed')}</span>${c.critical?'<span class="tag tag-navy" style="font-size:10px;">Critical</span>':''}<span>${esc(c.text||'')} <span class="muted-italic">(${esc(c.owner||'—')})</span></span></div>`).join('')}</div>
+          ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<div style="margin-top:6px;font-size:12px;">${h.controls_detail.map((c,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="tag tag-${c.status==='Failed'?'rust':c.status==='Verified'?'green':'amber'}" style="font-size:10px;">${esc(c.status||'Proposed')}</span>${c.critical?'<span class="tag tag-navy" style="font-size:10px;">Critical</span>':''}<span>${c.hazard?`<span class="muted-italic">${esc(c.hazard)}: </span>`:''}${esc(c.text||'')} <span class="muted-italic">(${esc(c.owner||'—')})</span></span></div>`).join('')}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="ctrl-fail" data-id="${h.id}">Report control failure</button>
             ${(h.controls_detail.some(c=>c.status==='Failed') && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="ctrl-restore" data-id="${h.id}">Restore control</button>` : ''}
