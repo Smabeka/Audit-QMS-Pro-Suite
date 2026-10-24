@@ -2217,6 +2217,106 @@ document.addEventListener('click', async e=>{
   ohsAuthEnsure(true);
 });
 
+
+/* ---- Contractors (evidence expiry) and Site Readiness (project legal + daily) ---- */
+window.__ohsC = window.__ohsC || {rows:null, ready:null, proj:{}, err:null, loading:false};
+async function ohsCLoad(force){
+  const c = window.__ohsC; if(!cloudReady() || c.loading || (c.rows && !force)) return;
+  c.loading = true;
+  const [a,b] = await Promise.all([
+    supabaseClient.from('ohs_contractor_overview').select('*').order('ref'),
+    supabaseClient.from('ohs_readiness').select('*').order('created_at',{ascending:false}).limit(60)
+  ]);
+  c.loading = false; c.err = (a.error||b.error) ? (a.error||b.error).message : null;
+  if(!a.error) c.rows = a.data||[]; if(!b.error) c.ready = b.data||[];
+  c.proj = {}; render();
+}
+async function ohsProjLoad(name){
+  const c = window.__ohsC; if(c.proj[name]) return; c.proj[name] = {loading:true};
+  const r = await supabaseClient.rpc('ohs_project_readiness',{p_name:name});
+  c.proj[name] = r.error ? {err:r.error.message} : r.data; render();
+}
+const OHSC_TONE = {cleared:'green', pending:'neutral', lapsed:'rust', suspended:'rust'};
+window.renderOhsContractors = function(){
+  if(!cloudReady()) return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use Contractors.</p></div>`;
+  ohsCLoad(); const c = window.__ohsC;
+  const role = String((currentUser()&&currentUser().role)||'');
+  const mgr = ['Admin','Quality Manager','Department Manager'].includes(role);
+  if(c.err) return `<div class="card"><p style="color:var(--rust);">${esc(c.err)}</p></div>`;
+  if(!c.rows) return `<div class="card"><p class="muted-italic">Loading…</p></div>`;
+  const today0 = new Date().toISOString().slice(0,10);
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+    <h2 class="serif" style="margin:0;font-size:18px;">👷 Contractors</h2>
+    ${mgr?`<button class="btn btn-primary" data-ohsc="new">+ Register contractor</button>`:''}</div>
+    <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">A contractor is Cleared only while the COID letter of good standing, public liability insurance and health and safety file are on record and in date. When one expires the contractor shows as Lapsed automatically. Documents are recorded by reference; files are not uploaded here.</p>
+    ${c.rows.length===0?`<p class="muted-italic">No contractors registered.</p>`:c.rows.map(r=>`
+      <div class="top-border" style="padding:10px 0;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <div><div style="font-weight:600;">${esc(r.ref)} — ${esc(r.name)}</div><div class="muted-italic" style="font-size:12px;">${esc(r.scope_of_work||'')}${r.contact?` · ${esc(r.contact)}`:''}${r.next_expiry?` · next expiry ${esc(r.next_expiry)}`:''}</div></div>
+          <span class="tag tag-${OHSC_TONE[r.effective_status]||'neutral'}" style="font-size:10px;">${esc(r.effective_status)}</span></div>
+        ${(r.gaps||[]).length?`<div class="ohs-blocker" style="margin-top:6px;">${(r.gaps||[]).map(g=>`${esc(g.kind)} — ${g.problem==='missing'?'not on record':'expired '+esc(g.expired_on||'')}`).join('; ')}</div>`:''}
+        ${r.suspended_reason?`<div class="ohs-blocker" style="margin-top:6px;">Suspended — ${esc(r.suspended_reason)}</div>`:''}
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${mgr?`<button class="btn btn-ghost" style="font-size:12px;" data-ohsc="evidence" data-id="${r.id}">+ Document</button>`:''}
+          ${(mgr && r.status!=='suspended' && r.effective_status!=='cleared')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohsc="clear" data-id="${r.id}">Clear</button>`:''}
+          ${(['Admin','Quality Manager','Approver','Department Manager'].includes(role) && r.status!=='suspended')?`<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohsc="suspend" data-id="${r.id}">Suspend</button>`:''}
+          ${(['Admin','Quality Manager'].includes(role) && r.status==='suspended')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohsc="reinstate" data-id="${r.id}">Reinstate (to pending)</button>`:''}
+          <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="contractor" data-id="${r.id}">History</button>
+        </div>
+        ${(window.__ohsHist||{})[r.id] ? ohsHistoryHtml(window.__ohsHist[r.id]) : ''}
+      </div>`).join('')}</div>`;
+};
+const OHSR_CHECKS = [['task_hira','Task risk assessment / toolbox talk done for today\'s work'],['induction','Everyone on site is inducted'],['fitness','Workers confirmed fit for the work (fitness status checked)'],['equipment','Equipment inspected and fit for use'],['permits_isolation','Permits and isolations in place for the work'],['changed_conditions','Changed conditions (weather, ground, neighbours) reviewed']];
+window.renderOhsReadiness = function(){
+  if(!cloudReady()) return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use Site Readiness.</p></div>`;
+  ohsCLoad(); const c = window.__ohsC;
+  const role = String((currentUser()&&currentUser().role)||'');
+  const mgr = ['Admin','Quality Manager','Department Manager'].includes(role);
+  if(!c.ready) return `<div class="card"><p class="muted-italic">Loading…</p></div>`;
+  const _nm = new Map(); (state.ohsConstructionNotifications||[]).filter(r=>r.archived!=='true'&&r.projectName&&r.projectName.trim()).forEach(r=>{ const k=r.projectName.trim().toLowerCase(); if(!_nm.has(k)) _nm.set(k, r.projectName.trim()); });
+  const names = [..._nm.values()];
+  names.forEach(n=>ohsProjLoad(n));
+  const RT = {ready:'green', not_ready:'amber', stop_work:'rust'};
+  return `<div class="card"><h2 class="serif" style="margin:0 0 10px;font-size:18px;">✅ Site Readiness</h2>
+    <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Project legal readiness is worked out from the Construction register. A daily record can only say Ready when every check is Yes, the project is ready and every listed contractor is Cleared. Records are permanent.</p>
+    ${names.length===0?`<p class="muted-italic">No projects in the Construction register yet.</p>`:names.map(n=>{
+      const pr = c.proj[n]; const last = c.ready.find(x=>x.project_name.toLowerCase()===n.toLowerCase());
+      return `<div class="top-border" style="padding:10px 0;"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+        <div style="font-weight:600;">${esc(n)}</div>
+        <span class="tag tag-${pr&&pr.ready?'green':'amber'}" style="font-size:10px;">${!pr||pr.loading?'checking…':pr.err?'error':pr.ready?'Legally ready':'Not ready to start'}</span></div>
+        ${pr&&pr.checks?`<div style="font-size:12px;margin-top:4px;">${pr.checks.map(k=>`<div>${k.ok?'✓':'✗'} ${esc(k.label)}${k.detail?` <span class="muted-italic">(${esc(k.detail)})</span>`:''}</div>`).join('')}</div>`:''}
+        ${pr&&pr.err?`<div class="ohs-blocker">${esc(pr.err)}</div>`:''}
+        <div style="margin-top:6px;font-size:12px;">${last?`Last daily record: <span class="tag tag-${RT[last.result]}" style="font-size:10px;">${esc(last.result.replace('_',' '))}</span> ${esc(new Date(last.created_at).toLocaleString())}${(last.reasons||[]).length?` — ${(last.reasons||[]).map(esc).join('; ')}`:''}`:'<span class="muted-italic">No daily record yet.</span>'}</div>
+        ${mgr?`<div style="margin-top:6px;"><button class="btn btn-ghost" style="font-size:12px;" data-ohsc="daily" data-name="${esc(n)}">Record today's readiness</button></div>`:''}</div>`;}).join('')}</div>`;
+};
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('[data-ohsc]'); if(!b) return;
+  const act = b.dataset.ohsc, id = b.dataset.id, c = window.__ohsC;
+  const rpc = async (fn,args)=>{ const r = await supabaseClient.rpc(fn,args); return r.error ? r.error.message : null; };
+  const after = ()=>ohsCLoad(true);
+  if(act==='new') ohsAsk('Register contractor','',[{id:'name',label:'Contractor name'},{id:'scope',label:'Scope of work',type:'textarea'},{id:'contact',label:'Contact'}],
+    v=>rpc('ohs_contractor_save',{p_id:null,p_f:{name:v.name,scope_of_work:v.scope,contact:v.contact}}), after);
+  if(act==='evidence') ohsAsk('Record a document','Required for clearance: COID letter of good standing, public liability insurance, health and safety file. Record the reference, not the file.',
+    [{id:'kind',label:'Document',type:'select',options:['COID letter of good standing','Public liability insurance','Health and safety file / plan','Competence certificates','Induction records','Other']},{id:'reference',label:'Reference (number, issuer, where kept)'},{id:'issued',label:'Issued',type:'date'},{id:'expires',label:'Expires / review date',type:'date'},{id:'note',label:'Note'}],
+    v=>rpc('ohs_contractor_evidence_add',{p_contractor:id,p_f:{kind:v.kind,reference:v.reference,issued_on:v.issued,expires_on:v.expires,note:v.note}}), after);
+  if(act==='clear') ohsAsk('Clear contractor','Clearance needs all three required documents on record and in date.',[],()=>rpc('ohs_contractor_clear',{p_id:id}), after);
+  if(act==='suspend') ohsAsk('Suspend contractor','They cannot be counted as cleared until they are reinstated and cleared again.',[{id:'why',label:'Reason',type:'textarea'}],v=>rpc('ohs_contractor_suspend',{p_id:id,p_reason:v.why}), after);
+  if(act==='reinstate') ohsAsk('Reinstate contractor','Goes back to Pending. Clear them again once documents are confirmed.',[],()=>rpc('ohs_contractor_reinstate',{p_id:id}), after);
+  if(act==='daily'){
+    const f = [{id:'shift',label:'Shift (optional)'}];
+    OHSR_CHECKS.forEach(([k,l])=>{ f.push({id:'c_'+k,label:l,type:'select',options:k==='permits_isolation'?[{v:'yes',l:'Yes'},{v:'no',l:'No'},{v:'na',l:'Not applicable'}]:[{v:'yes',l:'Yes'},{v:'no',l:'No'}]}); f.push({id:'n_'+k,label:'If No — what is outstanding?'}); });
+    f.push({id:'stop',label:'STOP WORK — conditions are unsafe',type:'check'},{id:'n_stop',label:'If stop work — why?'});
+    (c.rows||[]).filter(r=>r.status!=='suspended').forEach(r=>f.push({id:'k_'+r.id,label:`Contractor on site: ${r.name} (${r.effective_status})`,type:'check'}));
+    ohsAsk('Daily readiness — '+b.dataset.name,'Answer every check honestly. The record is permanent and the system works out Ready / Not ready.',f, v=>{
+      const checks={}, notes={};
+      for(const [k] of OHSR_CHECKS){ if(!v['c_'+k]) return 'Answer every check.'; checks[k]=v['c_'+k]; if(v['n_'+k]) notes[k]=v['n_'+k]; }
+      if(v.n_stop) notes.stop_work=v.n_stop;
+      const ids=(c.rows||[]).filter(r=>v['k_'+r.id]).map(r=>r.id);
+      return rpc('ohs_readiness_record',{p_project:b.dataset.name,p_f:{shift:v.shift,checks,notes,stop_work:String(!!v.stop),contractor_ids:ids}});
+    }, after);
+  }
+});
+
 /* ---- OHS lifecycle actions: stop work, revalidate, close out, control failure / restore ---- */
 window.__ohsHist = window.__ohsHist || {};
 function ohsHistoryHtml(rows){
@@ -2224,7 +2324,7 @@ function ohsHistoryHtml(rows){
   if(!rows.length) return `<p class="muted-italic" style="font-size:11.5px;margin-top:6px;">No lifecycle events yet.</p>`;
   return `<div style="margin-top:6px;font-size:11.5px;border-left:3px solid var(--line,#ddd);padding-left:8px;">${rows.map(r=>`<div>${esc(new Date(r.at).toLocaleString())} — <strong>${esc(r.event.replace('_',' '))}</strong>${r.cause?` (${esc(r.cause)})`:''}${r.reason?`: ${esc(r.reason)}`:''}</div>`).join('')}</div>`;
 }
-function ohsAsk(title, intro, fields, onSubmit){
+function ohsAsk(title, intro, fields, onSubmit, after){
   const root = document.getElementById('ohs-modal-root'); if(!root) return;
   const input = f => f.type==='textarea' ? `<textarea id="oa-${f.id}" rows="2"></textarea>`
     : f.type==='select' ? `<select id="oa-${f.id}"><option value="">— choose —</option>${f.options.map(o=>`<option value="${esc(o.v!==undefined?o.v:o)}">${esc(o.l||o)}</option>`).join('')}</select>`
@@ -2241,7 +2341,7 @@ function ohsAsk(title, intro, fields, onSubmit){
     const v = {}; fields.forEach(f=>v[f.id]=val(f.id));
     const err = await onSubmit(v);
     if(err){ root.querySelector('#oa-err').innerHTML = `<div class="ohs-blocker">${esc(err)}</div>`; return; }
-    root.innerHTML=''; await fetchHiraAndPermitRecords();
+    root.innerHTML=''; if(after) await after(); else await fetchHiraAndPermitRecords();
   };
 }
 const OHS_CAUSES = ['Changed conditions','Isolation failure','Emergency','Shift handover','Critical control failed','Gas re-test failed','Other'];
@@ -6530,6 +6630,8 @@ const MODULE_TAB_MAP = {
   "Medical Fitness Matrix":"ohs-medical-fitness",
   "Construction Notification & Permits":"ohs-construction",
   "SAMRASS Incident Reporting":"samrass-reporting",
+  "Contractors":"ohs-contractors",
+  "Site Readiness":"ohs-readiness",
   "Users":"users",
   "Audit Trail":"audit-trail",
   "Settings":"settings"
@@ -8923,6 +9025,8 @@ const NAV_MODULES = [
    { id:"nav-ohs-appointments", icon:"📝", label:"OHS Appointments", isActive(){ return tab==="ohs-appointments"; }, action(){ tab="ohs-appointments"; } },
    { id:"nav-ohs-medical-fitness", icon:"🩺", label:"Medical Fitness Matrix", isActive(){ return tab==="ohs-medical-fitness"; }, action(){ tab="ohs-medical-fitness"; } },
    { id:"nav-ohs-construction", icon:"🏗️", label:"Construction Notification & Permits", isActive(){ return tab==="ohs-construction"; }, action(){ tab="ohs-construction"; } },
+   { id:"nav-ohs-contractors", icon:"👷", label:"Contractors", isActive(){ return tab==="ohs-contractors"; }, action(){ tab="ohs-contractors"; } },
+   { id:"nav-ohs-readiness", icon:"✅", label:"Site Readiness", isActive(){ return tab==="ohs-readiness"; }, action(){ tab="ohs-readiness"; } },
    { id:"nav-samrass", icon:"⛏️", label:"SAMRASS Incident Reporting", isActive(){ return tab==="samrass-reporting"; }, action(){ tab="samrass-reporting"; } },
 ];
 const navModule = id => NAV_MODULES.find(n=>n.id===id);
@@ -8976,6 +9080,8 @@ const NAV_TREE = [
     navModule("nav-ohs-appointments"),
     navModule("nav-ohs-medical-fitness"),
     navModule("nav-ohs-construction"),
+    navModule("nav-ohs-contractors"),
+    navModule("nav-ohs-readiness"),
     navModule("nav-samrass")
   ]
 },
@@ -9417,6 +9523,8 @@ function render(){
         : tab==="ohs-medical-fitness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-medical-fitness"))
         : tab==="ohs-construction" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-construction"))
         : tab==="samrass-reporting" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="samrass-reporting"))
+        : tab==="ohs-contractors" ? (window.renderOhsContractors?window.renderOhsContractors():'')
+        : tab==="ohs-readiness" ? (window.renderOhsReadiness?window.renderOhsReadiness():'')
         : renderSettings()}
       </main>
       ${showProModal ? renderProModal() : ''}
