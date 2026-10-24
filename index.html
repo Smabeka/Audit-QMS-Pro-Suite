@@ -9508,7 +9508,6 @@ function renderDashboard(){
   if(_ncr && _ncr.overdue.length) alerts.push(`⚠️ ${_ncr.overdue.length} NCR${_ncr.overdue.length===1?'':'s'} past due date`);
   if(overdue.length) alerts.push(`⚠️ ${overdue.length} CAPA${overdue.length===1?'':'s'} overdue`);
   if(supplierExpiring.length) alerts.push(`⚠️ ${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`);
-  { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   const _cm = (typeof window.__cmStats === 'function') ? window.__cmStats() : null;
   if(_cm && _cm.late) alerts.push(`⚠️ ${_cm.late} customer complaint${_cm.late===1?'':'s'} past the response deadline`);
   if(_cm && _cm.regNeeded) alerts.push(`⚠️ ${_cm.regNeeded} complaint${_cm.regNeeded===1?'':'s'} need a regulatory notification decision`);
@@ -9596,6 +9595,7 @@ function renderDashboard(){
      Secondary sort: urgency within the tier (more overdue days / higher risk level first),
      so the single worst item in each tier always surfaces first instead of insertion order. */
   const priorities = [];
+  { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
   highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.hazard||'Untitled risk'}`, navId:"nav-risk", urgency:r.riskLevel==="Critical"?1000:500}));
   if(_trn && _trn.overdue) priorities.push({dot:"🔴", text:`Clear ${_trn.overdue} overdue training requirement${_trn.overdue===1?'':'s'}`, navId:"nav-people-training", urgency:1});
