@@ -1994,6 +1994,13 @@ function renderHiraTab(){
             ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<span class="tag tag-neutral" style="font-size:10px;">Controls: ${h.controls_detail.filter(c=>c.status==='Verified').length} verified / ${h.controls_detail.length}</span>` : `<span class="tag tag-amber" style="font-size:10px;">No actual controls recorded</span>`}
             ${h.permit_required ? `<span class="tag tag-amber" style="font-size:10px;">Permit Required</span>` : ''}
           </div>
+          ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<div style="margin-top:6px;font-size:12px;">${h.controls_detail.map((c,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="tag tag-${c.status==='Failed'?'rust':c.status==='Verified'?'green':'amber'}" style="font-size:10px;">${esc(c.status||'Proposed')}</span>${c.critical?'<span class="tag tag-navy" style="font-size:10px;">Critical</span>':''}<span>${esc(c.text||'')} <span class="muted-italic">(${esc(c.owner||'—')})</span></span></div>`).join('')}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="ctrl-fail" data-id="${h.id}">Report control failure</button>
+            ${(h.controls_detail.some(c=>c.status==='Failed') && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="ctrl-restore" data-id="${h.id}">Restore control</button>` : ''}
+            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="hira" data-id="${h.id}">History</button>
+          </div>
+          ${(window.__ohsHist||{})[h.id] ? ohsHistoryHtml(window.__ohsHist[h.id]) : ''}` : ''}
           ${(h.status==="PENDING_APPROVAL" && canApproveHira(role)) ? `
             <div style="margin-top:8px;">
               <button class="btn btn-ghost" style="font-size:12px;" data-action="approve-hira" data-id="${h.id}">Approve</button>
@@ -2039,8 +2046,14 @@ function renderPtwTab(){
             ${(p.status==="DRAFT" && new Date(p.valid_to)>=new Date() && canGiveSupervisorSignoff(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="sign-permit" data-role-sign="SUPERVISOR" data-id="${p.id}">Sign as supervisor</button>` : ''}
             ${(p.status==="DRAFT" && new Date(p.valid_to)>=new Date() && canGiveSafetyOfficerSignoff(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="sign-permit" data-role-sign="SAFETY_OFFICER" data-id="${p.id}">Sign as safety officer</button>` : ''}
             ${(p.status!=="CLOSED" && p.status!=="REVOKED" && canRevokePermit(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="revoke-permit" data-id="${p.id}">Revoke</button>` : ''}
-            ${(p.status==="ACTIVE" || p.status==="EXTENDED") ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="close-permit" data-id="${p.id}">Close Out</button>` : ''}
+            ${(p.status==="ACTIVE" || p.status==="EXTENDED") ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="suspend" data-id="${p.id}">⛔ Stop work (suspend)</button>` : ''}
+            ${(p.status==="SUSPENDED" && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="revalidate" data-id="${p.id}" data-type="${esc(p.permit_type)}">Revalidate</button>` : ''}
+            ${((p.status==="ACTIVE" || p.status==="EXTENDED" || p.status==="SUSPENDED") && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="close" data-id="${p.id}">Close out</button>` : ''}
+            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="permit" data-id="${p.id}">History</button>
           </div>
+          ${p.status==="SUSPENDED" ? `<div class="ohs-blocker" style="margin-top:6px;">Suspended — ${esc(p.suspension_reason||'')}. Work must not continue until it is revalidated.</div>` : ''}
+          ${(window.__ohsHist||{})[p.id] ? ohsHistoryHtml(window.__ohsHist[p.id]) : ''}
+          ${p.closeout ? `<div class="muted-italic" style="font-size:11.5px;margin-top:4px;">Closed out: ${esc(p.closeout.handover_note||'')}</div>` : ''}
         </div>
       `).join('')}
     </div>
@@ -2131,6 +2144,87 @@ window.ohsFitnessOverride = function(){
         <span class="tag tag-${tone(r.fitness)}" style="font-size:10px;">${esc(r.fitness)}</span></div>`).join('')}</div>`;
 };
 document.addEventListener('click', e=>{ if(e.target.closest && e.target.closest('[data-ohs-fit-refresh]')){ window.__ohsFit = null; render(); } });
+
+
+/* ---- OHS lifecycle actions: stop work, revalidate, close out, control failure / restore ---- */
+window.__ohsHist = window.__ohsHist || {};
+function ohsHistoryHtml(rows){
+  if(!rows) return '';
+  if(!rows.length) return `<p class="muted-italic" style="font-size:11.5px;margin-top:6px;">No lifecycle events yet.</p>`;
+  return `<div style="margin-top:6px;font-size:11.5px;border-left:3px solid var(--line,#ddd);padding-left:8px;">${rows.map(r=>`<div>${esc(new Date(r.at).toLocaleString())} — <strong>${esc(r.event.replace('_',' '))}</strong>${r.cause?` (${esc(r.cause)})`:''}${r.reason?`: ${esc(r.reason)}`:''}</div>`).join('')}</div>`;
+}
+function ohsAsk(title, intro, fields, onSubmit){
+  const root = document.getElementById('ohs-modal-root'); if(!root) return;
+  const input = f => f.type==='textarea' ? `<textarea id="oa-${f.id}" rows="2"></textarea>`
+    : f.type==='select' ? `<select id="oa-${f.id}"><option value="">— choose —</option>${f.options.map(o=>`<option value="${esc(o.v!==undefined?o.v:o)}">${esc(o.l||o)}</option>`).join('')}</select>`
+    : f.type==='check' ? `<input type="checkbox" id="oa-${f.id}" />`
+    : `<input id="oa-${f.id}" type="${f.type||'text'}" ${f.type==='number'?'step="0.1"':''} />`;
+  root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;">
+    <h2>${esc(title)}</h2>${intro?`<p class="ohs-hint">${esc(intro)}</p>`:''}
+    ${fields.map(f=>f.type==='check' ? `<label class="ohs-checkbox">${input(f)} ${esc(f.label)}</label>` : `<label class="ohs-field"><span>${esc(f.label)}</span>${input(f)}</label>`).join('')}
+    <div id="oa-err" class="ohs-blockers"></div>
+    <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Cancel</button><button type="button" class="ohs-btn-primary" data-oa="ok">Confirm</button></div></div></div>`;
+  const val = id => { const e = root.querySelector('#oa-'+id); return e.type==='checkbox' ? e.checked : e.value.trim(); };
+  root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
+  root.querySelector('[data-oa="ok"]').onclick = async ()=>{
+    const v = {}; fields.forEach(f=>v[f.id]=val(f.id));
+    const err = await onSubmit(v);
+    if(err){ root.querySelector('#oa-err').innerHTML = `<div class="ohs-blocker">${esc(err)}</div>`; return; }
+    root.innerHTML=''; await fetchHiraAndPermitRecords();
+  };
+}
+const OHS_CAUSES = ['Changed conditions','Isolation failure','Emergency','Shift handover','Critical control failed','Gas re-test failed','Other'];
+const OHS_GAS = { HOT_WORK:[{k:'lel',l:'LEL (%)',min:false}], CONFINED_SPACE:[{k:'o2',l:'O2 (%)',min:true},{k:'lel',l:'LEL (%)',min:false},{k:'co',l:'CO (ppm)',min:false}] };
+document.addEventListener('click', async e=>{
+  const b = e.target.closest && e.target.closest('[data-ohs-act]'); if(!b) return;
+  const act = b.dataset.ohsAct, id = b.dataset.id;
+  const rpc = async (fn,args)=>{ const r = await supabaseClient.rpc(fn,args); return r.error ? r.error.message : null; };
+  if(act==='history'){
+    if(window.__ohsHist[id]){ delete window.__ohsHist[id]; render(); return; }
+    const r = await supabaseClient.from('ohs_events').select('*').eq('record_id',id).order('at',{ascending:true});
+    window.__ohsHist[id] = r.data||[]; render(); return;
+  }
+  if(act==='suspend') ohsAsk('Stop work — suspend this permit','Anyone may stop work. The permit stays suspended until an authorised person revalidates it.',
+    [{id:'cause',label:'Cause',type:'select',options:OHS_CAUSES},{id:'reason',label:'What happened?',type:'textarea'}],
+    v=>rpc('ohs_permit_suspend',{p_id:id,p_cause:v.cause,p_reason:v.reason}));
+  if(act==='revalidate'){
+    const gas = OHS_GAS[b.dataset.type]||[];
+    const f = [{id:'resolution',label:'What was done to make the work safe again?',type:'textarea'},{id:'conditions_reviewed',label:'Conditions reviewed on site',type:'check'},{id:'workers_rebriefed',label:'Workers re-briefed',type:'check'}];
+    if(gas.length){
+      f.push({id:'tester',label:'New gas test — tested by'},{id:'comp',label:'Tester competence evidence'},{id:'inst',label:'Instrument ID'},{id:'cal',label:'Instrument calibration is current',type:'check'},
+             {id:'tat',label:'Test time',type:'datetime-local'},{id:'where',label:'Place / sampling points'},{id:'source',label:'Source of the permitted limits'});
+      gas.forEach(g=>{ f.push({id:'r_'+g.k,label:g.l+' reading',type:'number'}); if(g.min) f.push({id:'mn_'+g.k,label:g.l+' permitted min',type:'number'}); f.push({id:'mx_'+g.k,label:g.l+' permitted max',type:'number'}); });
+    }
+    ohsAsk('Revalidate permit','Only restart when conditions are safe. A gas permit needs a new test taken after the suspension.', f, v=>{
+      const a = {resolution:v.resolution, conditions_reviewed:String(v.conditions_reviewed), workers_rebriefed:String(v.workers_rebriefed)};
+      if(gas.length){
+        const readings={}, limits={}; let within=true;
+        for(const g of gas){
+          if(v['r_'+g.k]===''||v['mx_'+g.k]===''||(g.min&&v['mn_'+g.k]==='')) return 'Enter every reading and its permitted limit. Nothing is assumed safe.';
+          readings[g.k]=v['r_'+g.k]; limits[g.k]={min:g.min?v['mn_'+g.k]:null,max:v['mx_'+g.k]};
+          if(Number(v['r_'+g.k])>Number(v['mx_'+g.k])||(g.min&&Number(v['r_'+g.k])<Number(v['mn_'+g.k]))) within=false;
+        }
+        if(!v.tat) return 'Enter the test time.';
+        if(!within) return 'A reading is outside the permitted limits — the permit cannot restart.';
+        a.gas_test_detail={tester:v.tester,tester_competence:v.comp,instrument_id:v.inst,calibration_ok:v.cal?'true':'false',tested_at:new Date(v.tat).toISOString(),test_location:v.where,limits_source:v.source,readings,limits,within_limits:'true'};
+        if(!v.cal) return 'Confirm the instrument calibration is current.';
+      }
+      return rpc('ohs_permit_revalidate',{p_id:id,p_f:a});
+    });
+  }
+  if(act==='close') ohsAsk('Close out permit','Confirm the work is finished and nothing is left unsafe.',
+    [{id:'work_completed',label:'Work is complete',type:'check'},{id:'area_safe',label:'Area is clean and safe',type:'check'},{id:'isolations_removed',label:'Isolations removed',type:'select',options:[{v:'true',l:'Yes, removed'},{v:'not_applicable',l:'Not applicable'}]},{id:'handover_note',label:'Handover note',type:'textarea'}],
+    v=>rpc('ohs_permit_close',{p_id:id,p_f:{work_completed:String(v.work_completed),area_safe:String(v.area_safe),isolations_removed:v.isolations_removed,handover_note:v.handover_note}}));
+  if(act==='ctrl-fail' || act==='ctrl-restore'){
+    const h = (hiraRecords||[]).find(x=>x.id===id); if(!h) return;
+    const failing = act==='ctrl-fail';
+    const opts = (h.controls_detail||[]).map((c,i)=>({v:String(i),l:`${c.text}${c.critical?' (critical)':''} — ${c.status||'Proposed'}`})).filter((o,i)=> failing ? true : (h.controls_detail[i].status==='Failed'));
+    ohsAsk(failing?'Report control failure':'Restore control', failing?'A critical control failing sends the HIRA back to review and suspends every active permit linked to it.':'Verified restoration, with evidence. The HIRA must then be approved again before permits can restart.',
+      [{id:'idx',label:'Control',type:'select',options:opts},{id:'why',label:failing?'What failed?':'How was it restored and verified?',type:'textarea'}],
+      async v=>{ if(v.idx==='') return 'Choose the control.';
+        return failing ? rpc('ohs_control_failed',{p_hira_id:id,p_idx:Number(v.idx),p_reason:v.why}) : rpc('ohs_control_restore',{p_hira_id:id,p_idx:Number(v.idx),p_evidence:v.why}); });
+  }
+});
 
 const today = () => new Date().toISOString().slice(0,10);
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date(today())) / 86400000);
