@@ -2317,6 +2317,88 @@ document.addEventListener('click', e=>{
   }
 });
 
+
+/* ---- Critical controls register (major unwanted events) ---- */
+window.__ohsCc = window.__ohsCc || {events:null, controls:null, dir:null, err:null, loading:false};
+async function ohsCcLoad(force){
+  const c = window.__ohsCc; if(!cloudReady() || c.loading || (c.controls && !force)) return;
+  c.loading = true;
+  const [a,b,d] = await Promise.all([
+    supabaseClient.from('ohs_cc_events').select('*').eq('status','active').order('ref'),
+    supabaseClient.from('ohs_cc_overview').select('*').order('ref'),
+    c.dir ? Promise.resolve({data:c.dir}) : supabaseClient.rpc('get_org_directory')
+  ]);
+  c.loading = false; c.err = (a.error||b.error) ? (a.error||b.error).message : null;
+  if(!a.error) c.events = a.data||[]; if(!b.error) c.controls = b.data||[]; if(d && d.data) c.dir = d.data;
+  render();
+}
+window.ohsDashEnsure = function(){ if(window.__ohsDash || !cloudReady()) return; window.__ohsDash = {}; ohsCcLoad(); if(typeof ohsCLoad==='function') ohsCLoad(); };
+window.__ohsDashStats = function(){
+  const c = window.__ohsCc, k = window.__ohsC; if(!c.controls) return null;
+  return { ccFailed:c.controls.filter(x=>x.effective_status==='failed').length, ccOverdue:c.controls.filter(x=>x.effective_status==='overdue').length,
+           lapsed: k && k.rows ? k.rows.filter(x=>x.effective_status==='lapsed').length : 0 };
+};
+const OHSCC_CATS = ['Fall of ground','Vehicle-person interaction','Uncontrolled energy','Fire / explosion','Inrush','Occupational exposure','Other'];
+const OHSCC_TONE = {effective:'green',overdue:'amber',unverified:'neutral',failed:'rust',retired:'neutral'};
+window.renderOhsCritical = function(){
+  if(!cloudReady()) return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use Critical Controls.</p></div>`;
+  ohsCcLoad(); const c = window.__ohsCc;
+  const role = String((currentUser()&&currentUser().role)||'');
+  const mgr = ['Admin','Quality Manager','Department Manager'].includes(role);
+  const verifier = ['Admin','Quality Manager','Approver','Department Manager','Auditor'].includes(role);
+  if(c.err) return `<div class="card"><p style="color:var(--rust);">${esc(c.err)}</p></div>`;
+  if(!c.controls||!c.events) return `<div class="card"><p class="muted-italic">Loading…</p></div>`;
+  const cnt = k=>c.controls.filter(x=>x.effective_status===k).length;
+  const me = currentProfile && currentProfile.id;
+  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+    <h2 class="serif" style="margin:0;font-size:18px;">🛡️ Critical Controls</h2>${mgr?`<button class="btn btn-primary" data-ohscc="event">+ Major unwanted event</button>`:''}</div>
+    <p class="muted-italic" style="font-size:12px;margin-bottom:10px;">For each major unwanted event (fall of ground, vehicle–person interaction, uncontrolled energy, fire / explosion, inrush, occupational exposure): the controls that prevent or reduce it, what "working" means for each, who verifies it and how often, what happens on failure, and who may restore it. Status is worked out from the verification record — it cannot be typed in. MHSA references are provisional until your legal adviser confirms them.</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;"><span class="tag tag-rust">${cnt('failed')} failed</span><span class="tag tag-amber">${cnt('overdue')} overdue</span><span class="tag tag-neutral">${cnt('unverified')} unverified</span><span class="tag tag-green">${cnt('effective')} effective</span></div>
+    ${c.events.length===0?`<p class="muted-italic">No major unwanted events recorded.</p>`:c.events.map(ev=>`
+      <div class="top-border" style="padding:10px 0;"><div style="display:flex;justify-content:space-between;gap:8px;"><div><div style="font-weight:600;">${esc(ev.ref)} — ${esc(ev.title)}</div>
+        <div class="muted-italic" style="font-size:12px;">${esc(ev.category)}${ev.site_area?` · ${esc(ev.site_area)}`:''} · Causes: ${esc(ev.causes)} · Consequence: ${esc(ev.consequence)}</div></div>
+        ${mgr?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="control" data-id="${ev.id}">+ Control</button>`:''}</div>
+        ${c.controls.filter(x=>x.event_id===ev.id && x.effective_status!=='retired').map(k=>`
+          <div style="margin:8px 0 0 10px;padding:8px;border:1px solid var(--line,#ddd);border-radius:6px;">
+            <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><div style="font-weight:600;font-size:13px;">${esc(k.ref)} — ${esc(k.name)} <span class="muted-italic">(${esc(k.kind)})</span></div>
+              <span class="tag tag-${OHSCC_TONE[k.effective_status]}" style="font-size:10px;">${esc(k.effective_status)}</span></div>
+            <div style="font-size:12px;">Working means: ${esc(k.performance_requirement)}</div>
+            <div class="muted-italic" style="font-size:11.5px;">Owner ${esc(k.owner_name||'—')} · verify ${esc(k.verify_method)} every ${k.verify_every_days} d · ${k.last_verified_at?`last ${esc(new Date(k.last_verified_at).toLocaleDateString())}, next ${esc(new Date(k.next_due).toLocaleDateString())}`:'never verified'} · restore by ${esc(k.restoration_name||'—')}</div>
+            ${k.effective_status==='failed'?`<div class="ohs-blocker" style="margin-top:6px;">FAILED — response: ${esc(k.failure_response)}</div>`:''}
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
+              ${(verifier && k.state!=='failed')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="verify" data-id="${k.id}">Verify</button>`:''}
+              ${(k.state==='failed' && me===k.restoration_authority)?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="restore" data-id="${k.id}">Restore</button>`:''}
+              ${mgr?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="edit" data-id="${k.id}">Edit</button>`:''}
+              <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="cc" data-id="${k.id}">History</button></div>
+            ${(window.__ohsHist||{})[k.id] ? ohsHistoryHtml(window.__ohsHist[k.id]) : ''}
+          </div>`).join('') || `<p class="muted-italic" style="margin-left:10px;font-size:12px;">No controls yet.</p>`}
+      </div>`).join('')}</div>`;
+};
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('[data-ohscc]'); if(!b) return;
+  const act = b.dataset.ohscc, id = b.dataset.id, c = window.__ohsCc;
+  const rpc = async (fn,args)=>{ const r = await supabaseClient.rpc(fn,args); return r.error ? r.error.message : null; };
+  const after = ()=>ohsCcLoad(true);
+  const people = (c.dir||[]).map(p=>({v:p.id,l:p.full_name}));
+  if(act==='event') ohsAsk('Major unwanted event','What could go wrong badly enough to kill or seriously injure?',[
+    {id:'category',label:'Category',type:'select',options:OHSCC_CATS},{id:'title',label:'Event'},{id:'site_area',label:'Site / area'},
+    {id:'description',label:'Description',type:'textarea'},{id:'causes',label:'Causes',type:'textarea'},{id:'consequence',label:'Worst credible consequence',type:'textarea'}],
+    v=>rpc('ohs_mue_save',{p_id:null,p_f:v}), after);
+  const ctrlFields = [{id:'name',label:'Control'},{id:'kind',label:'Type',type:'select',options:['preventive','mitigating']},
+    {id:'performance_requirement',label:'Performance requirement — what must be true for it to count as working (measurable)',type:'textarea'},
+    {id:'owner_id',label:'Owner',type:'select',options:people},{id:'verify_method',label:'How it is verified',type:'textarea'},{id:'verify_every_days',label:'Verify every (days)',type:'number'},
+    {id:'failure_response',label:'If it fails — what must happen',type:'textarea'},{id:'restoration_authority',label:'Restoration authority (Admin / Quality / Department Manager)',type:'select',options:people}];
+  const ctrlPayload = v=>({name:v.name,kind:v.kind,performance_requirement:v.performance_requirement,owner_id:v.owner_id,verify_method:v.verify_method,verify_every_days:v.verify_every_days,failure_response:v.failure_response,restoration_authority:v.restoration_authority});
+  if(act==='control') ohsAsk('New critical control','',ctrlFields, v=>rpc('ohs_cc_save',{p_id:null,p_event:id,p_f:ctrlPayload(v)}), after);
+  if(act==='edit') ohsAsk('Edit control','Changing the performance requirement sets the control back to Unverified.',ctrlFields, v=>rpc('ohs_cc_save',{p_id:id,p_event:null,p_f:ctrlPayload(v)}), after);
+  if(act==='verify') ohsAsk('Verify control','Check against the performance requirement. A control cannot be verified by its own owner. If it is not working, say what you did about it.',[
+    {id:'result',label:'Result',type:'select',options:[{v:'effective',l:'Effective — meets the requirement'},{v:'not_effective',l:'Not effective — FAILED'}]},
+    {id:'evidence',label:'What you checked and found',type:'textarea'},{id:'action_taken',label:'If failed — immediate action taken',type:'textarea'}],
+    v=>rpc('ohs_cc_verify',{p_id:id,p_f:v}), after);
+  if(act==='restore') ohsAsk('Restore control','Only the named restoration authority can do this. Describe the repair and the test showing the control now meets its requirement.',[{id:'ev',label:'Repair and test',type:'textarea'}],
+    v=>rpc('ohs_cc_restore',{p_id:id,p_evidence:v.ev}), after);
+});
+
 /* ---- OHS lifecycle actions: stop work, revalidate, close out, control failure / restore ---- */
 window.__ohsHist = window.__ohsHist || {};
 function ohsHistoryHtml(rows){
@@ -6630,6 +6712,7 @@ const MODULE_TAB_MAP = {
   "Medical Fitness Matrix":"ohs-medical-fitness",
   "Construction Notification & Permits":"ohs-construction",
   "SAMRASS Incident Reporting":"samrass-reporting",
+  "Critical Controls":"ohs-critical",
   "Contractors":"ohs-contractors",
   "Site Readiness":"ohs-readiness",
   "Users":"users",
@@ -9025,6 +9108,7 @@ const NAV_MODULES = [
    { id:"nav-ohs-appointments", icon:"📝", label:"OHS Appointments", isActive(){ return tab==="ohs-appointments"; }, action(){ tab="ohs-appointments"; } },
    { id:"nav-ohs-medical-fitness", icon:"🩺", label:"Medical Fitness Matrix", isActive(){ return tab==="ohs-medical-fitness"; }, action(){ tab="ohs-medical-fitness"; } },
    { id:"nav-ohs-construction", icon:"🏗️", label:"Construction Notification & Permits", isActive(){ return tab==="ohs-construction"; }, action(){ tab="ohs-construction"; } },
+   { id:"nav-ohs-critical", icon:"🛡️", label:"Critical Controls", isActive(){ return tab==="ohs-critical"; }, action(){ tab="ohs-critical"; } },
    { id:"nav-ohs-contractors", icon:"👷", label:"Contractors", isActive(){ return tab==="ohs-contractors"; }, action(){ tab="ohs-contractors"; } },
    { id:"nav-ohs-readiness", icon:"✅", label:"Site Readiness", isActive(){ return tab==="ohs-readiness"; }, action(){ tab="ohs-readiness"; } },
    { id:"nav-samrass", icon:"⛏️", label:"SAMRASS Incident Reporting", isActive(){ return tab==="samrass-reporting"; }, action(){ tab="samrass-reporting"; } },
@@ -9080,6 +9164,7 @@ const NAV_TREE = [
     navModule("nav-ohs-appointments"),
     navModule("nav-ohs-medical-fitness"),
     navModule("nav-ohs-construction"),
+    navModule("nav-ohs-critical"),
     navModule("nav-ohs-contractors"),
     navModule("nav-ohs-readiness"),
     navModule("nav-samrass")
@@ -9523,6 +9608,7 @@ function render(){
         : tab==="ohs-medical-fitness" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-medical-fitness"))
         : tab==="ohs-construction" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-construction"))
         : tab==="samrass-reporting" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="samrass-reporting"))
+        : tab==="ohs-critical" ? (window.renderOhsCritical?window.renderOhsCritical():'')
         : tab==="ohs-contractors" ? (window.renderOhsContractors?window.renderOhsContractors():'')
         : tab==="ohs-readiness" ? (window.renderOhsReadiness?window.renderOhsReadiness():'')
         : renderSettings()}
@@ -9939,6 +10025,10 @@ function renderDashboard(){
      Secondary sort: urgency within the tier (more overdue days / higher risk level first),
      so the single worst item in each tier always surfaces first instead of insertion order. */
   const priorities = [];
+  { const _oh = (window.ohsDashEnsure && window.ohsDashEnsure(), window.__ohsDashStats && window.__ohsDashStats());
+    if(_oh){ if(_oh.ccFailed) priorities.push({dot:"🔴", text:`${_oh.ccFailed} critical control${_oh.ccFailed===1?' has':'s have'} failed — restore before work continues`, navId:"nav-ohs-critical", urgency:100+_oh.ccFailed});
+      if(_oh.ccOverdue) priorities.push({dot:"🟡", text:`Verify ${_oh.ccOverdue} overdue critical control${_oh.ccOverdue===1?'':'s'}`, navId:"nav-ohs-critical", urgency:30+_oh.ccOverdue});
+      if(_oh.lapsed) priorities.push({dot:"🟡", text:`${_oh.lapsed} contractor${_oh.lapsed===1?' has':'s have'} lapsed documents`, navId:"nav-ohs-contractors", urgency:20+_oh.lapsed}); } }
   { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
   highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.label||'Untitled risk'}`, navId:"nav-risk", urgency:r.level==="Critical"?1000:500}));
