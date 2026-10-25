@@ -1165,6 +1165,9 @@ async function createHiraAssessment(hiraData) {
     residual_rationale: hiraData.residual_rationale,
     controls_detail: hiraData.controls_detail,
     hazards: hiraData.hazards || [],
+    parent_hira_id: hiraData.parent_hira_id || null,
+    issue_trigger: hiraData.issue_trigger || null,
+    issue_trigger_ref: hiraData.issue_trigger_ref || null,
     scope: hiraData.scope,
     permit_required: hiraData.permit_required,
     status: hiraData.status,
@@ -1584,7 +1587,7 @@ function canRevokePermit(userRole) {
  * @param {(formResult: object) => void} opts.onSubmit - called with evaluateHira() result + raw fields
  * @param {() => void} opts.onCancel
  */
-function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
+function renderHiraModal(container, { userRole, baselines = [], onSubmit, onCancel }) {
   if (!canCreateHira(userRole)) {
     container.innerHTML = `<div class="ohs-modal-error">Your role (${escapeHtml(userRole)}) is not permitted to create HIRA assessments.</div>`;
     return;
@@ -1597,6 +1600,15 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
         <p class="ohs-hint">One card per hazard. Nothing is pre-rated. Inherent = no controls. Current = with the controls already in place (you must confirm they work). Residual = after the additional controls, which only count once Verified with evidence.</p>
         <label class="ohs-field"><span>Assessment type</span>
           <select id="hira-type"><option value="">— choose —</option><option>Baseline</option><option>Issue-based</option><option>Task</option><option>Review</option></select></label>
+        <div id="hira-tier-box" style="display:none;">
+          <label class="ohs-field"><span>Parent Baseline HIRA (the site-wide assessment this one sits under)</span>
+            <select id="hira-parent"><option value="">— none —</option>${baselines.map((b) => `<option value="${b.id}">${escapeHtml((b.activity_description || 'Baseline') + ' — ' + (b.location || ''))}</option>`).join('')}</select></label>
+          <div id="hira-issue-box" style="display:none;">
+            <label class="ohs-field"><span>What triggered this issue-based HIRA?</span>
+              <select id="hira-trigger"><option value="">— choose —</option><option>New machinery or equipment</option><option>Change in method or procedure</option><option>After an incident</option><option>Change in the environment or layout</option><option>New or changed legal requirement</option><option>Other</option></select></label>
+            <label class="ohs-field" id="hira-trigger-ref-wrap" style="display:none;"><span>Incident reference that triggered it</span><input id="hira-trigger-ref" type="text" /></label>
+          </div>
+        </div>
         <label class="ohs-field"><span>Activity and boundaries (what is and is not covered)</span><textarea id="hira-activity" rows="2"></textarea></label>
         <label class="ohs-field"><span>Site / project / section and location</span><input id="hira-location" type="text" /></label>
         <div class="ohs-field-row">
@@ -1636,6 +1648,7 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
         <label class="ohs-field"><span>Evidence it works (for Verified)</span><input class="c-evidence" type="text" /></label>
       </div>
       <label class="ohs-checkbox"><input class="c-critical" type="checkbox" /> Critical control (failure must stop the work)</label>
+      <label class="ohs-field c-days-wrap" style="display:none;"><span>Routine check every (days) — the system will flag it when a check is overdue</span><input class="c-days" type="number" min="1" max="366" value="30" /></label>
       <button type="button" class="ohs-btn-secondary c-remove">Remove control</button>`;
     row.querySelector('.c-remove').addEventListener('click', () => { row.remove(); recalc(); });
     row.querySelectorAll('input,select').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
@@ -1684,12 +1697,20 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
       text: r.querySelector('.c-text').value.trim(), tier: r.querySelector('.c-tier').value, owner: r.querySelector('.c-owner').value.trim(),
       due: r.querySelector('.c-due').value || null, status: r.querySelector('.c-status').value, evidence: r.querySelector('.c-evidence').value.trim(),
       critical: r.querySelector('.c-critical').checked,
+      verify_every_days: r.querySelector('.c-critical').checked ? (r.querySelector('.c-days').value ? Number(r.querySelector('.c-days').value) : null) : null,
     })),
   }));
   const recalc = () => {
     const hz = readHazards();
     const problems = [];
     if (!$('#hira-type').value) problems.push('Choose the assessment type.');
+    { const ty = $('#hira-type').value, tier = ty === 'Issue-based' || ty === 'Task' || ty === 'Review';
+      $('#hira-tier-box').style.display = tier ? '' : 'none'; $('#hira-issue-box').style.display = ty === 'Issue-based' ? '' : 'none';
+      $('#hira-trigger-ref-wrap').style.display = ($('#hira-trigger').value === 'After an incident' && ty === 'Issue-based') ? '' : 'none';
+      container.querySelectorAll('.hz-ctrl').forEach((r) => { r.querySelector('.c-days-wrap').style.display = r.querySelector('.c-critical').checked ? '' : 'none'; });
+      if ((ty === 'Issue-based' || ty === 'Task') && baselines.length && !$('#hira-parent').value) problems.push('Link this HIRA to its parent Baseline HIRA.');
+      if (ty === 'Issue-based' && !$('#hira-trigger').value) problems.push('Say what triggered this issue-based HIRA.');
+      if (ty === 'Issue-based' && $('#hira-trigger').value === 'After an incident' && !$('#hira-trigger-ref').value.trim()) problems.push('Give the incident reference that triggered it.'); }
     if (!$('#hira-activity').value.trim() || !$('#hira-location').value.trim()) problems.push('Activity and location are required.');
     if (!hz.length) problems.push('Add at least one hazard.');
     let maxInh = null, maxRes = null;
@@ -1728,7 +1749,7 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
     $('#hira-blockers').innerHTML = problems.concat(soft).map((b) => `<div class="ohs-blocker">${escapeHtml(b)}</div>`).join('');
     return { hz, problems, ready, maxInh, maxRes, result };
   };
-  container.querySelectorAll('#hira-type, #hira-activity, #hira-location').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
+  container.querySelectorAll('#hira-type, #hira-activity, #hira-location, #hira-parent, #hira-trigger, #hira-trigger-ref').forEach((el) => { el.addEventListener('input', recalc); el.addEventListener('change', recalc); });
   $('#hira-add-hazard').addEventListener('click', addHazard);
   addHazard();
   $('[data-action="cancel"]').addEventListener('click', () => onCancel && onCancel());
@@ -1740,6 +1761,9 @@ function renderHiraModal(container, { userRole, onSubmit, onCancel }) {
       activity_description: $('#hira-activity').value.trim(),
       location: $('#hira-location').value.trim(),
       assessment_type: $('#hira-type').value,
+      parent_hira_id: ($('#hira-type').value !== 'Baseline' && $('#hira-parent').value) || null,
+      issue_trigger: $('#hira-type').value === 'Issue-based' ? $('#hira-trigger').value : null,
+      issue_trigger_ref: ($('#hira-type').value === 'Issue-based' && $('#hira-trigger').value === 'After an incident') ? $('#hira-trigger-ref').value.trim() : null,
       inherent_severity: c.maxInh.s, inherent_likelihood: c.maxInh.l, residual_severity: c.maxRes.s, residual_likelihood: c.maxRes.l,
       inherent_rationale: 'See hazard rows', residual_rationale: 'See hazard rows',
       hazards: c.hz,
@@ -2004,7 +2028,7 @@ function renderHiraTab(){
         <h2 class="serif" style="margin:0;font-size:18px;">⚠️ HIRA Assessments</h2>
         ${canCreateHira(role) ? `<button class="btn btn-primary" data-action="open-hira-modal">+ New HIRA Assessment</button>` : ''}
       </div>
-      ${window.ohsOfflineNote?window.ohsOfflineNote():''}${window.ohsAuthNote?window.ohsAuthNote():''}
+      ${window.ohsOfflineNote?window.ohsOfflineNote():''}${window.ohsAuthNote?window.ohsAuthNote():''}${window.ohsHiraDueBanner?window.ohsHiraDueBanner():''}
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hazard Identification & Risk Assessment. Nothing is pre-rated; a control lowers the risk only once it is Verified with evidence. Note: this register uses its own 5×5 bands, which differ from the Risk Management register.</p>
       ${hiraRecords.length===0 ? `<p class="muted-italic">No HIRA assessments yet.</p>` : hiraRecords.map(h => `
         <div class="top-border" style="padding:10px 0;">
@@ -2012,6 +2036,7 @@ function renderHiraTab(){
             <div>
               <div style="font-weight:600;">${esc(h.activity_description)}</div>
               <div class="muted-italic" style="font-size:12px;">${esc(h.location)}</div>
+              ${window.ohsHiraChain?window.ohsHiraChain(h):''}
             </div>
             <span class="tag tag-${hiraStatusTone(h.status)}" style="font-size:10px;">${esc(h.status)}</span>
           </div>
@@ -2022,7 +2047,7 @@ function renderHiraTab(){
             ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<span class="tag tag-neutral" style="font-size:10px;">Controls: ${h.controls_detail.filter(c=>c.status==='Verified').length} verified / ${h.controls_detail.length}</span>` : `<span class="tag tag-amber" style="font-size:10px;">No actual controls recorded</span>`}
             ${h.permit_required ? `<span class="tag tag-amber" style="font-size:10px;">Permit Required</span>` : ''}
           </div>
-          ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<div style="margin-top:6px;font-size:12px;">${h.controls_detail.map((c,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="tag tag-${c.status==='Failed'?'rust':c.status==='Verified'?'green':'amber'}" style="font-size:10px;">${esc(c.status||'Proposed')}</span>${c.critical?'<span class="tag tag-navy" style="font-size:10px;">Critical</span>':''}<span>${c.hazard?`<span class="muted-italic">${esc(c.hazard)}: </span>`:''}${esc(c.text||'')} <span class="muted-italic">(${esc(c.owner||'—')})</span></span></div>`).join('')}</div>
+          ${Array.isArray(h.controls_detail)&&h.controls_detail.length ? `<div style="margin-top:6px;font-size:12px;">${h.controls_detail.map((c,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="tag tag-${c.status==='Failed'?'rust':c.status==='Verified'?'green':'amber'}" style="font-size:10px;">${esc(c.status||'Proposed')}</span>${c.critical?'<span class="tag tag-navy" style="font-size:10px;">Critical</span>':''}${(c.critical&&h.status==='APPROVED'&&window.ohsCtlCheckHtml)?window.ohsCtlCheckHtml(h,c):''}<span>${c.hazard?`<span class="muted-italic">${esc(c.hazard)}: </span>`:''}${esc(c.text||'')} <span class="muted-italic">(${esc(c.owner||'—')})</span></span></div>`).join('')}</div>
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="ctrl-fail" data-id="${h.id}">Report control failure</button>
             ${(h.controls_detail.some(c=>c.status==='Failed') && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="ctrl-restore" data-id="${h.id}">Restore control</button>` : ''}
@@ -2097,6 +2122,7 @@ function openHiraModal(){
   root.innerHTML = '';
   renderHiraModal(root, {
     userRole: currentUser()?.role,
+    baselines: (hiraRecords||[]).filter(h=>h.assessment_type==='Baseline' && h.status==='APPROVED'),
     onSubmit: async (hiraData) => {
       const { data, error, eventLoggingFailed } = await createHiraAssessment(hiraData);
       if(error && !data){ alert(`Failed to save HIRA assessment: ${error.message}`); return; }
@@ -2341,16 +2367,19 @@ async function ohsCcLoad(force){
   if(!a.error) c.events = a.data||[]; if(!b.error) c.controls = b.data||[]; if(d && d.data) c.dir = d.data;
   render();
 }
-window.ohsDashEnsure = function(){ if(window.__ohsDash || !cloudReady()) return; window.__ohsDash = {}; ohsCcLoad(); if(typeof ohsObsLoad==='function') ohsObsLoad(); if(typeof ohsCLoad==='function') ohsCLoad(); };
+window.ohsDashEnsure = function(){ if(window.__ohsDash || !cloudReady()) return; window.__ohsDash = {}; if(window.ohsSchedLoad) window.ohsSchedLoad(); if(window.samDlLoad) window.samDlLoad(); ohsCcLoad(); if(typeof ohsObsLoad==='function') ohsObsLoad(); if(typeof ohsCLoad==='function') ohsCLoad(); };
 window.__ohsDashStats = function(){
   const c = window.__ohsCc, k = window.__ohsC; if(!c.controls) return null;
   const ob = (window.__ohsObs && window.__ohsObs.rows) || [];
-  return { obsCrit:ob.filter(x=>x.severity==='Critical'&&['open','done'].includes(x.status)).length, obsOverdue:ob.filter(x=>x.effective_status==='overdue').length, obsVerify:ob.filter(x=>x.status==='done').length,
+  const sch = (window.__ohsSched && window.__ohsSched.rows) || [];
+  return { chkOverdue:sch.filter(x=>x.effective_status==='overdue').length, obsCrit:ob.filter(x=>x.severity==='Critical'&&['open','done'].includes(x.status)).length, obsOverdue:ob.filter(x=>x.effective_status==='overdue').length, obsVerify:ob.filter(x=>x.status==='done').length,
            ccFailed:c.controls.filter(x=>x.effective_status==='failed').length, ccOverdue:c.controls.filter(x=>x.effective_status==='overdue').length,
            lapsed: k && k.rows ? k.rows.filter(x=>x.effective_status==='lapsed').length : 0,
            samNotify:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).notifyNow).length,
            samLate:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).deadlineOverdue).length,
-           samInv:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).invOverdue).length };
+           samInv:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).invOverdue).length,
+           samDlOverdue:(state.samrassReports||[]).filter(r=>{ if(r.archived==='true') return false; const f=window.samFlags(r); return f.notifyOverdue||f.writtenOverdue; }).length,
+           samDlSoon:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).dueSoon).length };
 };
 const OHSCC_CATS = ['Fall of ground','Vehicle-person interaction','Uncontrolled energy','Fire / explosion','Inrush','Occupational exposure','Other'];
 const OHSCC_TONE = {effective:'green',overdue:'amber',unverified:'neutral',failed:'rust',retired:'neutral'};
@@ -2418,6 +2447,142 @@ document.addEventListener('click', e=>{
 });
 
 
+
+/* ---- SAMRASS: deadline countdowns, where & when, CAPA link, data-sheet PDF ---- */
+(function(){ const st = document.createElement('style'); st.textContent = '@keyframes samflash{0%,100%{opacity:1}50%{opacity:.35}} .sam-flash{animation:samflash 1s infinite}'; document.head.appendChild(st); })();
+window.__samDL = window.__samDL || {rules:[{severity:'Fatal',notify_hours:0,written_hours:24},{severity:'Serious / Reportable',notify_hours:24,written_hours:720},{severity:'Dangerous Occurrence (no injury)',notify_hours:24,written_hours:null}], custom:false, confirmed_by:null, confirmed_at:null, loaded:false, loading:false};
+window.samDlLoad = async function(force){
+  const d = window.__samDL; if(!cloudReady() || d.loading || (d.loaded && !force)) return; d.loading = true;
+  const r = await supabaseClient.rpc('ohs_deadline_rules'); d.loading = false; d.loaded = true;
+  if(!r.error && r.data){ d.rules = r.data.rules||d.rules; d.custom = !!r.data.custom; d.confirmed_by = r.data.confirmed_by; d.confirmed_at = r.data.confirmed_at; render(); }
+};
+window.samDue = function(r){
+  if(!r || r.status==='Closed' || r.archived==='true' || !r.incidentDate || String(r.reportability||'').startsWith('Not reportable')) return null;
+  const rule = window.__samDL.rules.find(x=>x.severity===r.severity); if(!rule) return null;
+  let base = new Date(r.incidentDate+'T'+(/^\d{1,2}:\d{2}/.test(r.incidentTime||'')?String(r.incidentTime).slice(0,5).padStart(5,'0'):'00:00')); if(isNaN(base)) return null;
+  const now = Date.now(), mk = (due,met)=>{ if(met) return {due,met:true,state:'met'}; const ms = due-now; return {due,met:false,ms,state: ms<0?'overdue':ms<=12*3600000?'soon':'ok'}; };
+  const out = {timeKnown:/^\d{1,2}:\d{2}/.test(r.incidentTime||''), rule};
+  if(rule.notify_hours!=null) out.notify = mk(new Date(base.getTime()+rule.notify_hours*3600000), r.reportedToInspectorate==='Yes');
+  const rk = samRank(r);
+  if(r.reportDeadline){ out.written = mk(new Date(r.reportDeadline+'T23:59:59'), rk>=6); }
+  else if(rule.written_hours!=null){ out.written = mk(new Date(base.getTime()+rule.written_hours*3600000), rk>=6); }
+  else out.written = {asDirected:true, state:'directed', met: rk>=6};
+  return out;
+};
+function samFmt(ms){ const a = Math.abs(ms), m = Math.floor(a/60000), h = Math.floor(m/60), d = Math.floor(h/24); return d>=2 ? `${d}d ${h%24}h` : h>=1 ? `${h}h ${m%60}m` : `${m}m`; }
+function samBadge(label, x){
+  if(!x) return '';
+  if(x.asDirected) return `<span class="tag tag-neutral" style="font-size:10px;">${label}: ${x.met?'submitted':'as directed by the inspector — enter the deadline'}</span>`;
+  if(x.state==='met') return `<span class="tag tag-green" style="font-size:10px;">${label}: done</span>`;
+  if(x.state==='overdue') return `<span class="tag tag-rust sam-flash" style="font-size:10px;font-weight:700;">🔴 ${label}: OVERDUE by ${samFmt(x.ms)} — non-compliance risk</span>`;
+  if(x.state==='soon') return `<span class="tag tag-amber" style="font-size:10px;">🟡 ${label}: ${samFmt(x.ms)} left</span>`;
+  return `<span class="tag tag-green" style="font-size:10px;">🟢 ${label}: ${samFmt(x.ms)} left</span>`;
+}
+window.samDueText = function(r){ const d = window.samDue(r); if(!d) return ''; const bits = []; ['notify','written'].forEach(k=>{ const x=d[k]; if(!x||x.asDirected||x.state==='met') return; bits.push((x.state==='overdue'?'⛔ ':'⏱ ')+(k==='notify'?'notify':'report')+(x.state==='overdue'?' OVERDUE '+samFmt(x.ms):' in '+samFmt(x.ms))); }); return bits.join(' · '); };
+window.samDlNote = function(){ const d = window.__samDL; return `<p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">${d.confirmed_by?`Deadline rules confirmed by ${esc(d.confirmed_by)}.`:'⚠ Deadline rules are PROVISIONAL defaults (not confirmed by a legal adviser). Check them against the regulations in force before relying on the countdowns.'} ${(currentUser()&&currentUser().role==='Admin')?'<button class="btn btn-ghost" style="font-size:11px;" data-samq="rules">Edit rules</button>':''}</p>`; };
+window.samCapaMap = window.samCapaMap || {rows:null, loading:false};
+window.samCapaLoad = async function(force){
+  const c = window.samCapaMap; if(!cloudReady() || c.loading || (c.rows && !force)) return; c.loading = true;
+  const r = await supabaseClient.from('capas').select('id,reference_number,title,status').order('created_at',{ascending:false}).limit(500);
+  c.loading = false; c.rows = r.error ? [] : (r.data||[]); render();
+};
+window.samCardExtras = function(r){
+  window.samCapaLoad();
+  const d = window.samDue(r), cap = (window.samCapaMap.rows||[]).find(x=>x.id===r.linkedCapaId);
+  const dl = d ? `<div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">${samBadge('DMRE notification', d.notify)}${samBadge('Written report', d.written)}${d.timeKnown?'':'<span class="muted-italic" style="font-size:11px;">incident time not recorded — counted from 00:00</span>'}</div>` : '';
+  const sev = ['Fatal','Serious / Reportable'].includes(r.severity);
+  const cp = `<div style="margin-top:8px;font-size:12px;border-left:3px solid var(--line,#ddd);padding-left:8px;"><strong>Investigation chain:</strong> incident → ${r.linkedCapaId?`CAPA <strong>${esc(cap?cap.reference_number:(r.linkedCapaRef||'linked'))}</strong>${cap?` — ${esc(cap.title||'')} <span class="tag tag-${['approved','closed','completed','implemented'].includes(cap.status)?'green':'amber'}" style="font-size:10px;">${esc(cap.status)}</span>`:''}`:`<span style="color:var(--rust);">no CAPA linked${sev?' (required before the investigation stage)':''}</span>`} → root cause and action sign-off in the CAPA module.</div>`;
+  return dl + cp;
+};
+window.samCardButtons = function(r){
+  const role = String((currentUser()&&currentUser().role)||''), priv = ['Admin','Quality Manager','Approver','Department Manager'].includes(role);
+  if(!priv) return '';
+  return `<button class="btn btn-ghost" data-samq="capa" data-id="${r.id}">Link / raise CAPA</button>${samRank(r)>=3?`<button class="btn btn-ghost" data-samq="pdf" data-id="${r.id}">Data sheet (PDF)</button>`:''}`;
+};
+window.samWhereWhen = function(arr){
+  const shifts = ['Day','Afternoon','Night'], locs = ['Surface','Underground','Other'], n = arr.length;
+  const cell = (l,sft)=>arr.filter(r=>(r.locationType||'')===l && (r.shift||'')===sft).length;
+  const max = Math.max(1, ...locs.flatMap(l=>shifts.map(sft=>cell(l,sft))));
+  const tr = locs.map(l=>`<tr><td style="padding:4px 8px;">${l}</td>${shifts.map(sft=>{ const c=cell(l,sft); return `<td style="padding:4px 10px;text-align:center;background:rgba(179,38,30,${(c/max*0.45).toFixed(2)});">${c}</td>`; }).join('')}</tr>`).join('');
+  const missing = arr.filter(r=>!r.locationType||!r.shift).length;
+  const areas = {}; arr.forEach(r=>{ if(r.areaType) areas[r.areaType]=(areas[r.areaType]||0)+1; });
+  const areaTxt = Object.entries(areas).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${esc(k)} ${v}`).join(' · ');
+  return `<div style="margin-top:8px;font-size:12px;"><table style="border-collapse:collapse;"><tr><th></th>${shifts.map(x=>`<th style="padding:4px 10px;">${x}</th>`).join('')}</tr>${tr}</table>
+    <div class="muted-italic" style="margin-top:4px;">By area type: ${areaTxt||'none recorded'}. ${missing} of ${n} record(s) have no surface/underground or shift recorded and are not in the grid.${n<10?` Only ${n} record(s): too few to read a pattern.`:''}</div></div>`;
+};
+async function samMakePdf(r){
+  const J = window.jspdf && window.jspdf.jsPDF; if(!J) throw new Error('The PDF library did not load. Check your connection and try again.');
+  const doc = new J({unit:'pt', format:'a4'}), who = (currentUser()&&currentUser().fullName)||'Unknown user', when = new Date();
+  doc.setFontSize(14); doc.text('SAMRASS data sheet — '+(r.formType||'Report'), 40, 44);
+  doc.setFontSize(8.5); doc.setTextColor(150,30,30);
+  doc.text('Prepared from the AuditQMS Pro Suite record. NOT the official DMRE form: transcribe onto, or attach to, the current official form.', 40, 60, {maxWidth:515});
+  doc.setTextColor(0,0,0);
+  const sec = (t,rows)=>{ const body = rows.filter(x=>x[1]!==undefined && x[1]!==null && String(x[1]).trim()!=='').map(x=>[x[0],String(x[1])]); if(!body.length) return; doc.autoTable({startY:(doc.lastAutoTable?doc.lastAutoTable.finalY+10:76), head:[[t,'']], body, theme:'grid', styles:{fontSize:8.5,cellPadding:3}, headStyles:{fillColor:[40,60,90]}, columnStyles:{0:{cellWidth:150,fontStyle:'bold'}}, margin:{left:40,right:40}}); };
+  sec('Identification',[['Record ID',r.id],['Internal reference',r.internalRef],['Form type',r.formType],['Stage',r.status],['Mine / shaft / section',r.mineSection]]);
+  sec('Where and when',[['Surface / underground',r.locationType],['Area type',r.areaType],['Area detail',r.areaDetail],['Specific location',r.location],['Incident date',r.incidentDate],['Incident time',r.incidentTime],['Shift',r.shift],['Shift type',r.shiftType]]);
+  sec('Affected person',[['Name',r.employee],['Identity status',r.identityStatus],['Occupation',r.occupation],['Witnesses',r.witnesses]]);
+  sec('What happened',[['Cause category',r.causeCategory],['Nature of injury / occurrence',r.natureOfInjury],['Severity',r.severity],['Days lost',r.daysLost],['Immediate action',r.immediateAction],['Emergency response',r.emergencyResponse],['Hygiene agent',r.hygieneAgent],['Exposure reading',r.exposureReading],['Return to work date',r.returnToWorkDate]]);
+  sec('Reporting',[['Reportability',r.reportability],['Notified to Inspectorate',r.reportedToInspectorate],['Notification date',r.inspectorateNotifiedDate],['How notified',r.notificationMethod],['Received by',r.notificationRecipient],['Evidence',r.submissionEvidence],['Inspectorate / DMRE reference',r.inspectorateRef],['Form used',r.formVersion],['Form prepared by',r.formPreparedBy],['Submitted on',r.submissionDate],['Submission method',r.submissionMethod],['Reporting deadline entered',r.reportDeadline]]);
+  sec('Investigation',[['Lead',r.investigationLead],['Due',r.investigationDue],['Outcome',r.investigationOutcome],['Linked CAPA',r.linkedCapaRef],['Follow-up required',r.followUpRequired],['Follow-up due',r.followUpDue],['Follow-up submitted',r.followUpSubmittedDate]]);
+  if(Array.isArray(r.stageLog)&&r.stageLog.length) sec('Stage history',r.stageLog.map(x=>[x.stage, new Date(x.at).toLocaleString()+(x.by_name?' — '+x.by_name:'')]));
+  const n = doc.getNumberOfPages();
+  for(let i=1;i<=n;i++){ doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(90); doc.text(`Prepared electronically by ${who} on ${when.toLocaleString()} — a system record, not a handwritten or digital signature. Page ${i} of ${n}.`, 40, 820, {maxWidth:515}); }
+  return doc;
+}
+document.addEventListener('click', async e=>{
+  const b = e.target.closest && e.target.closest('[data-samq]'); if(!b) return;
+  const act = b.dataset.samq, id = b.dataset.id;
+  if(act==='where'){ window.__samWhere = !window.__samWhere; render(); return; }
+  const r = (state.samrassReports||[]).find(x=>x.id===id), cfg = GENERIC_MODULES.find(m=>m.key==='samrass-reporting');
+  if(act==='rules'){
+    const rules = window.__samDL.rules, find = s=>rules.find(x=>x.severity===s)||{};
+    ohsAsk('Deadline rules','Enter the hours allowed from the incident. 0 = immediately. Leave written hours empty when the inspector sets the date. These are your own rules: record who confirmed them.',[
+      {id:'f_n',label:'Fatal — notify within (hours)',type:'number',value:find('Fatal').notify_hours},{id:'f_w',label:'Fatal — written report within (hours)',type:'number',value:find('Fatal').written_hours},
+      {id:'s_n',label:'Serious / Reportable — notify within (hours)',type:'number',value:find('Serious / Reportable').notify_hours},{id:'s_w',label:'Serious / Reportable — written report within (hours)',type:'number',value:find('Serious / Reportable').written_hours},
+      {id:'d_n',label:'Dangerous occurrence — notify within (hours)',type:'number',value:find('Dangerous Occurrence (no injury)').notify_hours},{id:'d_w',label:'Dangerous occurrence — written report within (hours, empty = as directed)',type:'number',value:find('Dangerous Occurrence (no injury)').written_hours},
+      {id:'by',label:'Confirmed by (name and date, e.g. legal adviser)'}],
+      async v=>{ const n = x=>x===''||x==null?null:Number(x); const p = [{severity:'Fatal',notify_hours:n(v.f_n),written_hours:n(v.f_w)},{severity:'Serious / Reportable',notify_hours:n(v.s_n),written_hours:n(v.s_w)},{severity:'Dangerous Occurrence (no injury)',notify_hours:n(v.d_n),written_hours:n(v.d_w)}];
+        const x = await supabaseClient.rpc('ohs_set_deadline_rules',{p_rules:p,p_confirmed_by:v.by}); return x.error?x.error.message:null; }, async ()=>{ await window.samDlLoad(true); });
+    return;
+  }
+  if(!r) return;
+  if(act==='capa'){
+    await window.samCapaLoad(true);
+    const opts = (window.samCapaMap.rows||[]).map(c=>({v:c.id,l:`${c.reference_number} — ${c.title||''} (${c.status})`}));
+    ohsAsk('Link or raise a CAPA','The CAPA module holds the root cause analysis, actions and sign-off. Link an existing CAPA, or raise a new draft from this incident.',
+      [{id:'capa',label:'Existing CAPA',type:'select',options:opts,value:r.linkedCapaId||''},{id:'raise',label:'Raise a new draft CAPA from this incident instead',type:'check'}],
+      async v=>{
+        let capId = v.capa, ref = null;
+        if(v.raise){
+          const g = await supabaseClient.rpc('generate_capa_reference'); if(g.error) return g.error.message;
+          const title = `Incident: ${r.formType||'SAMRASS'} — ${r.mineSection||r.location||'site'} ${r.incidentDate||''}`.trim();
+          const desc = [`Incident record ${r.internalRef||r.id}.`, r.severity?`Severity: ${r.severity}.`:'', r.natureOfInjury?`What happened: ${r.natureOfInjury}.`:'', r.immediateAction?`Immediate action: ${r.immediateAction}.`:''].filter(Boolean).join(' ');
+          const ins = await supabaseClient.from('capas').insert([{reference_number:g.data,title,description:desc,status:'draft',created_by:currentCloudUser&&currentCloudUser.id,organization_id:currentProfile&&currentProfile.organization_id}]).select('id,reference_number').single();
+          if(ins.error) return ins.error.message; capId = ins.data.id; ref = ins.data.reference_number;
+        } else {
+          if(!capId) return 'Choose a CAPA, or tick to raise a new one.';
+          const c = (window.samCapaMap.rows||[]).find(x=>x.id===capId); ref = c?c.reference_number:null;
+        }
+        r.linkedCapaId = capId; r.linkedCapaRef = ref||r.linkedCapaRef; persist(); if(cfg.cloudSynced) cloudSyncUpdate(cfg, r);
+        return null;
+      }, async ()=>{ await window.samCapaLoad(true); });
+    return;
+  }
+  if(act==='pdf'){
+    ohsAsk('Generate data sheet (PDF)','This produces a data sheet from the record, not the official DMRE form. Every export is logged with who, when, to whom and a fingerprint of the file.',
+      [{id:'rec',label:'Who is it for?',},{id:'why',label:'What is it for? (e.g. DMRE audit file, inspector submission)'}],
+      async v=>{
+        try{
+          if((v.rec||'').trim().length<3) return 'Say who the data sheet is for.'; if((v.why||'').trim().length<5) return 'Say what it is for.';
+          const doc = await samMakePdf(r), buf = doc.output('arraybuffer'), sha = await ohsSha256(buf);
+          const x = await supabaseClient.rpc('ohs_samrass_export_log',{p_id:r.id,p_recipient:v.rec,p_purpose:v.why,p_sha:sha}); if(x.error) return x.error.message;
+          doc.save(`SAMRASS-${(r.incidentDate||'record')}-${String(r.id).slice(0,8)}.pdf`); return null;
+        }catch(err){ return (err&&err.message)||String(err); }
+      }, ()=>{ render(); });
+    return;
+  }
+});
+
 /* ---- SAMRASS controlled workflow ---- */
 const SAM_STAGES = ['Provisional','Escalated','Assessed','Notified','Forms prepared','Submitted','Investigation','Follow-up reporting','Closed'];
 const SAM_LEGACY = {'Draft':1,'Internally Reviewed':3,'Reported to Inspectorate':6};
@@ -2426,7 +2591,10 @@ window.samFlags = function(r){
   const t = new Date().toISOString().slice(0,10), rk = samRank(r), notrep = String(r.reportability||'').startsWith('Not reportable');
   return { notifyNow: r.reportability==='Reportable - notify now' && r.reportedToInspectorate!=='Yes' && r.status!=='Closed',
            deadlineOverdue: !!r.reportDeadline && r.reportDeadline<t && rk<6 && !notrep,
-           invOverdue: r.status==='Investigation' && !!r.investigationDue && r.investigationDue<t };
+           invOverdue: r.status==='Investigation' && !!r.investigationDue && r.investigationDue<t,
+           notifyOverdue: !!(window.samDue && (window.samDue(r)||{}).notify && window.samDue(r).notify.state==='overdue'),
+           writtenOverdue: !!(window.samDue && (window.samDue(r)||{}).written && window.samDue(r).written.state==='overdue'),
+           dueSoon: !!(window.samDue && (['notify','written'].some(k=>{ const d=window.samDue(r); return d && d[k] && d[k].state==='soon'; }))) };
 };
 function samDataset(r){
   if(r.formType==='Hygiene Exposure Monitoring') return 'hyg';
@@ -2442,6 +2610,9 @@ window.samBar = function(){
   return `${window.ohsOfflineNote?window.ohsOfflineNote():''}<div class="card p4" style="margin-bottom:12px;">
     ${(nn||ld)?`<div class="ohs-blocker" style="margin-bottom:8px;">${nn?`${nn} incident${nn===1?'':'s'} to notify now. `:''}${ld?`${ld} report${ld===1?'':'s'} past the deadline you entered.`:''}</div>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button class="btn btn-primary" data-samq="quick">⚡ Quick report</button>${chip('all','All')}${chip('inj','Injuries & illness')}${chip('do','Dangerous occurrences')}${chip('hyg','Hygiene exposure')}</div>
+    ${window.samDlNote?window.samDlNote():''}
+    <div style="margin-top:6px;"><button class="btn btn-ghost" style="font-size:12px;" data-samq="where">${window.__samWhere?'Hide':'Show'} where &amp; when</button></div>
+    ${window.__samWhere&&window.samWhereWhen?window.samWhereWhen(arr):''}
     <p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">Quick report saves a Provisional record in seconds — nothing else is needed. Then use Advance stage to escalate, assess, notify, prepare the form, record the external submission, investigate and close. The stage and its history are written by the server.</p></div>`;
 };
 window.samStageLog = function(r){
@@ -2587,6 +2758,42 @@ document.addEventListener('click', e=>{
     [{id:'why',label:'Reason (at least 10 characters)',type:'textarea'}], v=>rpc('ohs_obs_void',{p_id:id,p_reason:v.why}), after);
 });
 
+
+
+/* ---- HIRA tiers (Baseline / Issue-based / Task) and routine checks on critical controls ---- */
+window.__ohsSched = window.__ohsSched || {rows:null, loading:false};
+window.ohsSchedLoad = async function(force){
+  const c = window.__ohsSched; if(!cloudReady() || c.loading || (c.rows && !force)) return; c.loading = true;
+  const r = await supabaseClient.from('ohs_hira_control_schedule').select('*').order('due_at',{ascending:true}).limit(500);
+  c.loading = false; c.rows = r.error ? [] : (r.data||[]); render();
+};
+window.ohsHiraChain = function(h){
+  const ty = h.assessment_type; if(!ty) return '';
+  const par = h.parent_hira_id ? (hiraRecords||[]).find(x=>x.id===h.parent_hira_id) : null;
+  const kids = ty==='Baseline' ? (hiraRecords||[]).filter(x=>x.parent_hira_id===h.id) : [];
+  const warn = par && par.status!=='APPROVED' ? ` <span style="color:var(--rust);">⚠ parent is ${esc(par.status)} — re-check this assessment</span>` : '';
+  return `<div class="muted-italic" style="font-size:11.5px;">${esc(ty)}${h.issue_trigger?` · triggered by: ${esc(h.issue_trigger)}${h.issue_trigger_ref?' ('+esc(h.issue_trigger_ref)+')':''}`:''}${par?` · under Baseline: ${esc(par.activity_description||'')}`:(h.parent_hira_id?' · parent not loaded':'')}${kids.length?` · ${kids.length} linked assessment${kids.length===1?'':'s'} below it`:''}${warn}</div>`;
+};
+window.ohsCtlCheckHtml = function(h,c){
+  window.ohsSchedLoad();
+  const r = ((window.__ohsSched.rows)||[]).find(x=>x.hira_id===h.id && x.control_text===c.text); if(!r) return '';
+  const due = new Date(r.due_at), od = r.effective_status==='overdue';
+  return `<span class="tag tag-${od?'rust':'green'}" style="font-size:10px;">${od?'check OVERDUE since ':'next check '}${esc(due.toLocaleDateString())}</span><button class="btn btn-ghost" style="font-size:11px;padding:2px 8px;" data-ohs-act="ctrl-check" data-id="${h.id}" data-ctl="${esc(c.text)}">Routine check</button>`;
+};
+window.ohsHiraDueBanner = function(){
+  window.ohsSchedLoad(); const rows = (window.__ohsSched.rows||[]).filter(x=>x.effective_status==='overdue'); if(!rows.length) return '';
+  return `<div class="ohs-blocker" style="margin-bottom:10px;"><strong>${rows.length} routine check${rows.length===1?'':'s'} on critical controls overdue:</strong>${rows.slice(0,8).map(x=>`<div style="font-size:12px;">${esc(x.control_text)} — ${esc(x.activity_description||'')} (${esc(x.location||'')}), was due ${esc(new Date(x.due_at).toLocaleDateString())}</div>`).join('')}</div>`;
+};
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('[data-ohs-act="ctrl-check"]'); if(!b) return;
+  const id = b.dataset.id, txt = b.dataset.ctl;
+  ohsAsk('Routine check — '+txt,'Check the control is in place and working, as you would on a routine inspection. If it is not working, the HIRA goes back to review and every active permit linked to it is suspended. Use the Evidence button to attach a photo.',
+    [{id:'result',label:'Result',type:'select',options:[{v:'effective',l:'Working — meets the requirement'},{v:'not_effective',l:'NOT working'}]},
+     {id:'evidence',label:'What you checked and found (at least 10 characters)',type:'textarea'},
+     {id:'action',label:'If not working — immediate action taken (at least 10 characters)',type:'textarea'}],
+    async v=>{ const r = await supabaseClient.rpc('ohs_hira_control_check',{p_hira:id,p_text:txt,p_result:v.result,p_evidence:v.evidence,p_action:v.action}); return r.error?r.error.message:null; },
+    async ()=>{ await window.ohsSchedLoad(true); await fetchHiraAndPermitRecords(); });
+});
 
 /* ---- HIRA revision history (per hazard) ---- */
 function ohsRevDiff(prev, cur){
@@ -8108,9 +8315,12 @@ function renderGenericRow(cfg, r){
           </div>
           ${cfg.key==="supplier-scar" ? renderScarScopeWarning(r) : ''}
           ${cfg.key==="supplier-scar" ? renderScarEvidence(r) : ''}
+          ${cfg.key==="samrass-reporting" && window.samCardExtras ? window.samCardExtras(r) : ''}
           ${cfg.key==="samrass-reporting" && window.samStageLog ? window.samStageLog(r) : ''}
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
             ${cfg.key==="lab-microbiology" ? `<button class="btn btn-ghost" data-print-micro-cert="${r.id}">🖨 Certificate</button>` : ''}
+            ${cfg.key==="samrass-reporting" ? `<button class="btn btn-ghost" data-ohs-act="history" data-kind="samrass" data-id="${r.id}">History</button>` : ''}
+            ${cfg.key==="samrass-reporting" && window.samCardButtons ? window.samCardButtons(r) : ''}
             ${cfg.key==="samrass-reporting" && r.status!=="Closed" ? `<button class="btn btn-primary" data-samq="advance" data-id="${r.id}">Advance stage ▶</button>` : ''}
             <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">${cfg.archive?'Archive':'Delete'}</button>
           </div>
@@ -8345,12 +8555,16 @@ const GENERIC_MODULES = [
       {id:"internalRef", label:"Internal Report Reference", placeholder:"e.g. auto-numbered or site incident log #"},
       {id:"mineSection", label:"Mine / Shaft / Section"},
       {id:"location", label:"Specific Location", placeholder:"e.g. Level 26, Stope 4W, Surface plant"},
+      {id:"locationType", label:"Surface or underground", type:"select", blank:true, options:["Surface","Underground","Other"]},
+      {id:"areaType", label:"Area type", type:"select", blank:true, options:["Stope","Shaft","Level / haulage","Development end","Bay","Workshop","Plant","Opencast pit","Office / other"]},
+      {id:"areaDetail", label:"Area detail (level, stope, shaft, bay, workshop)", placeholder:"e.g. 26 Level, 4W stope"},
       {id:"incidentDate", label:"Incident Date", type:"date", default:"today"},
       {id:"incidentTime", label:"Incident Time"},
       {id:"employee", label:"Employee / Affected Person"},
       {id:"identityStatus", label:"Identity of affected person", type:"select", options:["Recorded","Not yet confirmed","Identity withheld pending family notification"]},
       {id:"occupation", label:"Occupation"},
       {id:"shift", label:"Shift", type:"select", options:["Day","Afternoon","Night"]},
+      {id:"shiftType", label:"Shift type", type:"select", blank:true, options:["Normal","Overtime","Call-out","Short shift","Other"]},
       {id:"causeCategory", label:"Cause Category", type:"select", options:["Fall of Ground / Rockburst","Machinery / Equipment","Transport / Tramming","Explosives","Fire / Explosion","Subsidence","Heat / Illness","Electrical","Hygiene Exposure","Other"]},
       {id:"natureOfInjury", label:"Nature of Injury / Illness / Occurrence", full:true},
       {id:"severity", label:"Severity Classification", type:"select", options:["Not yet assessed","Fatal","Serious / Reportable","Lost Time Injury","Medical Treatment Case","First Aid Case","Dangerous Occurrence (no injury)"]},
@@ -8388,10 +8602,11 @@ const GENERIC_MODULES = [
     rowTitle:r=>`${r.formType||'SAMRASS Report'} — ${r.employee||r.mineSection||'Unnamed'}`,
     rowSub:r=>{
       const miss=[]; if(!r.severity||r.severity==="Not yet assessed") miss.push('severity'); if(!r.reportability||r.reportability==="Not yet assessed") miss.push('reportability'); if(r.reportability==="Reportable - notify now" && r.reportedToInspectorate!=="Yes") miss.push('notification');
-      return `${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}${miss.length?` · ⚠ missing: ${miss.join(', ')}`:''}`;
+      const dl = window.samDueText ? window.samDueText(r) : '';
+      return `${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}${r.locationType?` · ${r.locationType}`:''}${dl?` · ${dl}`:''}${miss.length?` · ⚠ missing: ${miss.join(', ')}`:''}`;
     },
     rowTag:r=>{
-      { const f = window.samFlags ? window.samFlags(r) : {}; if(f.notifyNow) return {label:"Notify now", tone:"rust"}; if(f.deadlineOverdue) return {label:"Report overdue", tone:"rust"}; }
+      { const f = window.samFlags ? window.samFlags(r) : {}; if(f.notifyNow) return {label:"Notify now", tone:"rust"}; if(f.notifyOverdue) return {label:"Notification overdue", tone:"rust"}; if(f.writtenOverdue||f.deadlineOverdue) return {label:"Report overdue", tone:"rust"}; }
       if(r.severity==="Fatal") return {label:"Fatal", tone:"rust"};
       if(r.reportedToInspectorate==="Yes") return {label:"Reported", tone:"navy"};
       if(r.status==="Closed") return {label:"Closed", tone:"green"};
@@ -10402,9 +10617,12 @@ function renderDashboard(){
   { const _oh = (window.ohsDashEnsure && window.ohsDashEnsure(), window.__ohsDashStats && window.__ohsDashStats());
     if(_oh){ if(_oh.ccFailed) priorities.push({dot:"🔴", text:`${_oh.ccFailed} critical control${_oh.ccFailed===1?' has':'s have'} failed — restore before work continues`, navId:"nav-ohs-critical", urgency:100+_oh.ccFailed});
       if(_oh.ccOverdue) priorities.push({dot:"🟡", text:`Verify ${_oh.ccOverdue} overdue critical control${_oh.ccOverdue===1?'':'s'}`, navId:"nav-ohs-critical", urgency:30+_oh.ccOverdue});
+      if(_oh.samDlOverdue) priorities.push({dot:"🔴", text:`${_oh.samDlOverdue} incident deadline${_oh.samDlOverdue===1?' is':'s are'} OVERDUE — non-compliance risk`, navId:"nav-samrass", urgency:250+_oh.samDlOverdue});
+      if(_oh.samDlSoon) priorities.push({dot:"🟡", text:`${_oh.samDlSoon} incident deadline${_oh.samDlSoon===1?'':'s'} due within 12 hours`, navId:"nav-samrass", urgency:180+_oh.samDlSoon});
       if(_oh.samNotify) priorities.push({dot:"🔴", text:`${_oh.samNotify} incident${_oh.samNotify===1?'':'s'} must be notified now`, navId:"nav-samrass", urgency:200+_oh.samNotify});
       if(_oh.samLate) priorities.push({dot:"🔴", text:`${_oh.samLate} statutory report${_oh.samLate===1?' is':'s are'} past the deadline`, navId:"nav-samrass", urgency:150+_oh.samLate});
       if(_oh.samInv) priorities.push({dot:"🟡", text:`${_oh.samInv} incident investigation${_oh.samInv===1?' is':'s are'} overdue`, navId:"nav-samrass", urgency:25+_oh.samInv});
+      if(_oh.chkOverdue) priorities.push({dot:"🟡", text:`${_oh.chkOverdue} routine check${_oh.chkOverdue===1?'':'s'} on critical controls overdue`, navId:"nav-ohs-hira", urgency:60+_oh.chkOverdue});
       if(_oh.obsCrit) priorities.push({dot:"🔴", text:`${_oh.obsCrit} critical finding${_oh.obsCrit===1?' is':'s are'} still open`, navId:"nav-ohs-observations", urgency:120+_oh.obsCrit});
       if(_oh.obsOverdue) priorities.push({dot:"🟡", text:`${_oh.obsOverdue} inspection finding${_oh.obsOverdue===1?' is':'s are'} overdue`, navId:"nav-ohs-observations", urgency:40+_oh.obsOverdue});
       if(_oh.obsVerify) priorities.push({dot:"🟡", text:`${_oh.obsVerify} completed finding${_oh.obsVerify===1?'':'s'} awaiting verification`, navId:"nav-ohs-observations", urgency:15+_oh.obsVerify});
