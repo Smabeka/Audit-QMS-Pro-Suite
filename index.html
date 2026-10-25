@@ -2333,10 +2333,12 @@ async function ohsCcLoad(force){
   if(!a.error) c.events = a.data||[]; if(!b.error) c.controls = b.data||[]; if(d && d.data) c.dir = d.data;
   render();
 }
-window.ohsDashEnsure = function(){ if(window.__ohsDash || !cloudReady()) return; window.__ohsDash = {}; ohsCcLoad(); if(typeof ohsCLoad==='function') ohsCLoad(); };
+window.ohsDashEnsure = function(){ if(window.__ohsDash || !cloudReady()) return; window.__ohsDash = {}; ohsCcLoad(); if(typeof ohsObsLoad==='function') ohsObsLoad(); if(typeof ohsCLoad==='function') ohsCLoad(); };
 window.__ohsDashStats = function(){
   const c = window.__ohsCc, k = window.__ohsC; if(!c.controls) return null;
-  return { ccFailed:c.controls.filter(x=>x.effective_status==='failed').length, ccOverdue:c.controls.filter(x=>x.effective_status==='overdue').length,
+  const ob = (window.__ohsObs && window.__ohsObs.rows) || [];
+  return { obsCrit:ob.filter(x=>x.severity==='Critical'&&['open','done'].includes(x.status)).length, obsOverdue:ob.filter(x=>x.effective_status==='overdue').length, obsVerify:ob.filter(x=>x.status==='done').length,
+           ccFailed:c.controls.filter(x=>x.effective_status==='failed').length, ccOverdue:c.controls.filter(x=>x.effective_status==='overdue').length,
            lapsed: k && k.rows ? k.rows.filter(x=>x.effective_status==='lapsed').length : 0,
            samNotify:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).notifyNow).length,
            samLate:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).deadlineOverdue).length,
@@ -2476,6 +2478,102 @@ document.addEventListener('click', e=>{
 });
 
 
+
+
+/* ---- Inspections and observations ---- */
+window.__ohsObs = window.__ohsObs || {rows:null, dir:null, err:null, loading:false, filter:'action'};
+async function ohsObsLoad(force){
+  const c = window.__ohsObs; if(!cloudReady() || c.loading || (c.rows && !force)) return;
+  c.loading = true;
+  const [a,d] = await Promise.all([
+    supabaseClient.from('ohs_observation_overview').select('*').order('created_at',{ascending:false}).limit(500),
+    c.dir ? Promise.resolve({data:c.dir}) : supabaseClient.rpc('get_org_directory')
+  ]);
+  c.loading = false; c.err = a.error ? a.error.message : null;
+  if(!a.error) c.rows = a.data||[]; if(d && d.data) c.dir = d.data;
+  if(window.ohsEvLoad) window.ohsEvLoad(true); else render();
+}
+const OHSO_TONE = {recorded:'neutral', open:'amber', overdue:'rust', done:'amber', closed:'green', void:'neutral'};
+const OHSO_LABEL = {recorded:'Recorded', open:'Open', overdue:'OVERDUE', done:'Awaiting verification', closed:'Closed', void:'Void'};
+window.renderOhsObs = function(){
+  if(!cloudReady()) return `<div class="card"><p class="muted-italic">Sign in to your cloud account to use Inspections & Observations.</p></div>`;
+  ohsObsLoad(); const c = window.__ohsObs;
+  const role = String((currentUser()&&currentUser().role)||'');
+  const canLog = ['Admin','Quality Manager','Approver','Department Manager','Employee'].includes(role);
+  const priv = ['Admin','Quality Manager','Approver','Department Manager'].includes(role);
+  const me = currentProfile && currentProfile.id;
+  if(c.err) return `<div class="card"><p style="color:var(--rust);">${esc(c.err)}</p><p class="muted-italic" style="font-size:12px;">If this says the view does not exist, run ohs_stage10_run_this.sql in Supabase.</p></div>`;
+  if(!c.rows) return `<div class="card"><p class="muted-italic">Loading…</p></div>`;
+  const nm = u=>{ const p=(c.dir||[]).find(x=>x.id===u); return p?p.full_name:''; };
+  const cnt = f=>c.rows.filter(f).length;
+  const F = {action:r=>['open','overdue','done'].includes(r.effective_status), overdue:r=>r.effective_status==='overdue', mine:r=>r.owner_id===me && r.status==='open', closed:r=>['closed','recorded'].includes(r.status), all:r=>r.status!=='void'};
+  const filt = F[c.filter]||F.all, list = c.rows.filter(filt);
+  const chip = (k,l,n)=>`<button class="btn ${c.filter===k?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-ohso="filter" data-k="${k}">${l} (${n})</button>`;
+  return `${window.ohsOfflineNote?window.ohsOfflineNote():''}<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+    <h2 class="serif" style="margin:0;font-size:18px;">🔎 Inspections & Observations</h2>${canLog?`<button class="btn btn-primary" data-ohso="new">+ Record</button>`:''}</div>
+    <p class="muted-italic" style="font-size:12px;margin-bottom:10px;">Record inspections, safe observations, unsafe acts and unsafe conditions. Every finding needs an owner and a deadline set by its severity. A High or Critical finding cannot be completed without a photo or file showing the fix, and someone other than the owner must verify it. A Critical finding linked to an active permit suspends that permit.</p>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">${chip('action','Needs action',cnt(F.action))}${chip('overdue','Overdue',cnt(F.overdue))}${chip('mine','Mine to fix',cnt(F.mine))}${chip('closed','Closed / recorded',cnt(F.closed))}${chip('all','All',cnt(F.all))}</div>
+    ${list.length===0?`<p class="muted-italic">Nothing here.</p>`:list.map(r=>{
+      const st = r.effective_status, sevTone = {Critical:'rust',High:'rust',Medium:'amber',Low:'neutral'}[r.severity]||'neutral';
+      const link = r.link_type ? ((r.link_type==='permit' ? (permitRecords||[]).find(x=>x.id===r.link_id) : (hiraRecords||[]).find(x=>x.id===r.link_id))) : null;
+      return `<div class="top-border" style="padding:10px 0;">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+          <div><div style="font-weight:600;">${esc(r.ref)} — ${esc(r.kind)}${r.result?` · ${esc(r.result)}`:''}${r.subject?` · ${esc(r.subject)}`:''}</div>
+            <div class="muted-italic" style="font-size:12px;">${esc(r.area)}${r.project?` · ${esc(r.project)}`:''} · ${esc(r.observed_on)}${nm(r.observed_by)?` · by ${esc(nm(r.observed_by))}`:''}</div></div>
+          <div style="text-align:right;">${r.severity?`<span class="tag tag-${sevTone}" style="font-size:10px;">${esc(r.severity)}</span> `:''}<span class="tag tag-${OHSO_TONE[st]||'neutral'}" style="font-size:10px;">${esc(OHSO_LABEL[st]||st)}</span></div></div>
+        <div style="font-size:13px;margin-top:4px;">${esc(r.description)}</div>
+        ${r.immediate_action?`<div class="muted-italic" style="font-size:12px;">Immediate action: ${esc(r.immediate_action)}</div>`:''}
+        ${r.link_type?`<div class="muted-italic" style="font-size:12px;">Linked ${esc(r.link_type==='permit'?'permit':'HIRA')}: ${esc(link?(link.activity_description||link.permit_type||'')+' — '+(link.location||''):'record')}</div>`:''}
+        ${r.owner_id?`<div class="muted-italic" style="font-size:12px;">Owner ${esc(nm(r.owner_id)||'—')} · due ${esc(r.due_on||'')}</div>`:''}
+        ${r.done_note?`<div class="muted-italic" style="font-size:12px;">Completed${r.done_at?' '+esc(new Date(r.done_at).toLocaleDateString()):''}${nm(r.done_by)?' by '+esc(nm(r.done_by)):''}: ${esc(r.done_note)}</div>`:''}
+        ${r.verify_note?`<div class="muted-italic" style="font-size:12px;">Verified${nm(r.verified_by)?' by '+esc(nm(r.verified_by)):''}${r.verify_self?' (sole eligible verifier: recorded)':''}: ${esc(r.verify_note)}</div>`:''}
+        ${r.void_reason?`<div class="muted-italic" style="font-size:12px;">Void: ${esc(r.void_reason)}</div>`:''}
+        ${(['High','Critical'].includes(r.severity)&&r.status==='open'&&!r.evidence_count)?`<div class="ohs-blocker" style="margin-top:6px;">Attach a photo or file showing the fix before this can be completed.</div>`:''}
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;">
+          ${(r.status==='open' && (r.owner_id===me || ['Admin','Quality Manager','Department Manager'].includes(role)))?`<button class="btn btn-primary" style="font-size:12px;" data-ohso="complete" data-id="${r.id}">Complete</button>`:''}
+          ${(r.status==='done' && priv)?`<button class="btn btn-primary" style="font-size:12px;" data-ohso="verify" data-id="${r.id}">Verify</button><button class="btn btn-ghost" style="font-size:12px;" data-ohso="return" data-id="${r.id}">Return</button>`:''}
+          ${window.ohsEvBtn?window.ohsEvBtn('observation',r.id):''}
+          <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="observation" data-id="${r.id}">History</button>
+          ${(['Admin','Quality Manager'].includes(role) && !['closed','void'].includes(r.status))?`<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohso="void" data-id="${r.id}">Void</button>`:''}
+        </div>
+        ${(window.__ohsHist||{})[r.id] ? ohsHistoryHtml(window.__ohsHist[r.id]) : ''}</div>`; }).join('')}
+  </div>`;
+};
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('[data-ohso]'); if(!b) return;
+  const act = b.dataset.ohso, id = b.dataset.id, c = window.__ohsObs;
+  const rpc = async (fn,args)=>{ const r = await supabaseClient.rpc(fn,args); return r.error ? r.error.message : null; };
+  const after = ()=>ohsObsLoad(true);
+  if(act==='filter'){ c.filter = b.dataset.k; render(); return; }
+  if(act==='new'){
+    const people = (c.dir||[]).filter(p=>p.status===undefined||String(p.status||'active').toLowerCase()==='active').map(p=>({v:p.id,l:p.full_name}));
+    const links = [{v:'',l:'— none —'}].concat((permitRecords||[]).filter(x=>['ACTIVE','EXTENDED','SUSPENDED','DRAFT','SUBMITTED'].includes(x.status)).map(x=>({v:'permit:'+x.id,l:'Permit: '+(x.permit_type||'')+' — '+(x.location||'')})))
+      .concat((hiraRecords||[]).filter(x=>x.status==='APPROVED').map(x=>({v:'hira:'+x.id,l:'HIRA: '+(x.activity_description||'')+' — '+(x.location||'')})));
+    const today0 = new Date().toISOString().slice(0,10);
+    ohsAsk('Record an inspection or observation','Pick Safe observation or Inspection – Satisfactory when nothing needs fixing. For anything that needs fixing, choose Unsafe act, Unsafe condition, or Inspection – Finding and give severity, owner and deadline (Critical within 3 days, High 14, Medium 60, Low 180).',[
+      {id:'kind',label:'What are you recording?',type:'select',options:['Inspection','Safe observation','Unsafe act','Unsafe condition']},
+      {id:'result',label:'Inspection result (inspections only)',type:'select',options:['Satisfactory','Finding']},
+      {id:'subject',label:'What was inspected (inspections only)'},
+      {id:'area',label:'Area / location'},{id:'project',label:'Project / site (optional)'},
+      {id:'observed_on',label:'Date',type:'date',value:today0},
+      {id:'description',label:'What you saw',type:'textarea'},
+      {id:'severity',label:'Severity (findings only)',type:'select',options:['Low','Medium','High','Critical']},
+      {id:'immediate_action',label:'Immediate action taken (required for High / Critical)',type:'textarea'},
+      {id:'owner_id',label:'Who must fix it (findings only)',type:'select',options:people},
+      {id:'due_on',label:'Fix by (findings only)',type:'date'},
+      {id:'link',label:'Related permit or HIRA (a Critical finding suspends an active permit)',type:'select',options:links}],
+      v=>{ const f = Object.assign({}, v); if(v.link){ const i = v.link.indexOf(':'); f.link_type = v.link.slice(0,i); f.link_id = v.link.slice(i+1); } delete f.link; return rpc('ohs_obs_save', {p_f:f}); },
+      async ()=>{ await after(); if(typeof fetchHiraAndPermitRecords==='function') await fetchHiraAndPermitRecords(); });
+  }
+  if(act==='complete') ohsAsk('Complete the corrective action','Say what was done. For High and Critical findings the photo or file must already be attached (use the Evidence button first).',
+    [{id:'note',label:'What was done (at least 15 characters)',type:'textarea'}], v=>rpc('ohs_obs_complete',{p_id:id,p_note:v.note}), after);
+  if(act==='verify') ohsAsk('Verify the fix','Confirm you have checked that the fix is in place. You cannot verify your own work.',
+    [{id:'note',label:'What you checked (at least 15 characters)',type:'textarea'}], v=>rpc('ohs_obs_verify',{p_id:id,p_accept:true,p_note:v.note}), after);
+  if(act==='return') ohsAsk('Return for more work','The finding goes back to the owner as open.',
+    [{id:'note',label:'What is still wrong (at least 15 characters)',type:'textarea'}], v=>rpc('ohs_obs_verify',{p_id:id,p_accept:false,p_note:v.note}), after);
+  if(act==='void') ohsAsk('Void this record','Use only for an entry made in error. It stays on record.',
+    [{id:'why',label:'Reason (at least 10 characters)',type:'textarea'}], v=>rpc('ohs_obs_void',{p_id:id,p_reason:v.why}), after);
+});
 
 /* ---- Photo / file evidence on OHS records (private bucket, fingerprinted, immutable) ---- */
 window.__ohsEv = window.__ohsEv || {rows:null, loading:false, err:null};
@@ -6911,6 +7009,7 @@ const MODULE_TAB_MAP = {
   "SAMRASS Incident Reporting":"samrass-reporting",
   "Critical Controls":"ohs-critical",
   "Contractors":"ohs-contractors",
+  "Inspections & Observations":"ohs-observations",
   "Site Readiness":"ohs-readiness",
   "Users":"users",
   "Audit Trail":"audit-trail",
@@ -9323,6 +9422,7 @@ const NAV_MODULES = [
    { id:"nav-ohs-medical-fitness", icon:"🩺", label:"Medical Fitness Matrix", isActive(){ return tab==="ohs-medical-fitness"; }, action(){ tab="ohs-medical-fitness"; } },
    { id:"nav-ohs-construction", icon:"🏗️", label:"Construction Notification & Permits", isActive(){ return tab==="ohs-construction"; }, action(){ tab="ohs-construction"; } },
    { id:"nav-ohs-critical", icon:"🛡️", label:"Critical Controls", isActive(){ return tab==="ohs-critical"; }, action(){ tab="ohs-critical"; } },
+   { id:"nav-ohs-observations", icon:"🔎", label:"Inspections & Observations", isActive(){ return tab==="ohs-observations"; }, action(){ tab="ohs-observations"; } },
    { id:"nav-ohs-contractors", icon:"👷", label:"Contractors", isActive(){ return tab==="ohs-contractors"; }, action(){ tab="ohs-contractors"; } },
    { id:"nav-ohs-readiness", icon:"✅", label:"Site Readiness", isActive(){ return tab==="ohs-readiness"; }, action(){ tab="ohs-readiness"; } },
    { id:"nav-samrass", icon:"⛏️", label:"SAMRASS Incident Reporting", isActive(){ return tab==="samrass-reporting"; }, action(){ tab="samrass-reporting"; } },
@@ -9379,6 +9479,7 @@ const NAV_TREE = [
     navModule("nav-ohs-medical-fitness"),
     navModule("nav-ohs-construction"),
     navModule("nav-ohs-critical"),
+    navModule("nav-ohs-observations"),
     navModule("nav-ohs-contractors"),
     navModule("nav-ohs-readiness"),
     navModule("nav-samrass")
@@ -9823,6 +9924,7 @@ function render(){
         : tab==="ohs-construction" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="ohs-construction"))
         : tab==="samrass-reporting" ? renderGenericModule(GENERIC_MODULES.find(m=>m.key==="samrass-reporting"))
         : tab==="ohs-critical" ? (window.renderOhsCritical?window.renderOhsCritical():'')
+        : tab==="ohs-observations" ? (window.renderOhsObs?window.renderOhsObs():'')
         : tab==="ohs-contractors" ? (window.renderOhsContractors?window.renderOhsContractors():'')
         : tab==="ohs-readiness" ? (window.renderOhsReadiness?window.renderOhsReadiness():'')
         : renderSettings()}
@@ -10245,6 +10347,9 @@ function renderDashboard(){
       if(_oh.samNotify) priorities.push({dot:"🔴", text:`${_oh.samNotify} incident${_oh.samNotify===1?'':'s'} must be notified now`, navId:"nav-samrass", urgency:200+_oh.samNotify});
       if(_oh.samLate) priorities.push({dot:"🔴", text:`${_oh.samLate} statutory report${_oh.samLate===1?' is':'s are'} past the deadline`, navId:"nav-samrass", urgency:150+_oh.samLate});
       if(_oh.samInv) priorities.push({dot:"🟡", text:`${_oh.samInv} incident investigation${_oh.samInv===1?' is':'s are'} overdue`, navId:"nav-samrass", urgency:25+_oh.samInv});
+      if(_oh.obsCrit) priorities.push({dot:"🔴", text:`${_oh.obsCrit} critical finding${_oh.obsCrit===1?' is':'s are'} still open`, navId:"nav-ohs-observations", urgency:120+_oh.obsCrit});
+      if(_oh.obsOverdue) priorities.push({dot:"🟡", text:`${_oh.obsOverdue} inspection finding${_oh.obsOverdue===1?' is':'s are'} overdue`, navId:"nav-ohs-observations", urgency:40+_oh.obsOverdue});
+      if(_oh.obsVerify) priorities.push({dot:"🟡", text:`${_oh.obsVerify} completed finding${_oh.obsVerify===1?'':'s'} awaiting verification`, navId:"nav-ohs-observations", urgency:15+_oh.obsVerify});
       if(_oh.lapsed) priorities.push({dot:"🟡", text:`${_oh.lapsed} contractor${_oh.lapsed===1?' has':'s have'} lapsed documents`, navId:"nav-ohs-contractors", urgency:20+_oh.lapsed}); } }
   { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
