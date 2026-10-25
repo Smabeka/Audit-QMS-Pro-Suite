@@ -1208,7 +1208,7 @@ async function listHiraAssessments(filters = {}) {
     .from('hira_assessments')
     .select('*')
     .order('created_at', { ascending: false })
-    .limit(filters.limit || 50);
+    .limit(filters.limit || 100);
 
   if (filters.status) {
     query = query.eq('status', filters.status);
@@ -1458,7 +1458,7 @@ async function closePermit(permitId) {
  * @param {number} [filters.limit] - default 50
  */
 async function listPermits(filters = {}) {
-  const statuses = filters.statuses || ['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'EXTENDED'];
+  const statuses = filters.statuses || ['DRAFT', 'PENDING_APPROVAL', 'ACTIVE', 'EXTENDED', 'SUSPENDED', 'CLOSED', 'REVOKED'];
 
   return supabaseClient
     .from('permits_to_work')
@@ -2026,7 +2026,7 @@ function renderHiraTab(){
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="ctrl-fail" data-id="${h.id}">Report control failure</button>
             ${(h.controls_detail.some(c=>c.status==='Failed') && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="ctrl-restore" data-id="${h.id}">Restore control</button>` : ''}
-            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="hira" data-id="${h.id}">History</button> ${window.ohsEvBtn?window.ohsEvBtn('hira',h.id):''}
+            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="hira" data-id="${h.id}">History</button> <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="revisions" data-id="${h.id}">Revisions</button> ${window.ohsEvBtn?window.ohsEvBtn('hira',h.id):''}
           </div>
           ${(window.__ohsHist||{})[h.id] ? ohsHistoryHtml(window.__ohsHist[h.id]) : ''}` : ''}
           ${(h.status==="PENDING_APPROVAL" && canApproveHira(role)) ? `
@@ -2077,10 +2077,12 @@ function renderPtwTab(){
             ${(p.status!=="CLOSED" && p.status!=="REVOKED" && canRevokePermit(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-action="revoke-permit" data-id="${p.id}">Revoke</button>` : ''}
             ${(p.status==="ACTIVE" || p.status==="EXTENDED") ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="suspend" data-id="${p.id}">⛔ Stop work (suspend)</button>` : ''}
             ${(p.status==="SUSPENDED" && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="revalidate" data-id="${p.id}" data-type="${esc(p.permit_type)}">Revalidate</button>` : ''}
-            ${((p.status==="ACTIVE" || p.status==="EXTENDED" || p.status==="SUSPENDED") && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="close" data-id="${p.id}">Close out</button>` : ''}
+            ${((p.status==="ACTIVE" || p.status==="EXTENDED" || p.status==="SUSPENDED") && !p.work_done && ['Admin','Quality Manager','Approver','Department Manager','Employee'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="workdone" data-id="${p.id}">Work done</button>` : ''}
+            ${((p.status==="ACTIVE" || p.status==="EXTENDED" || p.status==="SUSPENDED") && p.work_done && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="close" data-id="${p.id}">Inspect and close out</button>` : ''}
             <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="permit" data-id="${p.id}">History</button> ${window.ohsEvBtn?window.ohsEvBtn('permit',p.id):''}
             <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="pack" data-id="${p.id}">Evidence pack</button>
           </div>
+          ${(p.work_done && p.status!=="CLOSED") ? `<div class="muted-italic" style="font-size:12px;margin-top:6px;">Work reported complete ${esc(new Date(p.work_done.at).toLocaleString())}: ${esc(p.work_done.note||'')} — waiting for someone else to inspect and close out.</div>` : ''}
           ${p.status==="SUSPENDED" ? `<div class="ohs-blocker" style="margin-top:6px;">Suspended — ${esc(p.suspension_reason||'')}. Work must not continue until it is revalidated.</div>` : ''}
           ${(window.__ohsHist||{})[p.id] ? ohsHistoryHtml(window.__ohsHist[p.id]) : ''}
           ${p.closeout ? `<div class="muted-italic" style="font-size:11.5px;margin-top:4px;">Closed out: ${esc(p.closeout.handover_note||'')}</div>` : ''}
@@ -2585,6 +2587,40 @@ document.addEventListener('click', e=>{
     [{id:'why',label:'Reason (at least 10 characters)',type:'textarea'}], v=>rpc('ohs_obs_void',{p_id:id,p_reason:v.why}), after);
 });
 
+
+/* ---- HIRA revision history (per hazard) ---- */
+function ohsRevDiff(prev, cur){
+  const out = []; const key = h=>String(h.task_step||'')+' — '+String(h.hazard||'');
+  if(!prev){ out.push('First recorded version: '+((cur.hazards||[]).length)+' hazard(s), status '+cur.status+'.'); return out; }
+  if(prev.status!==cur.status) out.push(`Status ${prev.status} → ${cur.status}`);
+  const ph = new Map((prev.hazards||[]).map(h=>[key(h),h])), ch = new Map((cur.hazards||[]).map(h=>[key(h),h]));
+  ch.forEach((h,k)=>{
+    const o = ph.get(k); if(!o){ out.push(`Hazard added: ${k}`); return; }
+    const sc = (x,a,b)=>(+x[a]||0)*(+x[b]||0), ch1 = [];
+    [['inh','Inherent'],['cur','Current'],['res','Residual']].forEach(([p,l])=>{ const a=sc(o,p+'_s',p+'_l'), b=sc(h,p+'_s',p+'_l'); if(a!==b) ch1.push(`${l} risk ${a} → ${b}`); });
+    [['event','event'],['consequence','consequence'],['exposed','who is exposed'],['inh_why','inherent reason'],['cur_why','current reason'],['res_why','residual reason'],['existing_controls','existing controls']].forEach(([f,l])=>{ if(String(o[f]||'')!==String(h[f]||'')) ch1.push(`${l} reworded`); });
+    const oc = new Map((o.controls||[]).map(c=>[c.text,c])), nc = new Map((h.controls||[]).map(c=>[c.text,c]));
+    nc.forEach((c,t)=>{ const x = oc.get(t); if(!x) ch1.push(`control added: ${t}`); else if(x.status!==c.status) ch1.push(`control "${t}" ${x.status||'Proposed'} → ${c.status||'Proposed'}`); else if(String(x.evidence||'')!==String(c.evidence||'')) ch1.push(`control "${t}" evidence changed`); });
+    oc.forEach((c,t)=>{ if(!nc.has(t)) ch1.push(`control removed: ${t}`); });
+    if(ch1.length) out.push(`Hazard "${k}": ${ch1.join('; ')}`);
+  });
+  ph.forEach((h,k)=>{ if(!ch.has(k)) out.push(`Hazard removed: ${k}`); });
+  if(!out.length) out.push('No change to hazards or controls.');
+  return out;
+}
+async function ohsShowRevisions(hiraId){
+  const root = document.getElementById('ohs-modal-root'); if(!root) return;
+  root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog"><h2>HIRA revisions</h2><p class="muted-italic">Loading…</p></div></div>`;
+  const [a,d] = await Promise.all([supabaseClient.from('ohs_hira_revisions').select('*').eq('hira_id',hiraId).order('revision',{ascending:true}), supabaseClient.rpc('get_org_directory')]);
+  const nm = u=>{ const p=((d&&d.data)||[]).find(x=>x.id===u); return p?p.full_name:''; };
+  const rows = a.data||[];
+  root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;"><h2>HIRA revisions</h2>
+    <p class="ohs-hint">Every saved version of the hazards, ratings and controls, kept permanently. Revisions are recorded from the first save after this feature was installed.</p>
+    ${a.error?`<div class="ohs-blocker">${esc(a.error.message)}</div>`:rows.length===0?'<p class="muted-italic" style="font-size:12px;">No revisions recorded yet.</p>':rows.map((r,i)=>`<div style="padding:6px 0;border-bottom:1px solid var(--line,#eee);font-size:12px;"><strong>Revision ${r.revision}</strong> <span class="muted-italic">· ${esc(new Date(r.at).toLocaleString())}${nm(r.changed_by)?' · '+esc(nm(r.changed_by)):''} · ${esc(r.status||'')}</span>${ohsRevDiff(i?rows[i-1]:null,r).map(l=>`<div style="margin-left:10px;">• ${esc(l)}</div>`).join('')}</div>`).reverse().join('')}
+    <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Close</button></div></div></div>`;
+  root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
+}
+
 /* ---- Photo / file evidence on OHS records (private bucket, fingerprinted, immutable) ---- */
 window.__ohsEv = window.__ohsEv || {rows:null, loading:false, err:null};
 window.ohsEvLoad = async function(force){
@@ -2770,9 +2806,13 @@ document.addEventListener('click', async e=>{
       return rpc('ohs_permit_revalidate',{p_id:id,p_f:a});
     });
   }
-  if(act==='close') ohsAsk('Close out permit','Confirm the work is finished and nothing is left unsafe.',
-    [{id:'work_completed',label:'Work is complete',type:'check'},{id:'area_safe',label:'Area is clean and safe',type:'check'},{id:'isolations_removed',label:'Isolations removed',type:'select',options:[{v:'true',l:'Yes, removed'},{v:'not_applicable',l:'Not applicable'}]},{id:'handover_note',label:'Handover note',type:'textarea'}],
-    v=>rpc('ohs_permit_close',{p_id:id,p_f:{work_completed:String(v.work_completed),area_safe:String(v.area_safe),isolations_removed:v.isolations_removed,handover_note:v.handover_note}}));
+  if(act==='workdone') ohsAsk('Work done','Report that the work under this permit is finished. This does not close the permit: a manager must then inspect the area and isolations and close it out.',
+    [{id:'area_safe',label:'Area is clean and safe',type:'check'},{id:'isolations_removed',label:'Isolations removed',type:'select',options:[{v:'true',l:'Yes, removed'},{v:'not_applicable',l:'Not applicable'}]},{id:'note',label:'State in which the work was left (at least 10 characters)',type:'textarea'}],
+    v=>rpc('ohs_permit_work_done',{p_id:id,p_f:{area_safe:String(v.area_safe),isolations_removed:v.isolations_removed,note:v.note}}));
+  if(act==='close') ohsAsk('Inspect and close out','Walk the area. You cannot close a permit you reported complete yourself unless nobody else is eligible.',
+    [{id:'inspected',label:'I inspected the area and the isolations',type:'check'},{id:'handover_note',label:'Handover note (at least 10 characters)',type:'textarea'}],
+    v=>rpc('ohs_permit_close',{p_id:id,p_f:{inspected:String(v.inspected),handover_note:v.handover_note}}));
+  if(act==='revisions'){ ohsShowRevisions(id); return; }
   if(act==='ctrl-fail' || act==='ctrl-restore'){
     const h = (hiraRecords||[]).find(x=>x.id===id); if(!h) return;
     const failing = act==='ctrl-fail';
@@ -8215,7 +8255,7 @@ const GENERIC_MODULES = [
       {id:"notes", label:"Notes", full:true}
     ],
     rowTitle:r=>r.employee||"Unnamed",
-    rowSub:r=>`${r.role||'—'}${r.department?` · ${r.department}`:''} · appointed ${r.appointmentDate||'—'}`,
+    rowSub:r=>`${r.role||'—'}${r.department?` · ${r.department}`:''} · appointed ${r.appointmentDate||'—'}${r.personId?'':' · ⚠ not linked to a user account — retype the name and pick the person from the list'}`,
     rowTag:r=>{
       if(!r.reviewDate) return {label: r.letterSigned==="Yes" ? "Signed" : "Unsigned", tone: r.letterSigned==="Yes" ? "green" : "amber"};
       const d = daysUntil(r.reviewDate);
@@ -14876,6 +14916,12 @@ function attachHandlers(){
       if(!cfg) return;
       const rec = state[cfg.stateArr].find(x=>x.id===id);
       if(!rec) return;
+      if(k==="ohs-appointments" && (field==="employee" || (field==="letterSigned" && el.value==="Yes" && !rec.personId))){
+        const nameToFind = field==="employee" ? el.value : rec.employee;
+        const person = window.trainingFindPerson ? window.trainingFindPerson(nameToFind) : null;
+        if(!person){ alert("Choose the appointee from the employee directory so the appointment is linked to their user account. If they are not listed, add them first under People Compliance → Employee Directory."); el.value = rec[field] || (field==="letterSigned"?"No":""); return; }
+        rec.personId = person.id; if(field==="employee") rec.employee = person.full_name;
+      }
       if(k==="quality-objectives" && (field==="startDate" || field==="targetDate")){
         const start = field==="startDate" ? el.value : (rec.startDate||"");
         const target = field==="targetDate" ? el.value : (rec.targetDate||"");
