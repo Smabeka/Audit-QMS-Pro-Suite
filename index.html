@@ -2004,7 +2004,7 @@ function renderHiraTab(){
         <h2 class="serif" style="margin:0;font-size:18px;">⚠️ HIRA Assessments</h2>
         ${canCreateHira(role) ? `<button class="btn btn-primary" data-action="open-hira-modal">+ New HIRA Assessment</button>` : ''}
       </div>
-      ${window.ohsAuthNote?window.ohsAuthNote():''}
+      ${window.ohsOfflineNote?window.ohsOfflineNote():''}${window.ohsAuthNote?window.ohsAuthNote():''}
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hazard Identification & Risk Assessment. Nothing is pre-rated; a control lowers the risk only once it is Verified with evidence. Note: this register uses its own 5×5 bands, which differ from the Risk Management register.</p>
       ${hiraRecords.length===0 ? `<p class="muted-italic">No HIRA assessments yet.</p>` : hiraRecords.map(h => `
         <div class="top-border" style="padding:10px 0;">
@@ -2057,7 +2057,7 @@ function renderPtwTab(){
         <h2 class="serif" style="margin:0;font-size:18px;">📋 Permit to Work</h2>
         ${canCreatePermit(role) ? `<button class="btn btn-primary" data-action="open-permit-modal">+ Issue Permit to Work</button>` : ''}
       </div>
-      ${window.ohsAuthNote?window.ohsAuthNote():''}
+      ${window.ohsOfflineNote?window.ohsOfflineNote():''}${window.ohsAuthNote?window.ohsAuthNote():''}
       <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Hot work, confined space, electrical isolation, heights, excavation and general high-risk work permits.</p>
       ${permitRecords.length===0 ? `<p class="muted-italic">No active permits.</p>` : permitRecords.map(p => `
         <div class="top-border" style="padding:10px 0;">
@@ -2079,6 +2079,7 @@ function renderPtwTab(){
             ${(p.status==="SUSPENDED" && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="revalidate" data-id="${p.id}" data-type="${esc(p.permit_type)}">Revalidate</button>` : ''}
             ${((p.status==="ACTIVE" || p.status==="EXTENDED" || p.status==="SUSPENDED") && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="close" data-id="${p.id}">Close out</button>` : ''}
             <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="permit" data-id="${p.id}">History</button>
+            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="pack" data-id="${p.id}">Evidence pack</button>
           </div>
           ${p.status==="SUSPENDED" ? `<div class="ohs-blocker" style="margin-top:6px;">Suspended — ${esc(p.suspension_reason||'')}. Work must not continue until it is revalidated.</div>` : ''}
           ${(window.__ohsHist||{})[p.id] ? ohsHistoryHtml(window.__ohsHist[p.id]) : ''}
@@ -2353,7 +2354,7 @@ window.renderOhsCritical = function(){
   if(!c.controls||!c.events) return `<div class="card"><p class="muted-italic">Loading…</p></div>`;
   const cnt = k=>c.controls.filter(x=>x.effective_status===k).length;
   const me = currentProfile && currentProfile.id;
-  return `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+  return `${window.ohsOfflineNote?window.ohsOfflineNote():''}<div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
     <h2 class="serif" style="margin:0;font-size:18px;">🛡️ Critical Controls</h2>${mgr?`<button class="btn btn-primary" data-ohscc="event">+ Major unwanted event</button>`:''}</div>
     <p class="muted-italic" style="font-size:12px;margin-bottom:10px;">For each major unwanted event (fall of ground, vehicle–person interaction, uncontrolled energy, fire / explosion, inrush, occupational exposure): the controls that prevent or reduce it, what "working" means for each, who verifies it and how often, what happens on failure, and who may restore it. Status is worked out from the verification record — it cannot be typed in. MHSA references are provisional until your legal adviser confirms them.</p>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;"><span class="tag tag-rust">${cnt('failed')} failed</span><span class="tag tag-amber">${cnt('overdue')} overdue</span><span class="tag tag-neutral">${cnt('unverified')} unverified</span><span class="tag tag-green">${cnt('effective')} effective</span></div>
@@ -2424,7 +2425,7 @@ window.samBar = function(){
   const arr = (state.samrassReports||[]).filter(r=>r.archived!=='true');
   const chip = (k,l)=>`<button class="btn ${window.__samFilter===k?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-samq="filter" data-k="${k}">${l} (${k==='all'?arr.length:arr.filter(r=>samDataset(r)===k).length})</button>`;
   const f = arr.map(window.samFlags), nn = f.filter(x=>x.notifyNow).length, ld = f.filter(x=>x.deadlineOverdue).length;
-  return `<div class="card p4" style="margin-bottom:12px;">
+  return `${window.ohsOfflineNote?window.ohsOfflineNote():''}<div class="card p4" style="margin-bottom:12px;">
     ${(nn||ld)?`<div class="ohs-blocker" style="margin-bottom:8px;">${nn?`${nn} incident${nn===1?'':'s'} to notify now. `:''}${ld?`${ld} report${ld===1?'':'s'} past the deadline you entered.`:''}</div>`:''}
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button class="btn btn-primary" data-samq="quick">⚡ Quick report</button>${chip('all','All')}${chip('inj','Injuries & illness')}${chip('do','Dangerous occurrences')}${chip('hyg','Hygiene exposure')}</div>
     <p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">Quick report saves a Provisional record in seconds — nothing else is needed. Then use Advance stage to escalate, assess, notify, prepare the form, record the external submission, investigate and close. The stage and its history are written by the server.</p></div>`;
@@ -2473,6 +2474,47 @@ document.addEventListener('click', e=>{
     }, async ()=>{ await cloudSyncFetch(cfg); });
   }
 });
+
+
+/* ---- Offline note and the permit evidence pack (end-to-end chain) ---- */
+window.addEventListener('online', ()=>{ try{ render(); }catch(e){} });
+window.addEventListener('offline', ()=>{ try{ render(); }catch(e){} });
+window.ohsOfflineNote = function(){
+  return (typeof navigator!=='undefined' && navigator.onLine===false)
+    ? `<div class="ohs-blocker" style="margin-bottom:10px;">You are offline. Nothing you do on these screens reaches the central system until you are back online: permits, signatures, suspensions, readiness records and reports will not be saved, and what you see may be out of date. Do not rely on a permit shown here without checking it on paper or by phone.</div>` : '';
+};
+async function ohsShowPack(permitId){
+  const root = document.getElementById('ohs-modal-root'); if(!root) return;
+  const p = (permitRecords||[]).find(x=>x.id===permitId); if(!p) return;
+  const h = p.hira_id ? (hiraRecords||[]).find(x=>x.id===p.hira_id) : null;
+  const ids = [p.id].concat(h?[h.id]:[]);
+  const r = await supabaseClient.from('ohs_events').select('*').in('record_id', ids).order('at',{ascending:true});
+  const ev = (r.data||[]);
+  const ctl = h && Array.isArray(h.controls_detail) ? h.controls_detail : [];
+  const verified = ctl.filter(c=>c.status==='Verified').length, failed = ctl.filter(c=>c.status==='Failed').length;
+  const g = p.gas_test_detail, needsGas = ['HOT_WORK','CONFINED_SPACE'].includes(p.permit_type);
+  const hrs = (new Date(p.valid_to)-new Date(p.valid_from))/3600000;
+  const susp = ev.filter(e=>e.record_id===p.id && e.event==='suspended').length, reval = ev.filter(e=>e.record_id===p.id && e.event==='revalidated').length;
+  const chk = [
+    [!!h, 'Linked to a HIRA', h?`${h.activity_description} — ${h.location}`:'No HIRA linked'],
+    [!!h && h.status==='APPROVED', 'HIRA is currently approved', h?h.status:''],
+    [!!h && ctl.length>0 && failed===0, 'HIRA controls recorded with none failed', h?`${verified} verified of ${ctl.length}${failed?`, ${failed} FAILED`:''}`:''],
+    [!needsGas || (g && g.within_limits==='true'), 'Gas test on record and within the stated limits', needsGas ? (g?`${g.tester||'—'}, instrument ${g.instrument_id||'—'}, ${Object.entries(g.readings||{}).map(([k,v])=>k.toUpperCase()+' '+v).join(', ')}`:'Missing') : 'Not required for this permit type'],
+    [hrs>0 && (hrs<=24 || p.permit_scope==='Standing authorisation'), 'Validity window within the 24-hour task / shift limit (or a standing authorisation)', `${Math.round(hrs*10)/10} hours${p.standing_ref?`, ref ${p.standing_ref}`:''}`],
+    [['ACTIVE','EXTENDED','SUSPENDED','CLOSED'].includes(p.status), 'Authorised', p.status],
+    [p.status!=='SUSPENDED', 'Not currently suspended', p.status==='SUSPENDED'?(p.suspension_reason||''):`${susp} suspension${susp===1?'':'s'}, ${reval} revalidation${reval===1?'':'s'} in its life`],
+    [p.status!=='CLOSED' || !!p.closeout, 'Closed out with a handover note (if closed)', p.closeout?(p.closeout.handover_note||''):(p.status==='CLOSED'?'Missing':'Not closed yet')]
+  ];
+  root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;">
+    <h2>Evidence pack — ${esc(getPermitTypeConfig(p.permit_type).label)}</h2>
+    <p class="ohs-hint">${esc(p.location||'')} · valid ${esc(new Date(p.valid_from).toLocaleString())} – ${esc(new Date(p.valid_to).toLocaleString())} · status ${esc(p.status)}. Checks are read from the records; a ✗ means evidence is missing or a rule is not met.</p>
+    ${chk.map(c=>`<div style="margin:4px 0;"><span style="color:${c[0]?'var(--green,#1a7a3d)':'var(--rust,#b3261e)'};font-weight:700;">${c[0]?'✓':'✗'}</span> <strong>${esc(c[1])}</strong><div class="muted-italic" style="font-size:12px;margin-left:18px;">${esc(c[3]!==undefined?c[3]:c[2])}</div></div>`).join('')}
+    <h3 style="margin:12px 0 4px;font-size:14px;">Timeline</h3>
+    ${ev.length?ev.map(e=>`<div style="font-size:12px;">${esc(new Date(e.at).toLocaleString())} — ${e.record_id===p.id?'permit':'HIRA'}: <strong>${esc(e.event.replace('_',' '))}</strong>${e.cause?` (${esc(e.cause)})`:''}${e.reason?` — ${esc(e.reason)}`:''}</div>`).join(''):'<p class="muted-italic" style="font-size:12px;">No lifecycle events recorded.</p>'}
+    <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Close</button></div></div></div>`;
+  root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
+}
+document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('[data-ohs-act="pack"]'); if(b) ohsShowPack(b.dataset.id); });
 
 /* ---- OHS lifecycle actions: stop work, revalidate, close out, control failure / restore ---- */
 window.__ohsHist = window.__ohsHist || {};
