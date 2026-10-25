@@ -2220,7 +2220,10 @@ document.addEventListener('click', async e=>{
 
 
 /* ---- Contractors (evidence expiry) and Site Readiness (project legal + daily) ---- */
-window.__ohsC = window.__ohsC || {rows:null, ready:null, proj:{}, err:null, loading:false};
+window.__ohsC = window.__ohsC || {rows:null, ready:null, proj:{}, err:null, loading:false, live:null};
+async function ohsLiveLoad(){ const c = window.__ohsC; if(!cloudReady() || c.liveLoading) return; c.liveLoading = true; const r = await supabaseClient.rpc('ohs_live_facts'); c.liveLoading = false; if(!r.error){ c.live = r.data; } else c.live = {err:r.error.message}; render(); }
+window.ohsLiveHtml = function(){ const l = (window.__ohsC||{}).live; if(!l) return ''; if(l.err) return ''; const row=(n,t,bad)=>`<span style="margin-right:12px;white-space:nowrap;${bad&&n>0?'color:var(--rust);font-weight:600;':''}">${n} ${t}</span>`;
+  return `<div class="card p4" style="margin-bottom:12px;font-size:12px;"><strong>Live from your records</strong> <span class="muted-italic">(whole organisation, right now)</span><div style="margin-top:4px;line-height:1.8;">${row(l.approved_hiras,'approved HIRAs')}${row(l.hiras_under_review,'HIRAs under review',true)}${row(l.active_permits,'active permits')}${row(l.suspended_permits,'suspended permits',true)}${row(l.active_permits_bad_hira,'active permits without an approved HIRA',true)}${row(l.cc_failed,'critical controls failed',true)}${row(l.cc_overdue,'critical controls overdue',true)}${row(l.critical_findings_open,'Critical findings open',true)}${row(l.findings_overdue,'findings overdue',true)}${row(l.fitness_expired,'fitness records expired',true)}${row(l.contractors_not_cleared,'contractors not cleared',true)}</div></div>`; };
 async function ohsCLoad(force){
   const c = window.__ohsC; if(!cloudReady() || c.loading || (c.rows && !force)) return;
   c.loading = true;
@@ -2278,7 +2281,8 @@ window.renderOhsReadiness = function(){
   const names = [..._nm.values()];
   names.forEach(n=>ohsProjLoad(n));
   const RT = {ready:'green', not_ready:'amber', stop_work:'rust'};
-  return `<div class="card"><h2 class="serif" style="margin:0 0 10px;font-size:18px;">✅ Site Readiness</h2>
+  if(!c.live && !c.liveLoading) ohsLiveLoad();
+  return `${window.ohsOfflineNote?window.ohsOfflineNote():''}${window.ohsLiveHtml()}<div class="card"><h2 class="serif" style="margin:0 0 10px;font-size:18px;">✅ Site Readiness</h2>
     <p class="muted-italic" style="font-size:12px;margin-bottom:12px;">Project legal readiness is worked out from the Construction register. A daily record can only say Ready when every check is Yes, the project is ready and every listed contractor is Cleared. Records are permanent.</p>
     ${names.length===0?`<p class="muted-italic">No projects in the Construction register yet.</p>`:names.map(n=>{
       const pr = c.proj[n]; const last = c.ready.find(x=>x.project_name.toLowerCase()===n.toLowerCase());
@@ -2294,7 +2298,7 @@ document.addEventListener('click', e=>{
   const b = e.target.closest && e.target.closest('[data-ohsc]'); if(!b) return;
   const act = b.dataset.ohsc, id = b.dataset.id, c = window.__ohsC;
   const rpc = async (fn,args)=>{ const r = await supabaseClient.rpc(fn,args); return r.error ? r.error.message : null; };
-  const after = ()=>ohsCLoad(true);
+  const after = async ()=>{ window.__ohsC.live = null; await ohsCLoad(true); };
   if(act==='new') ohsAsk('Register contractor','',[{id:'name',label:'Contractor name'},{id:'scope',label:'Scope of work',type:'textarea'},{id:'contact',label:'Contact'}],
     v=>rpc('ohs_contractor_save',{p_id:null,p_f:{name:v.name,scope_of_work:v.scope,contact:v.contact}}), after);
   if(act==='evidence') ohsAsk('Record a document','Required for clearance: COID letter of good standing, public liability insurance, health and safety file. Record the reference, not the file.',
@@ -2308,7 +2312,9 @@ document.addEventListener('click', e=>{
     OHSR_CHECKS.forEach(([k,l])=>{ f.push({id:'c_'+k,label:l,type:'select',options:k==='permits_isolation'?[{v:'yes',l:'Yes'},{v:'no',l:'No'},{v:'na',l:'Not applicable'}]:[{v:'yes',l:'Yes'},{v:'no',l:'No'}]}); f.push({id:'n_'+k,label:'If No — what is outstanding?'}); });
     f.push({id:'stop',label:'STOP WORK — conditions are unsafe',type:'check'},{id:'n_stop',label:'If stop work — why?'});
     (c.rows||[]).filter(r=>r.status!=='suspended').forEach(r=>f.push({id:'k_'+r.id,label:`Contractor on site: ${r.name} (${r.effective_status})`,type:'check'}));
-    ohsAsk('Daily readiness — '+b.dataset.name,'Answer every check honestly. The record is permanent and the system works out Ready / Not ready.',f, v=>{
+    const L = c.live && !c.live.err ? c.live : null;
+    const liveIntro = L ? ` Live data right now: ${L.approved_hiras} approved HIRA(s), ${L.cc_failed} failed critical control(s), ${L.critical_findings_open} open Critical finding(s), ${L.suspended_permits} suspended permit(s), ${L.fitness_expired} expired fitness record(s). Answering Yes to something these figures contradict is refused.` : '';
+    ohsAsk('Daily readiness — '+b.dataset.name,'Answer every check honestly. The record is permanent and the system works out Ready / Not ready.'+liveIntro,f, v=>{
       const checks={}, notes={};
       for(const [k] of OHSR_CHECKS){ if(!v['c_'+k]) return 'Answer every check.'; checks[k]=v['c_'+k]; if(v['n_'+k]) notes[k]=v['n_'+k]; }
       if(v.n_stop) notes.stop_work=v.n_stop;
@@ -2370,6 +2376,7 @@ window.renderOhsCritical = function(){
               <span class="tag tag-${OHSCC_TONE[k.effective_status]}" style="font-size:10px;">${esc(k.effective_status)}</span></div>
             <div style="font-size:12px;">Working means: ${esc(k.performance_requirement)}</div>
             <div class="muted-italic" style="font-size:11.5px;">Owner ${esc(k.owner_name||'—')} · verify ${esc(k.verify_method)} every ${k.verify_every_days} d · ${k.last_verified_at?`last ${esc(new Date(k.last_verified_at).toLocaleDateString())}, next ${esc(new Date(k.next_due).toLocaleDateString())}`:'never verified'} · restore by ${esc(k.restoration_name||'—')}</div>
+            ${k.hira_id?`<div class="muted-italic" style="font-size:11.5px;">Linked HIRA: ${esc((()=>{ const h=(hiraRecords||[]).find(x=>x.id===k.hira_id); return h?(h.activity_description||'')+' — '+(h.location||'')+' ('+h.status+')':'record'; })())} — a failure suspends its active permits.</div>`:''}
             ${k.effective_status==='failed'?`<div class="ohs-blocker" style="margin-top:6px;">FAILED — response: ${esc(k.failure_response)}</div>`:''}
             <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
               ${(verifier && k.state!=='failed')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="verify" data-id="${k.id}">Verify</button>`:''}
@@ -2390,17 +2397,20 @@ document.addEventListener('click', e=>{
     {id:'category',label:'Category',type:'select',options:OHSCC_CATS},{id:'title',label:'Event'},{id:'site_area',label:'Site / area'},
     {id:'description',label:'Description',type:'textarea'},{id:'causes',label:'Causes',type:'textarea'},{id:'consequence',label:'Worst credible consequence',type:'textarea'}],
     v=>rpc('ohs_mue_save',{p_id:null,p_f:v}), after);
+  const hiraOpts = [{v:'',l:'— none —'}].concat((hiraRecords||[]).filter(h=>h.status==='APPROVED'||h.status==='UNDER_REVIEW').map(h=>({v:h.id,l:(h.activity_description||'HIRA')+' — '+(h.location||'')})));
   const ctrlFields = [{id:'name',label:'Control'},{id:'kind',label:'Type',type:'select',options:['preventive','mitigating']},
     {id:'performance_requirement',label:'Performance requirement — what must be true for it to count as working (measurable)',type:'textarea'},
     {id:'owner_id',label:'Owner',type:'select',options:people},{id:'verify_method',label:'How it is verified',type:'textarea'},{id:'verify_every_days',label:'Verify every (days)',type:'number'},
-    {id:'failure_response',label:'If it fails — what must happen',type:'textarea'},{id:'restoration_authority',label:'Restoration authority (Admin / Quality / Department Manager)',type:'select',options:people}];
-  const ctrlPayload = v=>({name:v.name,kind:v.kind,performance_requirement:v.performance_requirement,owner_id:v.owner_id,verify_method:v.verify_method,verify_every_days:v.verify_every_days,failure_response:v.failure_response,restoration_authority:v.restoration_authority});
+    {id:'failure_response',label:'If it fails — what must happen',type:'textarea'},{id:'restoration_authority',label:'Restoration authority (Admin / Quality / Department Manager)',type:'select',options:people},
+    {id:'hira_id',label:'Linked HIRA (optional) — if this control fails, the HIRA goes under review and its active permits are suspended',type:'select',options:hiraOpts}];
+  const ctrlPayload = v=>({name:v.name,kind:v.kind,performance_requirement:v.performance_requirement,owner_id:v.owner_id,verify_method:v.verify_method,verify_every_days:v.verify_every_days,failure_response:v.failure_response,restoration_authority:v.restoration_authority,hira_id:v.hira_id||''});
   if(act==='control') ohsAsk('New critical control','',ctrlFields, v=>rpc('ohs_cc_save',{p_id:null,p_event:id,p_f:ctrlPayload(v)}), after);
-  if(act==='edit') ohsAsk('Edit control','Changing the performance requirement sets the control back to Unverified.',ctrlFields, v=>rpc('ohs_cc_save',{p_id:id,p_event:null,p_f:ctrlPayload(v)}), after);
+  if(act==='edit'){ const k0 = (c.controls||[]).find(x=>x.id===id)||{}; const pre = {name:k0.name,kind:k0.kind,performance_requirement:k0.performance_requirement,owner_id:k0.owner_id,verify_method:k0.verify_method,verify_every_days:k0.verify_every_days,failure_response:k0.failure_response,restoration_authority:k0.restoration_authority,hira_id:k0.hira_id||''};
+    ohsAsk('Edit control','Changing the performance requirement sets the control back to Unverified.',ctrlFields.map(f=>Object.assign({},f,{value:pre[f.id]})), v=>rpc('ohs_cc_save',{p_id:id,p_event:null,p_f:ctrlPayload(v)}), after); }
   if(act==='verify') ohsAsk('Verify control','Check against the performance requirement. A control cannot be verified by its own owner. If it is not working, say what you did about it.',[
     {id:'result',label:'Result',type:'select',options:[{v:'effective',l:'Effective — meets the requirement'},{v:'not_effective',l:'Not effective — FAILED'}]},
     {id:'evidence',label:'What you checked and found',type:'textarea'},{id:'action_taken',label:'If failed — immediate action taken',type:'textarea'}],
-    v=>rpc('ohs_cc_verify',{p_id:id,p_f:v}), after);
+    v=>rpc('ohs_cc_verify',{p_id:id,p_f:v}), async ()=>{ await after(); if(typeof fetchHiraAndPermitRecords==='function') await fetchHiraAndPermitRecords(); });
   if(act==='restore') ohsAsk('Restore control','Only the named restoration authority can do this. Describe the repair and the test showing the control now meets its requirement.',[{id:'ev',label:'Repair and test',type:'textarea'}],
     v=>rpc('ohs_cc_restore',{p_id:id,p_evidence:v.ev}), after);
 });
