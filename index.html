@@ -9472,6 +9472,7 @@ const NAV_MODULES = [
    { id:"nav-ohs-medical-fitness", icon:"🩺", label:"Medical Fitness Matrix", isActive(){ return tab==="ohs-medical-fitness"; }, action(){ tab="ohs-medical-fitness"; } },
    { id:"nav-ohs-construction", icon:"🏗️", label:"Construction Notification & Permits", isActive(){ return tab==="ohs-construction"; }, action(){ tab="ohs-construction"; } },
    { id:"nav-ohs-critical", icon:"🛡️", label:"Critical Controls", isActive(){ return tab==="ohs-critical"; }, action(){ tab="ohs-critical"; } },
+   { id:"nav-ohs-capa", icon:"🔧", label:"Incidents & Corrective Actions", isActive(){ return tab==="capa"; }, action(){ tab="capa"; } },
    { id:"nav-ohs-observations", icon:"🔎", label:"Inspections & Observations", isActive(){ return tab==="ohs-observations"; }, action(){ tab="ohs-observations"; } },
    { id:"nav-ohs-contractors", icon:"👷", label:"Contractors", isActive(){ return tab==="ohs-contractors"; }, action(){ tab="ohs-contractors"; } },
    { id:"nav-ohs-readiness", icon:"✅", label:"Site Readiness", isActive(){ return tab==="ohs-readiness"; }, action(){ tab="ohs-readiness"; } },
@@ -9522,17 +9523,24 @@ const NAV_TREE = [
     navModule("nav-analytics")
   ]
 },
-{ id:"pillar-ohs-act", icon:"🦺", label:"OHS Act", children:[
-    navModule("nav-ohs-hira"),
-    navModule("nav-ohs-ptw"),
-    navModule("nav-ohs-appointments"),
-    navModule("nav-ohs-medical-fitness"),
-    navModule("nav-ohs-construction"),
-    navModule("nav-ohs-critical"),
-    navModule("nav-ohs-observations"),
-    navModule("nav-ohs-contractors"),
-    navModule("nav-ohs-readiness"),
-    navModule("nav-samrass")
+{ id:"pillar-ohs-act", icon:"🦺", label:"Occupational Health & Safety", children:[
+    { id:"group-ohs-common", icon:"🧰", label:"Common safety workflows", children:[
+      navModule("nav-ohs-hira"),
+      navModule("nav-ohs-ptw"),
+      navModule("nav-ohs-observations"),
+      navModule("nav-ohs-contractors"),
+      navModule("nav-ohs-capa"),
+      navModule("nav-ohs-appointments"),
+      navModule("nav-ohs-medical-fitness")
+    ]},
+    { id:"group-ohs-construction", icon:"🏗️", label:"Construction / OHSA profile", children:[
+      navModule("nav-ohs-construction"),
+      navModule("nav-ohs-readiness")
+    ]},
+    { id:"group-ohs-mining", icon:"⛏️", label:"Mining / MHSA profile", children:[
+      navModule("nav-ohs-critical"),
+      navModule("nav-samrass")
+    ]}
   ]
 },
 { id:"pillar-admin", icon:"⚙️", label:"Administration", children: navModule("nav-admin").children }
