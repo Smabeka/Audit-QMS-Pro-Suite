@@ -2026,7 +2026,7 @@ function renderHiraTab(){
           <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">
             <button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="ctrl-fail" data-id="${h.id}">Report control failure</button>
             ${(h.controls_detail.some(c=>c.status==='Failed') && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="ctrl-restore" data-id="${h.id}">Restore control</button>` : ''}
-            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="hira" data-id="${h.id}">History</button>
+            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="hira" data-id="${h.id}">History</button> ${window.ohsEvBtn?window.ohsEvBtn('hira',h.id):''}
           </div>
           ${(window.__ohsHist||{})[h.id] ? ohsHistoryHtml(window.__ohsHist[h.id]) : ''}` : ''}
           ${(h.status==="PENDING_APPROVAL" && canApproveHira(role)) ? `
@@ -2078,7 +2078,7 @@ function renderPtwTab(){
             ${(p.status==="ACTIVE" || p.status==="EXTENDED") ? `<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohs-act="suspend" data-id="${p.id}">⛔ Stop work (suspend)</button>` : ''}
             ${(p.status==="SUSPENDED" && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="revalidate" data-id="${p.id}" data-type="${esc(p.permit_type)}">Revalidate</button>` : ''}
             ${((p.status==="ACTIVE" || p.status==="EXTENDED" || p.status==="SUSPENDED") && ['Admin','Quality Manager','Department Manager'].includes(role)) ? `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="close" data-id="${p.id}">Close out</button>` : ''}
-            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="permit" data-id="${p.id}">History</button>
+            <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="permit" data-id="${p.id}">History</button> ${window.ohsEvBtn?window.ohsEvBtn('permit',p.id):''}
             <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="pack" data-id="${p.id}">Evidence pack</button>
           </div>
           ${p.status==="SUSPENDED" ? `<div class="ohs-blocker" style="margin-top:6px;">Suspended — ${esc(p.suspension_reason||'')}. Work must not continue until it is revalidated.</div>` : ''}
@@ -2262,7 +2262,7 @@ window.renderOhsContractors = function(){
           ${(mgr && r.status!=='suspended' && r.effective_status!=='cleared')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohsc="clear" data-id="${r.id}">Clear</button>`:''}
           ${(['Admin','Quality Manager','Approver','Department Manager'].includes(role) && r.status!=='suspended')?`<button class="btn btn-ghost" style="font-size:12px;color:var(--rust);" data-ohsc="suspend" data-id="${r.id}">Suspend</button>`:''}
           ${(['Admin','Quality Manager'].includes(role) && r.status==='suspended')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohsc="reinstate" data-id="${r.id}">Reinstate (to pending)</button>`:''}
-          <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="contractor" data-id="${r.id}">History</button>
+          <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="contractor" data-id="${r.id}">History</button> ${window.ohsEvBtn?window.ohsEvBtn('contractor',r.id):''}
         </div>
         ${(window.__ohsHist||{})[r.id] ? ohsHistoryHtml(window.__ohsHist[r.id]) : ''}
       </div>`).join('')}</div>`;
@@ -2361,7 +2361,7 @@ window.renderOhsCritical = function(){
     ${c.events.length===0?`<p class="muted-italic">No major unwanted events recorded.</p>`:c.events.map(ev=>`
       <div class="top-border" style="padding:10px 0;"><div style="display:flex;justify-content:space-between;gap:8px;"><div><div style="font-weight:600;">${esc(ev.ref)} — ${esc(ev.title)}</div>
         <div class="muted-italic" style="font-size:12px;">${esc(ev.category)}${ev.site_area?` · ${esc(ev.site_area)}`:''} · Causes: ${esc(ev.causes)} · Consequence: ${esc(ev.consequence)}</div></div>
-        ${mgr?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="control" data-id="${ev.id}">+ Control</button>`:''}</div>
+        ${mgr?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="control" data-id="${ev.id}">+ Control</button>`:''} ${window.ohsEvBtn?window.ohsEvBtn('cc_event',ev.id):''}</div>
         ${c.controls.filter(x=>x.event_id===ev.id && x.effective_status!=='retired').map(k=>`
           <div style="margin:8px 0 0 10px;padding:8px;border:1px solid var(--line,#ddd);border-radius:6px;">
             <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><div style="font-weight:600;font-size:13px;">${esc(k.ref)} — ${esc(k.name)} <span class="muted-italic">(${esc(k.kind)})</span></div>
@@ -2373,7 +2373,7 @@ window.renderOhsCritical = function(){
               ${(verifier && k.state!=='failed')?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="verify" data-id="${k.id}">Verify</button>`:''}
               ${(k.state==='failed' && me===k.restoration_authority)?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="restore" data-id="${k.id}">Restore</button>`:''}
               ${mgr?`<button class="btn btn-ghost" style="font-size:12px;" data-ohscc="edit" data-id="${k.id}">Edit</button>`:''}
-              <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="cc" data-id="${k.id}">History</button></div>
+              <button class="btn btn-ghost" style="font-size:12px;" data-ohs-act="history" data-kind="cc" data-id="${k.id}">History</button> ${window.ohsEvBtn?window.ohsEvBtn('cc_control',k.id):''}</div>
             ${(window.__ohsHist||{})[k.id] ? ohsHistoryHtml(window.__ohsHist[k.id]) : ''}
           </div>`).join('') || `<p class="muted-italic" style="margin-left:10px;font-size:12px;">No controls yet.</p>`}
       </div>`).join('')}</div>`;
@@ -2476,6 +2476,83 @@ document.addEventListener('click', e=>{
 });
 
 
+
+/* ---- Photo / file evidence on OHS records (private bucket, fingerprinted, immutable) ---- */
+window.__ohsEv = window.__ohsEv || {rows:null, loading:false, err:null};
+window.ohsEvLoad = async function(force){
+  const c = window.__ohsEv; if(!cloudReady() || c.loading || (c.rows && !force)) return;
+  c.loading = true;
+  const r = await supabaseClient.from('ohs_evidence').select('*').order('created_at',{ascending:true}).limit(2000);
+  c.loading = false; c.err = r.error ? r.error.message : null;
+  if(!r.error) c.rows = r.data||[]; else if(!c.rows) c.rows = [];
+  try{ render(); }catch(e){}
+};
+window.ohsEvCount = function(t,id){ const c = window.__ohsEv; return (c.rows||[]).filter(x=>x.record_type===t && x.record_id===id).length; };
+window.ohsEvBtn = function(t,id){
+  const c = window.__ohsEv; if(!c.rows && !c.loading && cloudReady()) setTimeout(()=>window.ohsEvLoad(),0);
+  const n = window.ohsEvCount(t,id);
+  return `<button class="btn btn-ghost" style="font-size:12px;" data-ohs-ev="open" data-type="${t}" data-id="${id}">📷 Evidence${c.rows?` (${n})`:''}</button>`;
+};
+const OHS_EV_TYPES = {pdf:'application/pdf', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', webp:'image/webp', txt:'text/plain',
+  docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document', xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'};
+const OHS_EV_CATS = [['photo_site','Photo of the work area / site'],['photo_isolation','Photo of isolation / lock-out'],['photo_signage','Photo of barricade / signage'],
+  ['gas_test','Gas test reading / instrument'],['certificate','Certificate / licence / appointment'],['training_competence','Training / competence proof'],
+  ['inspection','Inspection record'],['statement','Statement'],['other','Other']];
+async function ohsSha256(buf){ const h = await crypto.subtle.digest('SHA-256', buf); return Array.from(new Uint8Array(h)).map(b=>b.toString(16).padStart(2,'0')).join(''); }
+function ohsEvOpen(type,id){
+  const root = document.getElementById('ohs-modal-root'); if(!root) return;
+  const files = (window.__ohsEv.rows||[]).filter(x=>x.record_type===type && x.record_id===id);
+  const cat = k=> (OHS_EV_CATS.find(c=>c[0]===k)||[k,k])[1];
+  const nm = u=> (currentProfile && u===currentProfile.id) ? 'you' : '';
+  const canAdd = ['Admin','Quality Manager','Approver','Department Manager','Employee'].includes((currentProfile&&currentProfile.role)||'');
+  root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;">
+    <h2>Evidence — photos and files</h2>
+    <p class="ohs-hint">Photos, PDF, Word, Excel or text, up to 25 MB. Each file gets a fingerprint that is checked on every download. Files cannot be replaced or deleted once attached; every download is logged.</p>
+    ${files.length?files.map(f=>`<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--line,#eee);"><strong>${esc(f.file_name)}</strong> <span class="muted-italic">· ${esc(cat(f.category))} · ${Math.max(1,Math.round(f.file_size/1024))} KB · ${esc(new Date(f.created_at).toLocaleString())}${nm(f.uploaded_by)?' · '+esc(nm(f.uploaded_by)):''}</span>${f.note?`<div class="muted-italic">${esc(f.note)}</div>`:''}<div style="margin-top:3px;"><button type="button" class="btn btn-ghost" style="font-size:11px;" data-evdl="${f.id}">Download</button></div></div>`).join(''):'<p class="muted-italic" style="font-size:12px;">No files attached yet.</p>'}
+    ${canAdd?`<h3 style="margin:12px 0 4px;font-size:14px;">Add a file</h3>
+    <label class="field">File or photo<input type="file" id="ohsev-file" accept="image/*,application/pdf,.docx,.xlsx,.txt"></label>
+    <label class="field">What is it?<select id="ohsev-cat">${OHS_EV_CATS.map(c=>`<option value="${c[0]}"${c[0]==='photo_site'?' selected':''}>${esc(c[1])}</option>`).join('')}</select></label>
+    <label class="field">What does it show? (optional)<input id="ohsev-note" maxlength="300"></label>
+    <div id="ohsev-err" class="ohs-blocker" style="display:none;"></div>`:''}
+    <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Close</button>${canAdd?'<button type="button" class="ohs-btn-primary" data-oa="add">Attach</button>':''}</div></div></div>`;
+  const err = m=>{ const e=root.querySelector('#ohsev-err'); if(e){ e.textContent=m; e.style.display='block'; } };
+  root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
+  root.querySelectorAll('[data-evdl]').forEach(b=> b.onclick = ()=> ohsEvDownload(b.dataset.evdl, err));
+  const add = root.querySelector('[data-oa="add"]');
+  if(add) add.onclick = async ()=>{
+    try{
+      if(navigator.onLine===false) throw new Error('You are offline. Files cannot be attached until you are back online.');
+      const file = root.querySelector('#ohsev-file').files[0]; if(!file) throw new Error('Choose a file or take a photo first.');
+      if(file.size<1) throw new Error('The file is empty.'); if(file.size>26214400) throw new Error('The file is larger than 25 MB.');
+      const ext = (file.name.split('.').pop()||'').toLowerCase(); const mime = OHS_EV_TYPES[ext];
+      if(!mime) throw new Error('This file type is not allowed. Use a photo, PDF, Word, Excel or text file.');
+      add.disabled = true; add.textContent = 'Uploading…';
+      const hash = await ohsSha256(await file.arrayBuffer());
+      const rand = (crypto.randomUUID?crypto.randomUUID():String(Date.now())+Math.random().toString(16).slice(2));
+      const path = ((currentProfile&&currentProfile.organization_id)||'')+'/'+type+'/'+id+'/'+rand+'.'+ext;
+      const up = await supabaseClient.storage.from('ohs-evidence').upload(path, file, {contentType:mime, upsert:false});
+      if(up.error) throw new Error('Upload failed: '+up.error.message);
+      const note = root.querySelector('#ohsev-note').value.trim();
+      const r = await supabaseClient.rpc('ohs_evidence_attach', {p_type:type, p_record:id, p_category:root.querySelector('#ohsev-cat').value, p_path:path, p_file_name:file.name, p_mime_type:mime, p_file_size:file.size, p_content_hash:hash, p_note:note||null});
+      if(r.error) throw new Error(r.error.message);
+      await window.ohsEvLoad(true); ohsEvOpen(type,id);
+    }catch(e){ err((e&&e.message)||String(e)); if(add){ add.disabled=false; add.textContent='Attach'; } }
+  };
+}
+async function ohsEvDownload(evId, err){
+  try{
+    const x = (window.__ohsEv.rows||[]).find(r=>r.id===evId); if(!x) throw new Error('File not found.');
+    const lg = await supabaseClient.rpc('ohs_evidence_download_log',{p_id:evId}); if(lg.error) throw new Error(lg.error.message);
+    const dl = await supabaseClient.storage.from('ohs-evidence').download(x.storage_path);
+    if(dl.error||!dl.data) throw new Error((dl.error&&dl.error.message)||'Could not download the file.');
+    const hash = await ohsSha256(await dl.data.arrayBuffer());
+    if(hash!==x.content_hash) err('Warning: this file does not match its recorded fingerprint. Do not rely on it.');
+    const url = URL.createObjectURL(dl.data), a = document.createElement('a'); a.href=url; a.download=x.file_name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),10000);
+  }catch(e){ err((e&&e.message)||String(e)); }
+}
+document.addEventListener('click', e=>{ const b = e.target.closest && e.target.closest('[data-ohs-ev="open"]'); if(b) ohsEvOpen(b.dataset.type, b.dataset.id); });
+
 /* ---- Offline note and the permit evidence pack (end-to-end chain) ---- */
 window.addEventListener('online', ()=>{ try{ render(); }catch(e){} });
 window.addEventListener('offline', ()=>{ try{ render(); }catch(e){} });
@@ -2484,6 +2561,7 @@ window.ohsOfflineNote = function(){
     ? `<div class="ohs-blocker" style="margin-bottom:10px;">You are offline. Nothing you do on these screens reaches the central system until you are back online: permits, signatures, suspensions, readiness records and reports will not be saved, and what you see may be out of date. Do not rely on a permit shown here without checking it on paper or by phone.</div>` : '';
 };
 async function ohsShowPack(permitId){
+  if(window.ohsEvLoad) await window.ohsEvLoad(true);
   const root = document.getElementById('ohs-modal-root'); if(!root) return;
   const p = (permitRecords||[]).find(x=>x.id===permitId); if(!p) return;
   const h = p.hira_id ? (hiraRecords||[]).find(x=>x.id===p.hira_id) : null;
@@ -2503,6 +2581,7 @@ async function ohsShowPack(permitId){
     [hrs>0 && (hrs<=24 || p.permit_scope==='Standing authorisation'), 'Validity window within the 24-hour task / shift limit (or a standing authorisation)', `${Math.round(hrs*10)/10} hours${p.standing_ref?`, ref ${p.standing_ref}`:''}`],
     [['ACTIVE','EXTENDED','SUSPENDED','CLOSED'].includes(p.status), 'Authorised', p.status],
     [p.status!=='SUSPENDED', 'Not currently suspended', p.status==='SUSPENDED'?(p.suspension_reason||''):`${susp} suspension${susp===1?'':'s'}, ${reval} revalidation${reval===1?'':'s'} in its life`],
+    [(window.ohsEvCount?window.ohsEvCount('permit',p.id):0)>0, 'Photo or file evidence attached to the permit', (window.ohsEvCount?window.ohsEvCount('permit',p.id):0)+' file(s) on the permit'+(h?`, ${window.ohsEvCount('hira',h.id)} on the HIRA`:'')],
     [p.status!=='CLOSED' || !!p.closeout, 'Closed out with a handover note (if closed)', p.closeout?(p.closeout.handover_note||''):(p.status==='CLOSED'?'Missing':'Not closed yet')]
   ];
   root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;">
