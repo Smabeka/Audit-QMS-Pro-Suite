@@ -2336,7 +2336,10 @@ window.ohsDashEnsure = function(){ if(window.__ohsDash || !cloudReady()) return;
 window.__ohsDashStats = function(){
   const c = window.__ohsCc, k = window.__ohsC; if(!c.controls) return null;
   return { ccFailed:c.controls.filter(x=>x.effective_status==='failed').length, ccOverdue:c.controls.filter(x=>x.effective_status==='overdue').length,
-           lapsed: k && k.rows ? k.rows.filter(x=>x.effective_status==='lapsed').length : 0 };
+           lapsed: k && k.rows ? k.rows.filter(x=>x.effective_status==='lapsed').length : 0,
+           samNotify:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).notifyNow).length,
+           samLate:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).deadlineOverdue).length,
+           samInv:(state.samrassReports||[]).filter(r=>r.archived!=='true'&&window.samFlags(r).invOverdue).length };
 };
 const OHSCC_CATS = ['Fall of ground','Vehicle-person interaction','Uncontrolled energy','Fire / explosion','Inrush','Occupational exposure','Other'];
 const OHSCC_TONE = {effective:'green',overdue:'amber',unverified:'neutral',failed:'rust',retired:'neutral'};
@@ -2399,6 +2402,78 @@ document.addEventListener('click', e=>{
     v=>rpc('ohs_cc_restore',{p_id:id,p_evidence:v.ev}), after);
 });
 
+
+/* ---- SAMRASS controlled workflow ---- */
+const SAM_STAGES = ['Provisional','Escalated','Assessed','Notified','Forms prepared','Submitted','Investigation','Follow-up reporting','Closed'];
+const SAM_LEGACY = {'Draft':1,'Internally Reviewed':3,'Reported to Inspectorate':6};
+function samRank(r){ const i = SAM_STAGES.indexOf(r.status); return i>=0 ? i+1 : (SAM_LEGACY[r.status]||1); }
+window.samFlags = function(r){
+  const t = new Date().toISOString().slice(0,10), rk = samRank(r), notrep = String(r.reportability||'').startsWith('Not reportable');
+  return { notifyNow: r.reportability==='Reportable - notify now' && r.reportedToInspectorate!=='Yes' && r.status!=='Closed',
+           deadlineOverdue: !!r.reportDeadline && r.reportDeadline<t && rk<6 && !notrep,
+           invOverdue: r.status==='Investigation' && !!r.investigationDue && r.investigationDue<t };
+};
+function samDataset(r){
+  if(r.formType==='Hygiene Exposure Monitoring') return 'hyg';
+  if(r.severity==='Dangerous Occurrence (no injury)' || /^SAMRASS [567] /.test(r.formType||'')) return 'do';
+  return 'inj';
+}
+window.__samFilter = window.__samFilter || 'all';
+window.samFilterFn = r => window.__samFilter==='all' || samDataset(r)===window.__samFilter;
+window.samBar = function(){
+  const arr = (state.samrassReports||[]).filter(r=>r.archived!=='true');
+  const chip = (k,l)=>`<button class="btn ${window.__samFilter===k?'btn-primary':'btn-ghost'}" style="font-size:12px;" data-samq="filter" data-k="${k}">${l} (${k==='all'?arr.length:arr.filter(r=>samDataset(r)===k).length})</button>`;
+  const f = arr.map(window.samFlags), nn = f.filter(x=>x.notifyNow).length, ld = f.filter(x=>x.deadlineOverdue).length;
+  return `<div class="card p4" style="margin-bottom:12px;">
+    ${(nn||ld)?`<div class="ohs-blocker" style="margin-bottom:8px;">${nn?`${nn} incident${nn===1?'':'s'} to notify now. `:''}${ld?`${ld} report${ld===1?'':'s'} past the deadline you entered.`:''}</div>`:''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;"><button class="btn btn-primary" data-samq="quick">⚡ Quick report</button>${chip('all','All')}${chip('inj','Injuries & illness')}${chip('do','Dangerous occurrences')}${chip('hyg','Hygiene exposure')}</div>
+    <p class="muted-italic" style="font-size:11.5px;margin:6px 0 0;">Quick report saves a Provisional record in seconds — nothing else is needed. Then use Advance stage to escalate, assess, notify, prepare the form, record the external submission, investigate and close. The stage and its history are written by the server.</p></div>`;
+};
+window.samStageLog = function(r){
+  const l = r.stageLog; if(!Array.isArray(l)||!l.length) return '';
+  return `<div style="margin-top:8px;font-size:11.5px;border-left:3px solid var(--line,#ddd);padding-left:8px;"><strong>Stage history</strong>${l.map(x=>`<div>${esc(new Date(x.at).toLocaleString())} — ${esc(x.stage)}${x.by_name?` (${esc(x.by_name)})`:''}</div>`).join('')}</div>`;
+};
+document.addEventListener('click', e=>{
+  const b = e.target.closest && e.target.closest('[data-samq]'); if(!b) return;
+  const act = b.dataset.samq, cfg = GENERIC_MODULES.find(m=>m.key==='samrass-reporting');
+  const fopts = id => (cfg.fields.find(f=>f.id===id)||{}).options||[];
+  if(act==='filter'){ window.__samFilter = b.dataset.k; render(); return; }
+  if(act==='quick'){
+    ohsAsk('Quick incident report','Capture it now. Severity and reportability stay "Not yet assessed" until someone assesses them.',[
+      {id:'formType',label:'Report type',type:'select',options:fopts('formType')},{id:'incidentDate',label:'Date',type:'date',value:new Date().toISOString().slice(0,10)},{id:'incidentTime',label:'Time'},
+      {id:'location',label:'Where'},{id:'natureOfInjury',label:'What happened',type:'textarea'},{id:'employee',label:'Who was affected (or leave blank if not yet known)'},{id:'immediateAction',label:'Immediate action taken',type:'textarea'}],
+      v=>{
+        if(!v.formType||!v.incidentDate||!v.natureOfInjury) return 'Report type, date and what happened are needed.';
+        const rec = Object.assign({id:uid()}, v, {status:'Provisional',severity:'Not yet assessed',reportability:'Not yet assessed',reportedToInspectorate:'Not yet assessed',identityStatus:v.employee?'Recorded':'Not yet confirmed'});
+        Object.keys(rec).forEach(k=>{ if(rec[k]==='') delete rec[k]; });
+        state.samrassReports.unshift(rec); cloudSyncInsert(cfg, rec); persist(); return null;
+      }, ()=>{ render(); });
+    return;
+  }
+  if(act==='advance'){
+    const r = (state.samrassReports||[]).find(x=>x.id===b.dataset.id); if(!r) return;
+    const rk = samRank(r), notnow = r.reportability==='Reportable - notify now', notrep = String(r.reportability||'').startsWith('Not reportable');
+    let to = SAM_STAGES[rk]; if(rk===3){ to = notnow ? 'Notified' : notrep ? 'Investigation' : 'Forms prepared'; }
+    if(!to) return;
+    const T = (id,label,extra)=>Object.assign({id,label,value:r[id]||''},extra||{});
+    const F = {
+      'Escalated':[T('escalatedTo','Escalated to'),T('escalatedAt','Escalated at',{type:'datetime-local'}),T('emergencyResponse','Emergency response taken',{type:'textarea'})],
+      'Assessed':[T('severity','Severity',{type:'select',options:fopts('severity')}),T('reportability','Reportable?',{type:'select',options:fopts('reportability')}),T('reportDeadline','Reporting deadline (from the regulations in force — confirm with your legal adviser)',{type:'date'})],
+      'Notified':[T('inspectorateNotifiedDate','Date notified',{type:'date'}),T('notificationMethod','How (phone, e-mail, portal)'),T('notificationRecipient','Who received it'),T('submissionEvidence','Evidence (call log, acknowledgement)')],
+      'Forms prepared':[T('formVersion','Form name and version used'),T('formPreparedBy','Prepared by'),T('incidentDate','Incident date',{type:'date'}),T('mineSection','Mine / section'),T('location','Location'),T('causeCategory','Cause category',{type:'select',options:fopts('causeCategory')}),T('natureOfInjury','Nature of injury / occurrence',{type:'textarea'}),T('immediateAction','Immediate action',{type:'textarea'}),T('employee','Affected person'),T('identityStatus','Identity status',{type:'select',options:fopts('identityStatus')}),T('hygieneAgent','Hygiene agent (exposure reports)'),T('exposureReading','Exposure reading (exposure reports)')],
+      'Submitted':[T('submissionDate','Date submitted',{type:'date'}),T('submissionMethod','How submitted'),T('inspectorateRef','Reference received'),T('submissionEvidence','Evidence of submission')],
+      'Investigation':[T('investigationLead','Investigation lead'),T('investigationDue','Investigation due',{type:'date'})],
+      'Follow-up reporting':[T('followUpRequired','Follow-up report required?',{type:'select',options:['Yes','No']}),T('followUpDue','Follow-up due',{type:'date'})],
+      'Closed':[T('investigationOutcome','Investigation outcome',{type:'textarea'}),T('linkedCapaRef','Linked corrective action reference (or why none)'),T('followUpSubmittedDate','Follow-up report submitted (if required)',{type:'date'})]
+    }[to];
+    ohsAsk(`Advance to: ${to}`,`Currently ${r.status||'Provisional'}. The server checks that everything required for "${to}" is recorded. Stages never go backwards.`, F, v=>{
+      const f = {}; Object.keys(v).forEach(k=>{ if(v[k]!=='') f[k]=v[k]; });
+      if(to==='Notified') f.reportedToInspectorate='Yes';
+      return supabaseClient.rpc('ohs_samrass_advance',{p_id:r.id,p_to:to,p_f:f}).then(x=>x.error?x.error.message:null);
+    }, async ()=>{ await cloudSyncFetch(cfg); });
+  }
+});
+
 /* ---- OHS lifecycle actions: stop work, revalidate, close out, control failure / restore ---- */
 window.__ohsHist = window.__ohsHist || {};
 function ohsHistoryHtml(rows){
@@ -2417,6 +2492,7 @@ function ohsAsk(title, intro, fields, onSubmit, after){
     ${fields.map(f=>f.type==='check' ? `<label class="ohs-checkbox">${input(f)} ${esc(f.label)}</label>` : `<label class="ohs-field"><span>${esc(f.label)}</span>${input(f)}</label>`).join('')}
     <div id="oa-err" class="ohs-blockers"></div>
     <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Cancel</button><button type="button" class="ohs-btn-primary" data-oa="ok">Confirm</button></div></div></div>`;
+  fields.forEach(f=>{ if(f.value!==undefined && f.value!==null){ const e = root.querySelector('#oa-'+f.id); if(e){ if(e.type==='checkbox') e.checked=!!f.value; else e.value=f.value; } } });
   const val = id => { const e = root.querySelector('#oa-'+id); return e.type==='checkbox' ? e.checked : e.value.trim(); };
   root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
   root.querySelector('[data-oa="ok"]').onclick = async ()=>{
@@ -7656,7 +7732,7 @@ function genericInputEl(field, value, attrString){
     const hasVal = value!=null && String(value)!=='';
     const legacy = hasVal && !opts.some(o=>String(o)===String(value)) ? `<option selected>${esc(value)}</option>` : '';
     const blank = field.blank ? `<option value="" ${hasVal?'':'selected'}>— select —</option>` : '';
-    return `<select ${attrString}>${blank}${legacy}${opts.map(o=>`<option ${String(o)===String(value)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
+    return `<select ${attrString}${field.readonly?' disabled':''}>${blank}${legacy}${opts.map(o=>`<option ${String(o)===String(value)?'selected':''}>${esc(o)}</option>`).join('')}</select>`;
   }
   if(field.type==='date'){
     return `<input type="date" ${attrString} value="${esc(value||'')}" />`;
@@ -7762,8 +7838,10 @@ function renderGenericRow(cfg, r){
           </div>
           ${cfg.key==="supplier-scar" ? renderScarScopeWarning(r) : ''}
           ${cfg.key==="supplier-scar" ? renderScarEvidence(r) : ''}
+          ${cfg.key==="samrass-reporting" && window.samStageLog ? window.samStageLog(r) : ''}
           <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px;">
             ${cfg.key==="lab-microbiology" ? `<button class="btn btn-ghost" data-print-micro-cert="${r.id}">🖨 Certificate</button>` : ''}
+            ${cfg.key==="samrass-reporting" && r.status!=="Closed" ? `<button class="btn btn-primary" data-samq="advance" data-id="${r.id}">Advance stage ▶</button>` : ''}
             <button class="btn btn-ghost" data-generic-delete="${cfg.key}:${r.id}">${cfg.archive?'Archive':'Delete'}</button>
           </div>
         </div>
@@ -7979,7 +8057,8 @@ const GENERIC_MODULES = [
   },
   { key:"samrass-reporting", stateArr:"samrassReports", icon:"⛏️", title:"SAMRASS Incident Reporting",
     blurb:"Internal capture of Mine Health & Safety Inspectorate statistics-system data (SAMRASS-equivalent fields) for accidents, dangerous occurrences and hygiene exposure — for your own records and to prep statutory submissions. This does not submit anything to the Inspectorate/DMRE. Capture a provisional record quickly — severity and reportability start as \"Not yet assessed\" and must be assessed before the record moves on. Check the official forms and code lists currently in force with your legal adviser (provisional). Records are archived, never deleted.",
-    cloudSynced:true, supabaseTable:"samrass_reports", archive:true, filterFn:r=>r.archived!=='true',
+    cloudSynced:true, supabaseTable:"samrass_reports", archive:true, filterFn:r=>r.archived!=='true' && (!window.samFilterFn || window.samFilterFn(r)),
+    extraStats:()=>window.samBar?window.samBar():'',
     sortField:"incidentDate",
     fields:[
       {id:"formType", label:"SAMRASS Form Type", type:"select", required:true, options:[
@@ -8019,7 +8098,21 @@ const GENERIC_MODULES = [
       {id:"inspectorateRef", label:"Inspectorate / DMRE Reference (once submitted externally)"},
       {id:"returnToWorkDate", label:"Return to Work Date (SAMRASS 9)", type:"date"},
       {id:"linkedCapaRef", label:"Linked CAPA / Investigation Reference"},
-      {id:"status", label:"Status", type:"select", options:["Provisional","Internally Reviewed","Reported to Inspectorate","Closed"]},
+      {id:"status", label:"Status", type:"select", options:["Provisional","Escalated","Assessed","Notified","Forms prepared","Submitted","Investigation","Follow-up reporting","Closed"], readonly:true},
+      {id:"escalatedTo", label:"Escalated to"},
+      {id:"escalatedAt", label:"Escalated at (date and time)"},
+      {id:"emergencyResponse", label:"Emergency response taken", full:true},
+      {id:"reportDeadline", label:"Reporting deadline (from the regulations in force — confirm with legal adviser)", type:"date"},
+      {id:"formVersion", label:"Form name and version used (check the current official version)"},
+      {id:"formPreparedBy", label:"Form prepared by"},
+      {id:"submissionDate", label:"Date submitted externally", type:"date"},
+      {id:"submissionMethod", label:"How it was submitted"},
+      {id:"investigationLead", label:"Investigation lead"},
+      {id:"investigationDue", label:"Investigation due", type:"date"},
+      {id:"investigationOutcome", label:"Investigation outcome", full:true},
+      {id:"followUpRequired", label:"Follow-up report required?", type:"select", blank:true, options:["Yes","No"]},
+      {id:"followUpDue", label:"Follow-up report due", type:"date"},
+      {id:"followUpSubmittedDate", label:"Follow-up report submitted", type:"date"},
       {id:"notes", label:"Notes", full:true}
     ],
     rowTitle:r=>`${r.formType||'SAMRASS Report'} — ${r.employee||r.mineSection||'Unnamed'}`,
@@ -8028,7 +8121,7 @@ const GENERIC_MODULES = [
       return `${r.mineSection||'—'} · ${r.incidentDate||'—'}${r.severity?` · ${r.severity}`:''}${miss.length?` · ⚠ missing: ${miss.join(', ')}`:''}`;
     },
     rowTag:r=>{
-      if(r.reportability==="Reportable - notify now" && r.reportedToInspectorate!=="Yes") return {label:"Notify now", tone:"rust"};
+      { const f = window.samFlags ? window.samFlags(r) : {}; if(f.notifyNow) return {label:"Notify now", tone:"rust"}; if(f.deadlineOverdue) return {label:"Report overdue", tone:"rust"}; }
       if(r.severity==="Fatal") return {label:"Fatal", tone:"rust"};
       if(r.reportedToInspectorate==="Yes") return {label:"Reported", tone:"navy"};
       if(r.status==="Closed") return {label:"Closed", tone:"green"};
@@ -10028,6 +10121,9 @@ function renderDashboard(){
   { const _oh = (window.ohsDashEnsure && window.ohsDashEnsure(), window.__ohsDashStats && window.__ohsDashStats());
     if(_oh){ if(_oh.ccFailed) priorities.push({dot:"🔴", text:`${_oh.ccFailed} critical control${_oh.ccFailed===1?' has':'s have'} failed — restore before work continues`, navId:"nav-ohs-critical", urgency:100+_oh.ccFailed});
       if(_oh.ccOverdue) priorities.push({dot:"🟡", text:`Verify ${_oh.ccOverdue} overdue critical control${_oh.ccOverdue===1?'':'s'}`, navId:"nav-ohs-critical", urgency:30+_oh.ccOverdue});
+      if(_oh.samNotify) priorities.push({dot:"🔴", text:`${_oh.samNotify} incident${_oh.samNotify===1?'':'s'} must be notified now`, navId:"nav-samrass", urgency:200+_oh.samNotify});
+      if(_oh.samLate) priorities.push({dot:"🔴", text:`${_oh.samLate} statutory report${_oh.samLate===1?' is':'s are'} past the deadline`, navId:"nav-samrass", urgency:150+_oh.samLate});
+      if(_oh.samInv) priorities.push({dot:"🟡", text:`${_oh.samInv} incident investigation${_oh.samInv===1?' is':'s are'} overdue`, navId:"nav-samrass", urgency:25+_oh.samInv});
       if(_oh.lapsed) priorities.push({dot:"🟡", text:`${_oh.lapsed} contractor${_oh.lapsed===1?' has':'s have'} lapsed documents`, navId:"nav-ohs-contractors", urgency:20+_oh.lapsed}); } }
   { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
