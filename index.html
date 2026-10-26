@@ -7965,22 +7965,6 @@ const AUTO_METRIC_OPTIONS = [
   {id:"audit_findings_closed_count", label:"Audit Findings Closed (count)", direction:"higher", unit:"count"},
   {id:"open_high_critical_risks", label:"Open High/Critical Risks (count)", direction:"lower", unit:"count"}
 ];
-if(state.metrics){
-  let healedAny = false;
-  state.metrics.forEach(m=>{
-    if(m.source==="auto" && m.autoType){
-      const def = AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType);
-      if(def && (m.unit!==def.unit || m.direction!==def.direction)){ m.unit = def.unit; m.direction = def.direction; healedAny = true; }
-    }
-    if(m.source==="manual" && m.sample===undefined){
-      const sm = (typeof SAMPLE_KPI_METRICS!=='undefined') ? SAMPLE_KPI_METRICS.find(x=>x.name===m.name) : null;
-      if(sm && Array.isArray(m.history) && m.history.length===1 && Number(m.history[0].value)===sm.value){ m.sample = true; healedAny = true; }
-    }
-    if(m.sample && m.name==="Internal Audit Findings Closed" && m.direction==="lower"){ m.direction = "higher"; healedAny = true; }
-  });
-  if(healedAny) saveStore(state);
-}
-
 /* ---------- KPI metrics ---------- */
 const SAMPLE_KPI_METRICS = [
   {name:"NCR Closure Rate", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:91},
@@ -8007,6 +7991,23 @@ const SAMPLE_KPI_METRICS = [
   {name:"Mock Recall Effectiveness", category:"Recall & Traceability", unit:"%", target:95, direction:"higher", critical:true, value:92},
   {name:"Traceability Exercise Frequency", category:"Recall & Traceability", unit:"count/yr", target:4, direction:"higher", critical:false, value:3}
 ];
+if(state.metrics){
+  let healedAny = false;
+  state.metrics.forEach(m=>{
+    if(m.source==="auto" && m.autoType){
+      const def = AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType);
+      if(def && (m.unit!==def.unit || m.direction!==def.direction)){ m.unit = def.unit; m.direction = def.direction; healedAny = true; }
+    }
+    if(m.source==="manual" && m.sample===undefined){
+      const sm = SAMPLE_KPI_METRICS.find(x=>x.name===m.name);
+      if(sm && Array.isArray(m.history) && m.history.length===1 && Number(m.history[0].value)===sm.value){ m.sample = true; healedAny = true; }
+    }
+    if(m.sample && m.name==="Internal Audit Findings Closed" && m.direction==="lower"){ m.direction = "higher"; healedAny = true; }
+  });
+  if(healedAny) saveStore(state);
+}
+
+
 
 function seedSampleMetrics(){
   const existingNames = new Set(state.metrics.map(m=>m.name));
