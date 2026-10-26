@@ -7972,6 +7972,11 @@ if(state.metrics){
       const def = AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType);
       if(def && (m.unit!==def.unit || m.direction!==def.direction)){ m.unit = def.unit; m.direction = def.direction; healedAny = true; }
     }
+    if(m.source==="manual" && m.sample===undefined){
+      const sm = (typeof SAMPLE_KPI_METRICS!=='undefined') ? SAMPLE_KPI_METRICS.find(x=>x.name===m.name) : null;
+      if(sm && Array.isArray(m.history) && m.history.length===1 && Number(m.history[0].value)===sm.value){ m.sample = true; healedAny = true; }
+    }
+    if(m.sample && m.name==="Internal Audit Findings Closed" && m.direction==="lower"){ m.direction = "higher"; healedAny = true; }
   });
   if(healedAny) saveStore(state);
 }
@@ -7980,7 +7985,7 @@ if(state.metrics){
 const SAMPLE_KPI_METRICS = [
   {name:"NCR Closure Rate", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:91},
   {name:"CAPA On-Time Closure", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:85},
-  {name:"Internal Audit Findings Closed", category:"Process", unit:"count", target:10, direction:"lower", critical:false, value:12},
+  {name:"Internal Audit Findings Closed", category:"Process", unit:"count", target:10, direction:"higher", critical:false, value:12},
   {name:"Customer Complaint Rate", category:"Customer", unit:"per 10k units", target:2, direction:"lower", critical:false, value:2.2},
   {name:"Customer Returns Rate", category:"Customer", unit:"%", target:0.5, direction:"lower", critical:false, value:0.8},
   {name:"CCP Deviation Count", category:"Food Safety", unit:"deviations/wk", target:0, direction:"lower", critical:true, value:1},
@@ -8010,7 +8015,7 @@ function seedSampleMetrics(){
     if(existingNames.has(sm.name)) return;
     state.metrics.push({
       id: uid(), name: sm.name, category: sm.category, unit: sm.unit, target: sm.target,
-      direction: sm.direction, critical: sm.critical, source: "manual", autoType: null,
+      direction: sm.direction, rule: sm.direction==="lower" ? "lte" : "gte", sample: true, critical: sm.critical, source: "manual", autoType: null,
       history: [{ id: uid(), date: today(), value: sm.value }]
     });
     added++;
@@ -8051,10 +8056,29 @@ function metricPreviousValue(m){
   const sorted = [...m.history].sort((a,b)=>a.date.localeCompare(b.date));
   return sorted[sorted.length-2].value;
 }
+const METRIC_RULES = {gte:'At least target (≥)', lte:'At most target (≤)', range:'Within a range', exact:'Exact value', milestone:'Milestone achieved'};
+function metricRule(m){ return m.rule || (m.direction==="lower" ? "lte" : "gte"); }
+function isSampleMetric(m){ return !!(m && (m.sample || m.isDemo)); }
+function liveMetrics(){ return (state.metrics||[]).filter(m=>!isSampleMetric(m)); }
+function metricTargetText(m){
+  const u = m.unit ? ' '+m.unit : '', r = metricRule(m);
+  if(r==="gte") return `≥ ${m.target}${u}`;
+  if(r==="lte") return `≤ ${m.target}${u}`;
+  if(r==="range") return (m.target2===undefined||m.target2===null||m.target2==="") ? `range (upper limit not set)` : `${m.target} to ${m.target2}${u}`;
+  if(r==="exact") return `exactly ${m.target}${u}`;
+  return "milestone achieved (1 = achieved, 0 = not yet)";
+}
 function metricStatus(m, value){
   if(value===null || value===undefined) return null;
-  const onTarget = m.direction==="lower" ? value<=m.target : value>=m.target;
-  return onTarget ? "On Target" : "Off Target";
+  const r = metricRule(m), t = Number(m.target);
+  let ok;
+  if(r==="gte") ok = value>=t;
+  else if(r==="lte") ok = value<=t;
+  else if(r==="exact") ok = value===t;
+  else if(r==="milestone") ok = value>=1;
+  else if(r==="range"){ const hi = Number(m.target2); if(m.target2===undefined||m.target2===null||m.target2===""||Number.isNaN(hi)) return null; ok = value>=t && value<=hi; }
+  else ok = value>=t;
+  return ok ? "On Target" : "Off Target";
 }
 
 function persist(){
@@ -10470,7 +10494,7 @@ function renderDashboard(){
   /* Overall Compliance Score — built from every module that exists in this app today. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
   const riskScore = _rx.score;
-  const metricsWithData = state.metrics.map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
+  const metricsWithData = liveMetrics().map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
   const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
   const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
   const _cdStats = (typeof window.__cdStats === 'function') ? window.__cdStats() : null;
@@ -10891,7 +10915,7 @@ function renderDashboard(){
         const csatAvg = state.csatEntries.length ? (state.csatEntries.reduce((sum,e)=>sum+(Number(e.score)||0),0)/state.csatEntries.length) : null;
 
         // Objectives Achievement — % of tracked KPI metrics currently On Target
-        const metricsWithValues = state.metrics.map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
+        const metricsWithValues = liveMetrics().map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
         const metricsOnTarget = metricsWithValues.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
         const objectivesAchievement = metricsWithValues.length ? Math.round((metricsOnTarget/metricsWithValues.length)*100) : null;
 
@@ -10908,10 +10932,10 @@ function renderDashboard(){
         const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
         const openCriticalRisks = riskExposure().critical;
         const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || openCriticalRisks.length>0)
-          ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
+          ? {emoji:"🔴", label:"Concerns requiring review", tone:"rust"}
           : externalOpenCriticalFindings.length>0
-            ? {emoji:"🟡", label:"At Risk", tone:"amber"}
-            : {emoji:"🟢", label:"Compliant", tone:"green"};
+            ? {emoji:"🟡", label:"Possible concerns: review", tone:"amber"}
+            : {emoji:"🟢", label:"No concerns flagged by these inputs", tone:"green"};
 
         const staticRows = [
           { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint:"Set in ⚙ Company settings" },
@@ -11068,10 +11092,10 @@ function mgmtReviewCore(){
   const supplierApproved = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
   const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
   const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || criticalOpenRisks.length>0)
-    ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
-    : externalOpenCriticalFindings.length>0 ? {emoji:"🟡", label:"At Risk", tone:"amber"}
-    : {emoji:"🟢", label:"Compliant", tone:"green"};
-  const metricsWithValues = state.metrics.map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
+    ? {emoji:"🔴", label:"Concerns requiring review", tone:"rust"}
+    : externalOpenCriticalFindings.length>0 ? {emoji:"🟡", label:"Possible concerns: review", tone:"amber"}
+    : {emoji:"🟢", label:"No concerns flagged by these inputs", tone:"green"};
+  const metricsWithValues = liveMetrics().map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
   const metricsOnTarget = metricsWithValues.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
   const objectivesAchievement = metricsWithValues.length ? Math.round((metricsOnTarget/metricsWithValues.length)*100) : null;
   return {
@@ -11082,11 +11106,11 @@ function mgmtReviewCore(){
   };
 }
 
-function mrRow(label, value, tone, hint){
+function mrRow(label, value, tone, hint, nullText){
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
       <div><div>${esc(label)}</div>${hint?`<div class="muted-italic" style="font-size:11px;">${esc(hint)}</div>`:''}</div>
-      <span class="tag tag-${tone||'neutral'}">${value===null||value===undefined ? 'not tracked yet' : esc(String(value))}</span>
+      <span class="tag tag-${tone||'neutral'}">${value===null||value===undefined ? (nullText||'not tracked yet') : esc(String(value))}</span>
     </div>
   `;
 }
@@ -11097,7 +11121,7 @@ function renderMgmtReviewSummary(){
   return `
     <div class="card p4">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📌 Executive Summary</h3>
-      ${mrRow("Overall Compliance Score", d.overallScore===null?null:`${d.overallScore}%`, overallGrade.tone, "Average score across all scored audits")}
+      ${mrRow("Average Scored Audit Result", d.overallScore===null?null:`${d.overallScore}%`, overallGrade.tone, "Average of audits that have Pass/Fail items scored. It does not measure overall legal or system compliance.", "Not assessed (no scored audits)")}
       ${mrRow("Audit Compliance", `${d.internalAudits.filter(a=>a.status==="Closed").length}/${d.internalAudits.length} Internal · ${d.externalAudits.filter(a=>a.status==="Closed").length}/${d.externalAudits.length} External closed`, "navy", null)}
       ${mrRow("CAPA Completion", d.capaCompletionPct===null?null:`${d.capaCompletionPct}% (${d.capaClosed}/${d.capaTotal} closed)`, d.capaCompletionPct===null?null:(d.capaCompletionPct>=90?'green':d.capaCompletionPct>=70?'amber':'rust'), null)}
       ${(() => { const qo = qualityObjectivesSummary(); return mrRow("Quality Objectives Achieved", qo.pct===null?null:`${qo.pct}% (${qo.achieved}/${qo.total})`, qo.pct===null?null:(qo.pct>=90?'green':qo.pct>=70?'amber':'rust'), "From Quality Objectives module"); })()}
@@ -11115,7 +11139,8 @@ function renderMgmtReviewPerformance(){
   const _trnR = (typeof window.__trainingStats === 'function') ? window.__trainingStats() : null;
   const totalTrainingR = _trnR ? _trnR.total : 0;
   const trainingGoodR = _trnR ? _trnR.complete : 0;
-  const trainingPctR = totalTrainingR>=5 ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
+  const trainingPctR = totalTrainingR>0 ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
+  const trainingSmallBaseR = totalTrainingR>0 && totalTrainingR<5;
   const _scR = (typeof window.__scStats === 'function') ? window.__scStats() : null;
   const calibTotalR = _scR ? _scR.calTotal : state.calibrationRecords.length;
   const calibOverdueR = _scR ? _scR.calOverdue : state.calibrationRecords.filter(c=>c.nextDueDate && daysUntil(c.nextDueDate)<0).length;
@@ -11126,7 +11151,7 @@ function renderMgmtReviewPerformance(){
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">🧰 Resource Adequacy</h3>
       ${mrRow("People — Headcount Tracked", headcountR ? `${headcountR}` : null, "navy", "Active people in the Employee Directory")}
-      ${mrRow("People — Training / Competence in Good Standing", trainingPctR===null?null:`${trainingPctR}% (${trainingGoodR}/${totalTrainingR} requirements)`, trainingPctR===null?null:(trainingPctR>=90?'green':trainingPctR>=70?'amber':'rust'), "Requirements (person and skill) trained and, where required, signed Competent. Shown once at least 5 requirements exist.")}
+      ${mrRow("People — Training / Competence in Good Standing", trainingPctR===null?null:`${trainingPctR}% (${trainingGoodR}/${totalTrainingR} requirements)${trainingSmallBaseR?' — small assessment base':''}`, trainingPctR===null?null:(trainingPctR>=90?'green':trainingPctR>=70?'amber':'rust'), "Requirements (person and skill) trained and, where required, signed Competent. Shown once at least 5 requirements exist.")}
       ${mrRow("Infrastructure — Equipment Calibrated", calibTotalR ? `${calibTotalR-calibOverdueR}/${calibTotalR} up to date` : null, calibTotalR?(calibOverdueR>0?'rust':'green'):null, "From Calibration & Equipment register")}
       ${mrRow("Infrastructure — Calibrations Overdue", calibTotalR ? `${calibOverdueR}` : null, calibOverdueR>0?'rust':'green', null)}
       <p class="muted-italic" style="margin-top:10px;font-size:12px;">Reviewed as part of Management Review to confirm people, equipment and infrastructure are adequate to meet quality and food-safety objectives (ISO 9001 §7.1).</p>
@@ -11156,18 +11181,19 @@ function renderMgmtReviewPerformance(){
     </div>
     <div class="card p4">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📊 KPI Performance (All Metrics)</h3>
-      ${state.metrics.length===0 ? `<p class="muted-italic">No KPI metrics set up yet.</p>` : `
+      ${(()=>{ const n = (state.metrics||[]).length - liveMetrics().length; return n>0 ? `<p class="muted-italic" style="font-size:12px;">${n} sample / demonstration metric(s) are excluded from this report. They remain visible in KPI Metrics.</p>` : ''; })()}
+      ${liveMetrics().length===0 ? `<p class="muted-italic">No live KPI metrics set up yet.</p>` : `
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <thead><tr style="text-align:left;border-bottom:1px solid var(--line2);"><th style="padding:6px 4px;">Metric</th><th>Category</th><th>Current</th><th>Target</th><th>Status</th></tr></thead>
           <tbody>
-            ${state.metrics.map(m=>{
+            ${liveMetrics().map(m=>{
               const value = metricCurrentValue(m);
               const status = metricStatus(m, value);
               return `<tr style="border-bottom:1px solid var(--line2);">
-                <td style="padding:6px 4px;">${esc(m.name)}</td>
+                <td style="padding:6px 4px;">${esc(m.name)}${m.period?`<div class="muted-italic" style="font-size:11px;">${esc(m.period)}${m.denominator?' · '+esc(m.denominator):''}</div>`:''}</td>
                 <td>${esc(m.category)||'—'}</td>
                 <td>${value===null?'—':value+' '+esc(m.unit||'')}</td>
-                <td>${m.target} ${esc(m.unit||'')}</td>
+                <td>${esc(metricTargetText(m))}</td>
                 <td>${status?`<span class="tag tag-${status==='On Target'?'green':'rust'}">${status}</span>`:`<span class="tag tag-neutral">no data yet</span>`}</td>
               </tr>`;
             }).join('')}
@@ -11215,8 +11241,8 @@ function renderMgmtReviewCustomer(){
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">😊 Customer Focus</h3>
-      ${mrRow("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`, d.custComplaintsOpen>0?'amber':'green', "From Sensory Evaluation → Customer Complaints")}
-      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? mrRow("Customer Complaints Register", `${c.total} logged · ${c.open} open · ${c.late} past deadline`, c.late>0?'rust':(c.open>0?'amber':'green'), "From Customer & Consumer Complaints (controlled register)") : ''; })()}
+      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? mrRow("Customer Complaints (controlled register — authoritative)", `${c.total} logged · ${c.open} open · ${c.late} past deadline`, c.late>0?'rust':(c.open>0?'amber':'green'), "From Customer & Consumer Complaints (controlled register)") : ''; })()}
+      ${mrRow("Other complaint observations (sensory evaluations: linked, not the register)", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`, "neutral", "From Sensory Evaluation → Customer Complaints. The controlled register above is the authoritative complaint count.")}
       ${mrRow("Customer Satisfaction", d.csatAvg===null?null:`${csatBucket.emoji} ${d.csatAvg.toFixed(1)} / 5 · ${csatBucket.label}`, csatBucket?csatBucket.tone:null, `${state.csatEntries.length} response(s) logged`)}
       ${mrRow("Product Returns", returnsEntries.length ? `R ${returnsTotal.toLocaleString()} · ${returnsEntries.length} entries` : null, returnsEntries.length?'amber':'green', "From COPQ → Customer Returns category")}
       ${mrRow("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()} · ${state.copqEntries.length} entries` : null, state.copqEntries.length?'rust':'green', null)}
@@ -11242,8 +11268,8 @@ function renderMgmtReviewRisk(){
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Risk & Compliance</h3>
-      ${mrRow("Business Risks", `${d.businessHighRisks.length} High/Critical Risk(s) needing attention`, d.businessHighRisks.length>0?'rust':'green', "From Risk Register → Business category")}
-      ${mrRow("Regulatory Compliance Status", `${d.regulatoryBucket.emoji} ${d.regulatoryBucket.label}`, d.regulatoryBucket.tone, "Based on open External audit findings and Critical risks")}
+      ${mrRow("Business-category risks needing attention", `${d.businessHighRisks.length} High/Critical Risk(s)`, d.businessHighRisks.length>0?'rust':'green', "Business category only. The overall risk summary (Executive Summary) covers all categories.")}
+      ${mrRow("Compliance Concerns Requiring Review", `${d.regulatoryBucket.emoji} ${d.regulatoryBucket.label}`, d.regulatoryBucket.tone, "Flags open Critical/Major external audit findings and Critical risks for review. It is not a legal compliance determination.")}
       ${mrRow("Supplier Performance", d.totalSuppliers ? `${Math.round((d.supplierApproved/d.totalSuppliers)*100)}% approved (${d.supplierApproved}/${d.totalSuppliers})` : null, d.totalSuppliers?'navy':null, `${state.supplierScars.length} SCAR(s) logged`)}
       ${mrRow("Food Safety Performance", `${foodSafetyOpen.length} open risk(s) of ${foodSafetyRisks.length} logged`, foodSafetyOpen.length>0?'amber':'green', "From Risk Register → Food Safety category")}
     </div>
@@ -13782,7 +13808,10 @@ function renderNewMetricForm(){
         <label class="field">Target<input type="number" id="nm-target" step="any" /></label>
         ${metricSourceChoice==='auto'
           ? `<label class="field">Direction<input id="nm-direction-display" value="${selectedAuto.direction==='higher'?'Higher is better':'Lower is better'}" disabled style="opacity:.65;" /></label>`
-          : `<label class="field">Direction<select id="nm-direction"><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></label>`}
+          : `<label class="field">Comparison rule<select id="nm-rule">${Object.entries(METRIC_RULES).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></label>
+             <label class="field">Upper limit (only for "Within a range")<input type="number" step="any" id="nm-target2" /></label>
+             <label class="field">Reporting period<input id="nm-period" placeholder="e.g. per month, per quarter, rolling 12 months" /></label>
+             <label class="field">Denominator / exposure<input id="nm-denominator" placeholder="e.g. per 200,000 hours worked, per 10,000 units" /></label>`}
         <label class="field" style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="nm-critical" style="width:auto;" /> Critical Metric</label>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
@@ -13802,14 +13831,14 @@ function renderMetricRow(m, value, status){
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
-            <div class="audit-sub" style="text-transform:uppercase;">${esc(m.category)||'—'}${m.critical?' · CRITICAL':''}</div>
+            <div class="audit-sub" style="text-transform:uppercase;">${esc(m.category)||'—'}${m.critical?' · CRITICAL':''}${isSampleMetric(m)?' · SAMPLE DATA':''}</div>
             <div class="audit-title">${esc(m.name)}</div>
           </div>
         </div>
         <div class="flex-wrap">
           <div style="text-align:right;">
             <div class="serif" style="font-size:18px;color:var(--navy);">${value===null?'—':value}<span style="font-size:11px;color:var(--muted);"> ${esc(m.unit)}</span></div>
-            <div style="font-size:11px;color:var(--muted);">target ${m.target} ${esc(m.unit)}${delta!==null?` · ${delta>=0?'+':''}${delta}`:''}</div>
+            <div style="font-size:11px;color:var(--muted);">target ${esc(metricTargetText(m))}${(delta!==null && ['gte','lte','exact'].includes(metricRule(m)))?` · ${delta>=0?'+':''}${delta}`:''}${m.period?` · ${esc(m.period)}`:''}${m.denominator?` · ${esc(m.denominator)}`:''}</div>
           </div>
           ${status ? `<span class="tag tag-${status==='On Target'?'green':'rust'}">${status==='On Target'?'on target':'off target'}</span>` : `<span class="tag tag-neutral">no data yet</span>`}
         </div>
@@ -13835,7 +13864,13 @@ function renderMetricDetail(m, value){
       <label class="field">Category<input data-metric-field="${m.id}:category" value="${esc(m.category)}" /></label>
       <label class="field">Unit<input data-metric-field="${m.id}:unit" value="${esc(m.unit)}" /></label>
       <label class="field">Target<input type="number" step="any" data-metric-field="${m.id}:target" value="${m.target}" /></label>
-      <label class="field">Direction<select data-metric-field="${m.id}:direction"><option value="higher" ${m.direction==='higher'?'selected':''}>Higher is better</option><option value="lower" ${m.direction==='lower'?'selected':''}>Lower is better</option></select></label>
+      ${m.source==="manual"
+        ? `<label class="field">Comparison rule<select data-metric-field="${m.id}:rule">${Object.entries(METRIC_RULES).map(([k,l])=>`<option value="${k}" ${metricRule(m)===k?'selected':''}>${l}</option>`).join('')}</select></label>
+           ${metricRule(m)==="range" ? `<label class="field">Upper limit<input type="number" step="any" data-metric-field="${m.id}:target2" value="${m.target2??''}" /></label>` : ''}
+           <label class="field">Reporting period<input data-metric-field="${m.id}:period" value="${esc(m.period||'')}" placeholder="e.g. per month" /></label>
+           <label class="field">Denominator / exposure<input data-metric-field="${m.id}:denominator" value="${esc(m.denominator||'')}" placeholder="e.g. per 200,000 hours worked" /></label>
+           <label class="field" style="flex-direction:row;align-items:center;gap:6px;grid-column:1/-1;"><input type="checkbox" data-metric-sample="${m.id}" ${isSampleMetric(m)?'checked':''} style="width:auto;" /> This is sample / demonstration data (kept out of management reports)</label>`
+        : `<div class="field"><span>Comparison rule</span><span style="font-size:14px;">${esc(METRIC_RULES[metricRule(m)])}</span></div>`}
     </div>
     ${m.source==="manual" ? `
       <div class="card p4 top-border" style="margin-bottom:12px;">
@@ -14572,14 +14607,14 @@ function buildMgmtReviewPrintReport(){
     </div>
     <div class="section-title">Executive Summary</div>
     <table><tbody>
-      ${row("Overall Compliance Score", d.overallScore===null?null:`${d.overallScore}% (${overallGrade.label})`)}
+      ${row("Average Scored Audit Result (not a measure of overall compliance)", d.overallScore===null?'Not assessed (no scored audits)':`${d.overallScore}% (${overallGrade.label})`)}
       ${row("Audit Compliance", `${d.internalAudits.filter(a=>a.status==='Closed').length}/${d.internalAudits.length} Internal · ${d.externalAudits.filter(a=>a.status==='Closed').length}/${d.externalAudits.length} External closed`)}
       ${row("CAPA Completion", d.capaCompletionPct===null?null:`${d.capaCompletionPct}% (${d.capaClosed}/${d.capaTotal} closed)`)}
       ${row("Risk Management Status", `${d.openRisks.length} open · ${d.criticalOpenRisks.length} critical`)}
     </tbody></table>
     <div class="section-title">Performance</div>
     <table><tbody>
-      ${row("Objectives Achievement", d.objectivesAchievement===null?null:`${d.objectivesAchievement}% of KPI metrics on target`)}
+      ${row("Live KPI metrics on target (sample data excluded)", d.objectivesAchievement===null?null:`${d.objectivesAchievement}% of live KPI metrics on target`)}
     </tbody></table>
     <div class="section-title">Audit Results</div>
     <table><tbody>
@@ -14590,14 +14625,15 @@ function buildMgmtReviewPrintReport(){
     </tbody></table>
     <div class="section-title">Customer Focus</div>
     <table><tbody>
-      ${row("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`)}
+      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? row("Customer Complaints (controlled register)", `${c.total} logged · ${c.open} open · ${c.late} past deadline`) : ''; })()}
+      ${row("Other complaint observations (sensory evaluations, linked only)", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`)}
       ${row("Customer Satisfaction", d.csatAvg===null?null:`${d.csatAvg.toFixed(1)} / 5 (${csatBucket.label})`)}
       ${row("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()}` : null)}
     </tbody></table>
     <div class="section-title">Risk & Compliance</div>
     <table><tbody>
-      ${row("Business Risks", `${d.businessHighRisks.length} High/Critical`)}
-      ${row("Regulatory Compliance", `${d.regulatoryBucket.label}`)}
+      ${row("Business-category risks needing attention", `${d.businessHighRisks.length} High/Critical (Business category only)`)}
+      ${row("Compliance Concerns Requiring Review (not a legal determination)", `${d.regulatoryBucket.label}`)}
       ${row("Supplier Performance", d.totalSuppliers ? `${Math.round((d.supplierApproved/d.totalSuppliers)*100)}% approved` : null)}
     </tbody></table>
     <div class="section-title">Continual Improvement</div>
@@ -17405,7 +17441,7 @@ function attachHandlers(){
   if(createMetric) createMetric.onclick=()=>{
     const target = Number(document.getElementById('nm-target').value);
     if(Number.isNaN(target)) return;
-    let name, autoType = null, source = metricSourceChoice, unit, direction;
+    let name, autoType = null, source = metricSourceChoice, unit, direction, rule = null, target2, period = '', denominator = '';
     if(source==="auto"){
       const selectedAuto = AUTO_METRIC_OPTIONS.find(o=>o.id===metricAutoTypeChoice) || AUTO_METRIC_OPTIONS[0];
       autoType = selectedAuto.id;
@@ -17416,14 +17452,16 @@ function attachHandlers(){
       name = document.getElementById('nm-name').value.trim();
       if(!name) return;
       unit = document.getElementById('nm-unit').value;
-      direction = document.getElementById('nm-direction').value;
+      rule = document.getElementById('nm-rule').value; direction = rule==="lte" ? "lower" : "higher";
+      if(rule==="range"){ const hi = document.getElementById('nm-target2').value; if(hi==="" || Number.isNaN(Number(hi)) || Number(hi) < target){ alert('For a range, set an upper limit that is not below the target.'); return; } target2 = Number(hi); }
+      period = document.getElementById('nm-period').value.trim(); denominator = document.getElementById('nm-denominator').value.trim();
     }
     const existingNames = new Set(state.metrics.map(m=>m.name));
     if(existingNames.has(name)){ alert(`A metric named "${name}" already exists. Edit the existing one instead of creating a duplicate.`); return; }
     const metric = {
       id: uid(), name, category: document.getElementById('nm-category').value,
       unit, target,
-      direction,
+      direction, rule: rule || (direction==="lower" ? "lte" : "gte"), target2, period, denominator,
       critical: document.getElementById('nm-critical').checked,
       source, autoType, history: []
     };
@@ -17438,9 +17476,14 @@ function attachHandlers(){
       const [id, field] = el.dataset.metricField.split(':');
       const m = state.metrics.find(x=>x.id===id);
       if(!m) return;
-      m[field] = field==="target" ? Number(el.value) : el.value;
+      m[field] = (field==="target" || field==="target2") ? Number(el.value) : el.value;
+      if(field==="rule") m.direction = el.value==="lte" ? "lower" : "higher";
       persist(); render();
     };
+  });
+  document.querySelectorAll('[data-metric-sample]').forEach(el=>el.onchange=()=>{
+    const m = state.metrics.find(x=>x.id===el.dataset.metricSample); if(!m) return;
+    m.sample = el.checked; if(!el.checked && m.isDemo) m.isDemo = false; persist(); render();
   });
   document.querySelectorAll('[data-action="add-reading"]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.metric;
