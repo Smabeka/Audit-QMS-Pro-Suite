@@ -7972,6 +7972,11 @@ if(state.metrics){
       const def = AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType);
       if(def && (m.unit!==def.unit || m.direction!==def.direction)){ m.unit = def.unit; m.direction = def.direction; healedAny = true; }
     }
+    if(m.source==="manual" && m.sample===undefined){
+      const sm = (typeof SAMPLE_KPI_METRICS!=='undefined') ? SAMPLE_KPI_METRICS.find(x=>x.name===m.name) : null;
+      if(sm && Array.isArray(m.history) && m.history.length===1 && Number(m.history[0].value)===sm.value){ m.sample = true; healedAny = true; }
+    }
+    if(m.sample && m.name==="Internal Audit Findings Closed" && m.direction==="lower"){ m.direction = "higher"; healedAny = true; }
   });
   if(healedAny) saveStore(state);
 }
@@ -7980,7 +7985,7 @@ if(state.metrics){
 const SAMPLE_KPI_METRICS = [
   {name:"NCR Closure Rate", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:91},
   {name:"CAPA On-Time Closure", category:"Process", unit:"%", target:90, direction:"higher", critical:false, value:85},
-  {name:"Internal Audit Findings Closed", category:"Process", unit:"count", target:10, direction:"lower", critical:false, value:12},
+  {name:"Internal Audit Findings Closed", category:"Process", unit:"count", target:10, direction:"higher", critical:false, value:12},
   {name:"Customer Complaint Rate", category:"Customer", unit:"per 10k units", target:2, direction:"lower", critical:false, value:2.2},
   {name:"Customer Returns Rate", category:"Customer", unit:"%", target:0.5, direction:"lower", critical:false, value:0.8},
   {name:"CCP Deviation Count", category:"Food Safety", unit:"deviations/wk", target:0, direction:"lower", critical:true, value:1},
@@ -8010,7 +8015,7 @@ function seedSampleMetrics(){
     if(existingNames.has(sm.name)) return;
     state.metrics.push({
       id: uid(), name: sm.name, category: sm.category, unit: sm.unit, target: sm.target,
-      direction: sm.direction, critical: sm.critical, source: "manual", autoType: null,
+      direction: sm.direction, rule: sm.direction==="lower" ? "lte" : "gte", sample: true, critical: sm.critical, source: "manual", autoType: null,
       history: [{ id: uid(), date: today(), value: sm.value }]
     });
     added++;
@@ -8051,10 +8056,29 @@ function metricPreviousValue(m){
   const sorted = [...m.history].sort((a,b)=>a.date.localeCompare(b.date));
   return sorted[sorted.length-2].value;
 }
+const METRIC_RULES = {gte:'At least target (≥)', lte:'At most target (≤)', range:'Within a range', exact:'Exact value', milestone:'Milestone achieved'};
+function metricRule(m){ return m.rule || (m.direction==="lower" ? "lte" : "gte"); }
+function isSampleMetric(m){ return !!(m && (m.sample || m.isDemo)); }
+function liveMetrics(){ return (state.metrics||[]).filter(m=>!isSampleMetric(m)); }
+function metricTargetText(m){
+  const u = m.unit ? ' '+m.unit : '', r = metricRule(m);
+  if(r==="gte") return `≥ ${m.target}${u}`;
+  if(r==="lte") return `≤ ${m.target}${u}`;
+  if(r==="range") return (m.target2===undefined||m.target2===null||m.target2==="") ? `range (upper limit not set)` : `${m.target} to ${m.target2}${u}`;
+  if(r==="exact") return `exactly ${m.target}${u}`;
+  return "milestone achieved (1 = achieved, 0 = not yet)";
+}
 function metricStatus(m, value){
   if(value===null || value===undefined) return null;
-  const onTarget = m.direction==="lower" ? value<=m.target : value>=m.target;
-  return onTarget ? "On Target" : "Off Target";
+  const r = metricRule(m), t = Number(m.target);
+  let ok;
+  if(r==="gte") ok = value>=t;
+  else if(r==="lte") ok = value<=t;
+  else if(r==="exact") ok = value===t;
+  else if(r==="milestone") ok = value>=1;
+  else if(r==="range"){ const hi = Number(m.target2); if(m.target2===undefined||m.target2===null||m.target2===""||Number.isNaN(hi)) return null; ok = value>=t && value<=hi; }
+  else ok = value>=t;
+  return ok ? "On Target" : "Off Target";
 }
 
 function persist(){
@@ -10470,7 +10494,7 @@ function renderDashboard(){
   /* Overall Compliance Score — built from every module that exists in this app today. */
   const capaScore = computeAutoMetricValue("capa_closure_rate");
   const riskScore = _rx.score;
-  const metricsWithData = state.metrics.map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
+  const metricsWithData = liveMetrics().map(m=>({m,value:metricCurrentValue(m)})).filter(x=>x.value!==null);
   const onTargetMetrics = metricsWithData.filter(x=>metricStatus(x.m,x.value)==="On Target").length;
   const metricsScore = metricsWithData.length>0 ? Math.round((onTargetMetrics/metricsWithData.length)*1000)/10 : null;
   const _cdStats = (typeof window.__cdStats === 'function') ? window.__cdStats() : null;
@@ -10891,7 +10915,7 @@ function renderDashboard(){
         const csatAvg = state.csatEntries.length ? (state.csatEntries.reduce((sum,e)=>sum+(Number(e.score)||0),0)/state.csatEntries.length) : null;
 
         // Objectives Achievement — % of tracked KPI metrics currently On Target
-        const metricsWithValues = state.metrics.map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
+        const metricsWithValues = liveMetrics().map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
         const metricsOnTarget = metricsWithValues.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
         const objectivesAchievement = metricsWithValues.length ? Math.round((metricsOnTarget/metricsWithValues.length)*100) : null;
 
@@ -10908,10 +10932,10 @@ function renderDashboard(){
         const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
         const openCriticalRisks = riskExposure().critical;
         const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || openCriticalRisks.length>0)
-          ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
+          ? {emoji:"🔴", label:"Concerns requiring review", tone:"rust"}
           : externalOpenCriticalFindings.length>0
-            ? {emoji:"🟡", label:"At Risk", tone:"amber"}
-            : {emoji:"🟢", label:"Compliant", tone:"green"};
+            ? {emoji:"🟡", label:"Possible concerns: review", tone:"amber"}
+            : {emoji:"🟢", label:"No concerns flagged by these inputs", tone:"green"};
 
         const staticRows = [
           { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint:"Set in ⚙ Company settings" },
@@ -11068,10 +11092,10 @@ function mgmtReviewCore(){
   const supplierApproved = state.suppliers.filter(s=>s.approvalStatus==="Approved").length;
   const externalOpenCriticalFindings = externalAudits.flatMap(ea=>ea.findings).filter(f=>f.status!=="Closed" && (f.severity==="Critical"||f.severity==="Major"));
   const regulatoryBucket = (externalOpenCriticalFindings.some(f=>f.severity==="Critical") || criticalOpenRisks.length>0)
-    ? {emoji:"🔴", label:"Non-Compliant", tone:"rust"}
-    : externalOpenCriticalFindings.length>0 ? {emoji:"🟡", label:"At Risk", tone:"amber"}
-    : {emoji:"🟢", label:"Compliant", tone:"green"};
-  const metricsWithValues = state.metrics.map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
+    ? {emoji:"🔴", label:"Concerns requiring review", tone:"rust"}
+    : externalOpenCriticalFindings.length>0 ? {emoji:"🟡", label:"Possible concerns: review", tone:"amber"}
+    : {emoji:"🟢", label:"No concerns flagged by these inputs", tone:"green"};
+  const metricsWithValues = liveMetrics().map(m=>({ m, value: metricCurrentValue(m) })).filter(x=>x.value!==null);
   const metricsOnTarget = metricsWithValues.filter(x=>metricStatus(x.m, x.value)==="On Target").length;
   const objectivesAchievement = metricsWithValues.length ? Math.round((metricsOnTarget/metricsWithValues.length)*100) : null;
   return {
@@ -11082,11 +11106,11 @@ function mgmtReviewCore(){
   };
 }
 
-function mrRow(label, value, tone, hint){
+function mrRow(label, value, tone, hint, nullText){
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
       <div><div>${esc(label)}</div>${hint?`<div class="muted-italic" style="font-size:11px;">${esc(hint)}</div>`:''}</div>
-      <span class="tag tag-${tone||'neutral'}">${value===null||value===undefined ? 'not tracked yet' : esc(String(value))}</span>
+      <span class="tag tag-${tone||'neutral'}">${value===null||value===undefined ? (nullText||'not tracked yet') : esc(String(value))}</span>
     </div>
   `;
 }
@@ -11097,7 +11121,7 @@ function renderMgmtReviewSummary(){
   return `
     <div class="card p4">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📌 Executive Summary</h3>
-      ${mrRow("Overall Compliance Score", d.overallScore===null?null:`${d.overallScore}%`, overallGrade.tone, "Average score across all scored audits")}
+      ${mrRow("Average Scored Audit Result", d.overallScore===null?null:`${d.overallScore}%`, overallGrade.tone, "Average of audits that have Pass/Fail items scored. It does not measure overall legal or system compliance.", "Not assessed (no scored audits)")}
       ${mrRow("Audit Compliance", `${d.internalAudits.filter(a=>a.status==="Closed").length}/${d.internalAudits.length} Internal · ${d.externalAudits.filter(a=>a.status==="Closed").length}/${d.externalAudits.length} External closed`, "navy", null)}
       ${mrRow("CAPA Completion", d.capaCompletionPct===null?null:`${d.capaCompletionPct}% (${d.capaClosed}/${d.capaTotal} closed)`, d.capaCompletionPct===null?null:(d.capaCompletionPct>=90?'green':d.capaCompletionPct>=70?'amber':'rust'), null)}
       ${(() => { const qo = qualityObjectivesSummary(); return mrRow("Quality Objectives Achieved", qo.pct===null?null:`${qo.pct}% (${qo.achieved}/${qo.total})`, qo.pct===null?null:(qo.pct>=90?'green':qo.pct>=70?'amber':'rust'), "From Quality Objectives module"); })()}
@@ -11115,7 +11139,8 @@ function renderMgmtReviewPerformance(){
   const _trnR = (typeof window.__trainingStats === 'function') ? window.__trainingStats() : null;
   const totalTrainingR = _trnR ? _trnR.total : 0;
   const trainingGoodR = _trnR ? _trnR.complete : 0;
-  const trainingPctR = totalTrainingR>=5 ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
+  const trainingPctR = totalTrainingR>0 ? Math.round((trainingGoodR/totalTrainingR)*100) : null;
+  const trainingSmallBaseR = totalTrainingR>0 && totalTrainingR<5;
   const _scR = (typeof window.__scStats === 'function') ? window.__scStats() : null;
   const calibTotalR = _scR ? _scR.calTotal : state.calibrationRecords.length;
   const calibOverdueR = _scR ? _scR.calOverdue : state.calibrationRecords.filter(c=>c.nextDueDate && daysUntil(c.nextDueDate)<0).length;
@@ -11126,7 +11151,7 @@ function renderMgmtReviewPerformance(){
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">🧰 Resource Adequacy</h3>
       ${mrRow("People — Headcount Tracked", headcountR ? `${headcountR}` : null, "navy", "Active people in the Employee Directory")}
-      ${mrRow("People — Training / Competence in Good Standing", trainingPctR===null?null:`${trainingPctR}% (${trainingGoodR}/${totalTrainingR} requirements)`, trainingPctR===null?null:(trainingPctR>=90?'green':trainingPctR>=70?'amber':'rust'), "Requirements (person and skill) trained and, where required, signed Competent. Shown once at least 5 requirements exist.")}
+      ${mrRow("People — Training / Competence in Good Standing", trainingPctR===null?null:`${trainingPctR}% (${trainingGoodR}/${totalTrainingR} requirements)${trainingSmallBaseR?' — small assessment base':''}`, trainingPctR===null?null:(trainingPctR>=90?'green':trainingPctR>=70?'amber':'rust'), "Requirements (person and skill) trained and, where required, signed Competent. Shown once at least 5 requirements exist.")}
       ${mrRow("Infrastructure — Equipment Calibrated", calibTotalR ? `${calibTotalR-calibOverdueR}/${calibTotalR} up to date` : null, calibTotalR?(calibOverdueR>0?'rust':'green'):null, "From Calibration & Equipment register")}
       ${mrRow("Infrastructure — Calibrations Overdue", calibTotalR ? `${calibOverdueR}` : null, calibOverdueR>0?'rust':'green', null)}
       <p class="muted-italic" style="margin-top:10px;font-size:12px;">Reviewed as part of Management Review to confirm people, equipment and infrastructure are adequate to meet quality and food-safety objectives (ISO 9001 §7.1).</p>
@@ -11156,18 +11181,19 @@ function renderMgmtReviewPerformance(){
     </div>
     <div class="card p4">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">📊 KPI Performance (All Metrics)</h3>
-      ${state.metrics.length===0 ? `<p class="muted-italic">No KPI metrics set up yet.</p>` : `
+      ${(()=>{ const n = (state.metrics||[]).length - liveMetrics().length; return n>0 ? `<p class="muted-italic" style="font-size:12px;">${n} sample / demonstration metric(s) are excluded from this report. They remain visible in KPI Metrics.</p>` : ''; })()}
+      ${liveMetrics().length===0 ? `<p class="muted-italic">No live KPI metrics set up yet.</p>` : `
         <table style="width:100%;font-size:13px;border-collapse:collapse;">
           <thead><tr style="text-align:left;border-bottom:1px solid var(--line2);"><th style="padding:6px 4px;">Metric</th><th>Category</th><th>Current</th><th>Target</th><th>Status</th></tr></thead>
           <tbody>
-            ${state.metrics.map(m=>{
+            ${liveMetrics().map(m=>{
               const value = metricCurrentValue(m);
               const status = metricStatus(m, value);
               return `<tr style="border-bottom:1px solid var(--line2);">
-                <td style="padding:6px 4px;">${esc(m.name)}</td>
+                <td style="padding:6px 4px;">${esc(m.name)}${m.period?`<div class="muted-italic" style="font-size:11px;">${esc(m.period)}${m.denominator?' · '+esc(m.denominator):''}</div>`:''}</td>
                 <td>${esc(m.category)||'—'}</td>
                 <td>${value===null?'—':value+' '+esc(m.unit||'')}</td>
-                <td>${m.target} ${esc(m.unit||'')}</td>
+                <td>${esc(metricTargetText(m))}</td>
                 <td>${status?`<span class="tag tag-${status==='On Target'?'green':'rust'}">${status}</span>`:`<span class="tag tag-neutral">no data yet</span>`}</td>
               </tr>`;
             }).join('')}
@@ -11215,8 +11241,8 @@ function renderMgmtReviewCustomer(){
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">😊 Customer Focus</h3>
-      ${mrRow("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`, d.custComplaintsOpen>0?'amber':'green', "From Sensory Evaluation → Customer Complaints")}
-      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? mrRow("Customer Complaints Register", `${c.total} logged · ${c.open} open · ${c.late} past deadline`, c.late>0?'rust':(c.open>0?'amber':'green'), "From Customer & Consumer Complaints (controlled register)") : ''; })()}
+      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? mrRow("Customer Complaints (controlled register — authoritative)", `${c.total} logged · ${c.open} open · ${c.late} past deadline`, c.late>0?'rust':(c.open>0?'amber':'green'), "From Customer & Consumer Complaints (controlled register)") : ''; })()}
+      ${mrRow("Other complaint observations (sensory evaluations: linked, not the register)", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`, "neutral", "From Sensory Evaluation → Customer Complaints. The controlled register above is the authoritative complaint count.")}
       ${mrRow("Customer Satisfaction", d.csatAvg===null?null:`${csatBucket.emoji} ${d.csatAvg.toFixed(1)} / 5 · ${csatBucket.label}`, csatBucket?csatBucket.tone:null, `${state.csatEntries.length} response(s) logged`)}
       ${mrRow("Product Returns", returnsEntries.length ? `R ${returnsTotal.toLocaleString()} · ${returnsEntries.length} entries` : null, returnsEntries.length?'amber':'green', "From COPQ → Customer Returns category")}
       ${mrRow("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()} · ${state.copqEntries.length} entries` : null, state.copqEntries.length?'rust':'green', null)}
@@ -11242,8 +11268,8 @@ function renderMgmtReviewRisk(){
   return `
     <div class="card p4" style="margin-bottom:12px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">⚠ Risk & Compliance</h3>
-      ${mrRow("Business Risks", `${d.businessHighRisks.length} High/Critical Risk(s) needing attention`, d.businessHighRisks.length>0?'rust':'green', "From Risk Register → Business category")}
-      ${mrRow("Regulatory Compliance Status", `${d.regulatoryBucket.emoji} ${d.regulatoryBucket.label}`, d.regulatoryBucket.tone, "Based on open External audit findings and Critical risks")}
+      ${mrRow("Business-category risks needing attention", `${d.businessHighRisks.length} High/Critical Risk(s)`, d.businessHighRisks.length>0?'rust':'green', "Business category only. The overall risk summary (Executive Summary) covers all categories.")}
+      ${mrRow("Compliance Concerns Requiring Review", `${d.regulatoryBucket.emoji} ${d.regulatoryBucket.label}`, d.regulatoryBucket.tone, "Flags open Critical/Major external audit findings and Critical risks for review. It is not a legal compliance determination.")}
       ${mrRow("Supplier Performance", d.totalSuppliers ? `${Math.round((d.supplierApproved/d.totalSuppliers)*100)}% approved (${d.supplierApproved}/${d.totalSuppliers})` : null, d.totalSuppliers?'navy':null, `${state.supplierScars.length} SCAR(s) logged`)}
       ${mrRow("Food Safety Performance", `${foodSafetyOpen.length} open risk(s) of ${foodSafetyRisks.length} logged`, foodSafetyOpen.length>0?'amber':'green', "From Risk Register → Food Safety category")}
     </div>
@@ -11322,87 +11348,108 @@ function renderOfiRow(o){
   `;
 }
 
+/* ---- Management Review: controlled meeting record (cloud) ---- */
+window.__mr = window.__mr || {rows:null, actions:[], addenda:[], dir:null, err:null, loading:false, open:null, hist:{}};
+const MR_PROG = {iso9001:'ISO 9001 management review', foodsafety:'ISO 22000 / FSSC 22000 management review', sqf_annual:'SQF annual system review', sqf_monthly:'SQF monthly senior-management update', ohs:'OHS management review (ISO 45001)'};
+const MR_TONE = {draft:'navy', held:'amber', approved:'green', void:'neutral'};
+const MR_STATUS_LABEL = {draft:'Scheduled', held:'Held — record open', approved:'Approved', void:'Void'};
+const MR_OUT = {no_change:'Reviewed — no change required', decision:'Decision and action', not_discussed:'Not discussed'};
+const MR_LINKS = [{v:'',l:'No link'},{v:'capa',l:'CAPA'},{v:'maintenance',l:'Maintenance'},{v:'training',l:'Training'},{v:'change_control',l:'Change control'},{v:'risk',l:'Risk treatment'},{v:'other',l:'Other record'}];
+async function mrLoad(force){
+  const c = window.__mr; if(!cloudReady() || c.loading) return; if(!force && (c.rows || c.err)) return;
+  c.loading = true; c.err = null;
+  const [a,b,e,d] = await Promise.all([
+    supabaseClient.from('mr_meetings').select('*').order('meeting_date',{ascending:false}).order('created_at',{ascending:false}),
+    supabaseClient.from('mr_actions').select('*').order('due_on'),
+    supabaseClient.from('mr_addenda').select('*').order('at'),
+    c.dir && !force ? Promise.resolve({data:c.dir}) : supabaseClient.rpc('get_org_directory')
+  ]);
+  c.loading = false; c.err = (a.error||b.error||e.error) ? (a.error||b.error||e.error).message : null;
+  if(!a.error) c.rows = a.data||[]; if(!b.error) c.actions = b.data||[]; if(!e.error) c.addenda = e.data||[]; if(d && d.data) c.dir = d.data;
+  render();
+}
+const mrName = id => { const p = (window.__mr.dir||[]).find(x=>x.id===id); return p ? p.full_name : '—'; };
+const mrMyRole = () => String((typeof currentProfile!=='undefined' && currentProfile && currentProfile.role) || '').toLowerCase();
+const mrMyId = () => (typeof currentProfile!=='undefined' && currentProfile && currentProfile.id) || null;
+const mrIsMgr = () => ['admin','quality manager','department manager'].includes(mrMyRole());
+const mrPeople = () => (window.__mr.dir||[]).map(p=>({v:p.id,l:p.full_name}));
+function mrDetail(m){
+  const c = window.__mr, acts = c.actions.filter(a=>a.meeting_id===m.id), adds = c.addenda.filter(a=>a.meeting_id===m.id);
+  const att = (m.attendees||[]).map(a=>esc(a.name)).join(', ') || '—';
+  const canApprove = ['admin','quality manager','approver'].includes(mrMyRole());
+  const topics = (m.topics||[]).map(t=>{
+    const ta = acts.filter(a=>a.topic_key===t.key);
+    const body = t.decision ? `<div style="font-size:12px;margin-top:3px;"><strong>${esc(MR_OUT[t.decision]||t.decision)}</strong>${t.discussion?` — ${esc(t.discussion)}`:''}${t.reason?`<br>Reason: ${esc(t.reason)}`:''}${t.decision_text?`<br>Decision: ${esc(t.decision_text)}`:''}</div>` : `<div style="font-size:12px;color:#8a6d00;margin-top:3px;">No outcome recorded yet</div>`;
+    return `<div style="padding:8px 0;border-bottom:1px solid var(--line2);"><div style="font-weight:600;font-size:13px;">${esc(t.label)}</div>${body}
+      ${ta.map(a=>`<div style="font-size:12px;margin:4px 0 0 12px;padding:4px 8px;border-left:3px solid var(--line,#ddd);">${esc(a.title)}<br>Owner: ${esc(mrName(a.owner_id))} · Due ${esc(a.due_on)} · <strong>${esc(a.status)}</strong>${a.linked_type?` · Linked: ${esc(a.linked_type)}${a.linked_id?' '+esc(a.linked_id):''}`:''}${a.done_note?`<br>${esc(a.done_note)}`:''}
+        ${a.status==='open' && (a.owner_id===mrMyId() || mrIsMgr()) ? `<br><button class="btn btn-ghost" style="font-size:11px;" data-mr-act="acomplete" data-id="${esc(a.id)}">Mark done</button>`:''}${a.status==='open' && mrIsMgr() ? ` <button class="btn btn-ghost" style="font-size:11px;" data-mr-act="avoid" data-id="${esc(a.id)}">Void</button>`:''}</div>`).join('')}
+      ${m.status==='held' && mrIsMgr() ? `<div style="margin-top:4px;"><button class="btn btn-ghost" style="font-size:11px;" data-mr-act="topic" data-id="${esc(m.id)}" data-key="${esc(t.key)}">${t.decision?'Change outcome':'Record outcome'}</button>${t.decision==='decision'?` <button class="btn btn-ghost" style="font-size:11px;" data-mr-act="aadd" data-id="${esc(m.id)}" data-key="${esc(t.key)}">+ Action</button>`:''}</div>`:''}</div>`;
+  }).join('');
+  const cc = m.conclusion;
+  const concl = cc ? `<div class="card p4" style="margin-top:10px;font-size:12.5px;"><strong>Overall system conclusion</strong><br>Suitable: ${esc(cc.suitability)}${cc.suitability_note?' — '+esc(cc.suitability_note):''}<br>Adequate: ${esc(cc.adequacy)}${cc.adequacy_note?' — '+esc(cc.adequacy_note):''}<br>Effective: ${esc(cc.effectiveness)}${cc.effectiveness_note?' — '+esc(cc.effectiveness_note):''}<br>Changes required: ${esc(cc.changes_required)}<br>Resource decisions: ${esc(m.resources_decision||'')}<br>Next review: ${esc(m.next_review_date||'')}<br>Approved ${esc(new Date(m.approved_at).toLocaleString())} by ${esc(mrName(m.approved_by))}${m.approved_sole?' (sole eligible approver — also the chair)':''}: ${esc(m.approval_note||'')}</div>` : '';
+  return `<div style="font-size:12.5px;line-height:1.5;">
+    <div>${esc(MR_PROG[m.programme]||m.programme)}<br>Review period: ${esc(m.period_from)} to ${esc(m.period_to)} · Scope: ${esc(m.site_scope)}<br>Chair: ${esc(mrName(m.chair_id))}${m.status!=='draft'?`<br>Attendees: ${att}`:''}${m.agenda?`<br>Agenda: ${esc(m.agenda)}`:''}${m.void_reason?`<br><strong>Void reason:</strong> ${esc(m.void_reason)}`:''}</div>
+    <p class="muted-italic" style="font-size:11.5px;margin:8px 0;">Report figures are not yet frozen into this record. The frozen report snapshot arrives in the next step. Until then, record what the meeting reviewed in the topic notes.</p>
+    ${topics}${concl}
+    ${adds.length?`<div style="margin-top:10px;"><strong>Addenda</strong>${adds.map(a=>`<div style="border-left:3px solid var(--line,#ddd);padding-left:8px;margin-top:4px;">${esc(new Date(a.at).toLocaleString())} — ${esc(mrName(a.added_by))}: ${esc(a.note)}</div>`).join('')}</div>`:''}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
+      ${m.status==='draft' && mrIsMgr() ? `<button class="btn btn-primary" data-mr-act="held" data-id="${esc(m.id)}">Mark as held</button>`:''}
+      ${['draft','held'].includes(m.status) && mrIsMgr() ? `<button class="btn btn-ghost" data-mr-act="edit" data-id="${esc(m.id)}">Edit details</button>`:''}
+      ${m.status==='held' && canApprove ? `<button class="btn btn-primary" data-mr-act="approve" data-id="${esc(m.id)}">Approve record</button>`:''}
+      ${m.status==='approved' && (mrIsMgr()||mrMyRole()==='approver') ? `<button class="btn btn-ghost" data-mr-act="addendum" data-id="${esc(m.id)}">Add addendum</button>`:''}
+      ${['draft','held'].includes(m.status) && ['admin','quality manager'].includes(mrMyRole()) ? `<button class="btn btn-ghost" data-mr-act="void" data-id="${esc(m.id)}">Void record</button>`:''}
+      <button class="btn btn-ghost" data-mr-act="hist" data-id="${esc(m.id)}">History</button></div>
+    ${ohsHistoryHtml(c.hist[m.id])}</div>`;
+}
 function renderMgmtReviewMeetings(){
+  const c = window.__mr; mrLoad();
+  const legacy = state.mgmtReviewMeetings || [];
+  const rows = c.rows || [];
   return `
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:8px;flex-wrap:wrap;">
       <h3 class="serif" style="font-size:16px;margin:0;">📝 Management Review Meetings</h3>
-      <button class="btn btn-primary" data-action="toggle-new-meeting">+ Schedule Meeting</button>
+      ${mrIsMgr() ? `<button class="btn btn-primary" data-mr-act="create">+ Schedule Meeting</button>`:''}
     </div>
-    ${showNewMeeting ? renderNewMeetingForm() : ''}
-    ${state.mgmtReviewMeetings.length===0 ? `<p class="muted-italic">No management review meetings logged yet.</p>` : state.mgmtReviewMeetings.map(m=>renderMeetingRow(m)).join('')}
-  `;
+    <p class="muted-italic" style="font-size:11.5px;margin:0 0 10px;">Each record is kept on the server. Records cannot be deleted. An approved record is locked: later progress is added as an addendum or an action update. Approval must be by someone other than the chair, unless the chair is the only eligible person.</p>
+    ${!cloudReady() ? `<p class="muted-italic">Sign in to use controlled meeting records.</p>` : c.err ? `<p style="color:#a33;">Could not load meetings: ${esc(c.err)}</p>` : !c.rows ? `<p class="muted-italic">Loading…</p>` : rows.length===0 ? `<p class="muted-italic">No management review meetings recorded yet.</p>` :
+      rows.map(m=>`<div class="card" style="margin-bottom:10px;overflow:hidden;"><button class="audit-row" data-mr-act="toggle" data-id="${esc(m.id)}"><div style="display:flex;align-items:center;gap:10px;min-width:0;"><span style="color:#a39a86;">${c.open===m.id?'▾':'›'}</span><div style="min-width:0;"><div class="audit-title">${esc(m.ref)} — ${esc(MR_PROG[m.programme]||m.programme)}</div><div class="audit-sub">${esc(m.meeting_date)} · ${esc(m.site_scope)} · Chair: ${esc(mrName(m.chair_id))}</div></div></div><span class="tag tag-${MR_TONE[m.status]||'neutral'}">${esc(MR_STATUS_LABEL[m.status]||m.status)}</span></button>${c.open===m.id?`<div style="border-top:1px solid var(--line2);padding:14px;">${mrDetail(m)}</div>`:''}</div>`).join('')}
+    ${legacy.length ? `<details style="margin-top:16px;"><summary style="cursor:pointer;font-size:12.5px;">Earlier notes kept on this device only (${legacy.length}) — not controlled records</summary>${legacy.map(m=>`<div class="card p4" style="margin-top:8px;font-size:12px;"><strong>${esc(m.date)}</strong> · ${esc(m.status||'')}<br>Attendees: ${esc(m.attendees||'')}<br>Agenda: ${esc(m.agenda||'')}<br>Decisions: ${esc(m.decisions||'')}<br>Actions: ${(m.actionItems||[]).map(a=>esc(a.text)+' ('+esc(a.owner)+', '+esc(a.dueDate)+', '+esc(a.status)+')').join('; ')||'none'}</div>`).join('')}<p class="muted-italic" style="font-size:11.5px;">These cannot be edited here any more. Re-record anything that still matters as a controlled meeting.</p></details>`:''}`;
 }
-
-function renderNewMeetingForm(){
-  return `
-    <div class="card p4 grid2" style="margin-bottom:16px;">
-      <label class="field">Date<input type="date" id="nm-date" value="${today()}" /></label>
-      <label class="field">Status<select id="nm-status">${MEETING_STATUSES.map(s=>`<option>${s}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Attendees (comma-separated)<input id="nm-attendees" placeholder="e.g. Sandiso Mabeka, QA Manager, Technical Manager" /></label>
-      <label class="field" style="grid-column:1/-1;">Agenda<input id="nm-agenda" placeholder="Topics to cover…" /></label>
-      <div style="grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;">
-        <button class="btn btn-ghost" data-action="cancel-new-meeting">Cancel</button>
-        <button class="btn btn-primary" data-action="create-meeting">Create</button>
-      </div>
-    </div>
-  `;
-}
-
-function renderMeetingRow(m){
-  const open = openMeetingId === m.id;
-  const attendeeCount = (m.attendees||"").split(",").map(s=>s.trim()).filter(Boolean).length;
-  return `
-    <div class="card" style="margin-bottom:10px;overflow:hidden;">
-      <button class="audit-row" data-toggle-meeting="${m.id}">
-        <div style="display:flex;align-items:center;gap:10px;min-width:0;">
-          <span style="color:#a39a86;">${open?'▾':'›'}</span>
-          <div style="min-width:0;">
-            <div class="audit-title">Management Review — ${m.date}</div>
-            <div class="audit-sub">${attendeeCount} attendee(s) · ${m.actionItems.length} action item(s)</div>
-          </div>
-        </div>
-        <span class="tag tag-${meetingStatusTone[m.status]||'neutral'}">${esc(m.status)||'Scheduled'}</span>
-      </button>
-      ${open ? `<div style="border-top:1px solid var(--line2);padding:16px;">${renderMeetingDetail(m)}</div>` : ''}
-    </div>
-  `;
-}
-
-function renderMeetingDetail(m){
-  return `
-    <div class="grid2" style="margin-bottom:12px;">
-      <label class="field">Date<input type="date" data-meeting-field="${m.id}:date" value="${m.date}" /></label>
-      <label class="field">Status<select data-meeting-field="${m.id}:status">${MEETING_STATUSES.map(s=>`<option ${s===m.status?'selected':''}>${s}</option>`).join('')}</select></label>
-      <label class="field" style="grid-column:1/-1;">Attendance (comma-separated)<input data-meeting-field="${m.id}:attendees" value="${esc(m.attendees)}" /></label>
-      <label class="field" style="grid-column:1/-1;">Agenda<input data-meeting-field="${m.id}:agenda" value="${esc(m.agenda)}" /></label>
-      <label class="field" style="grid-column:1/-1;">Meeting Minutes<input data-meeting-field="${m.id}:minutes" value="${esc(m.minutes)}" placeholder="Summary of discussion…" /></label>
-      <label class="field" style="grid-column:1/-1;">Decisions<input data-meeting-field="${m.id}:decisions" value="${esc(m.decisions)}" placeholder="Decisions made…" /></label>
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Action Tracker</h3>
-      ${m.actionItems.length ? m.actionItems.map(ai=>`
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line2);flex-wrap:wrap;">
-          <input data-meeting-action-field="${m.id}:${ai.id}:text" value="${esc(ai.text)}" style="flex:2;min-width:120px;" placeholder="Action…" />
-          <input data-meeting-action-field="${m.id}:${ai.id}:owner" value="${esc(ai.owner)}" style="flex:1;min-width:90px;" placeholder="Owner" />
-          <input type="date" data-meeting-action-field="${m.id}:${ai.id}:dueDate" value="${ai.dueDate||''}" style="flex:1;min-width:120px;" />
-          <select data-meeting-action-field="${m.id}:${ai.id}:status" style="flex:1;min-width:100px;">${["Open","In Progress","Closed"].map(s=>`<option ${s===ai.status?'selected':''}>${s}</option>`).join('')}</select>
-          <button class="x-btn" data-action="remove-meeting-action" data-meeting="${m.id}" data-item="${ai.id}">✕</button>
-        </div>
-      `).join('') : `<p class="muted-italic" style="font-size:12px;">No action items yet.</p>`}
-      <button class="btn btn-ghost" style="margin-top:8px;font-size:12px;" data-action="add-meeting-action" data-meeting="${m.id}">+ Add Action Item</button>
-    </div>
-    <div class="card p4 top-border" style="margin-bottom:12px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 10px;">✍ Management Approval</h3>
-      <div class="grid2">
-        <label class="field">Approved by<input data-meeting-approval-field="${m.id}:approvedBy" value="${esc(m.approval.approvedBy)}" placeholder="e.g. Technical Manager" /></label>
-        <label class="field">Approved Date<input type="date" data-meeting-approval-field="${m.id}:approvedDate" value="${m.approval.approvedDate||''}" /></label>
-      </div>
-    </div>
-    <div style="display:flex;justify-content:flex-end;">
-      <button class="btn btn-danger" data-action="delete-meeting" data-meeting="${m.id}">Delete Meeting</button>
-    </div>
-  `;
-}
+document.addEventListener('click', async e=>{
+  const b = e.target.closest && e.target.closest('[data-mr-act]'); if(!b) return;
+  const act = b.dataset.mrAct, id = b.dataset.id, c = window.__mr;
+  const rpc = async (fn,args)=>{ const r = await supabaseClient.rpc(fn,args); return r.error ? r.error.message : null; };
+  const after = ()=>mrLoad(true);
+  const m = (c.rows||[]).find(x=>x.id===id);
+  const progs = Object.entries(MR_PROG).map(([v,l])=>({v,l}));
+  const headFields = x => [{id:'programme',label:'Review type',type:'select',options:progs,value:x&&x.programme},{id:'period_from',label:'Review period from',type:'date',value:x&&x.period_from},{id:'period_to',label:'Review period to',type:'date',value:x&&x.period_to},
+    {id:'site_scope',label:'Site / business scope covered',value:x&&x.site_scope},{id:'meeting_date',label:'Meeting date',type:'date',value:x&&x.meeting_date},{id:'chair_id',label:'Chair',type:'select',options:mrPeople(),value:x&&x.chair_id},{id:'agenda',label:'Agenda (optional)',type:'textarea',value:x&&x.agenda}];
+  if(act==='toggle'){ c.open = c.open===id ? null : id; render(); return; }
+  if(act==='hist'){ if(c.hist[id]){ delete c.hist[id]; render(); return; } const r = await supabaseClient.from('ohs_events').select('*').eq('record_id',id).order('at',{ascending:true}); c.hist[id] = r.data||[]; render(); return; }
+  if(act==='create') ohsAsk('Schedule a management review','The topic list follows the review type. Clause wording is provisional until checked against the current standard.', headFields(null), async v=>{
+    const r = await supabaseClient.rpc('mr_create',{p_f:v}); if(r.error) return r.error.message; c.open = r.data.id; return null; }, after);
+  if(act==='edit' && m) ohsAsk('Edit meeting details','Changes are logged in the history.', headFields(m).filter(f=>f.id!=='programme'), v=>rpc('mr_update',{p_id:id,p_f:v}), after);
+  if(act==='held' && m) ohsAsk('Mark as held','List everyone who actually attended, one per line. The chair must be included. Names that match a user are linked to that user.',
+    [{id:'names',label:'Attendees',type:'textarea',value:mrName(m.chair_id)}], v=>{
+      const dir = c.dir||[]; const att = (v.names||'').split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean).map(n=>{ const p = dir.find(x=>(x.full_name||'').toLowerCase()===n.toLowerCase()); return p?{name:p.full_name,id:p.id}:{name:n}; });
+      return rpc('mr_mark_held',{p_id:id,p_f:{attendees:att}}); }, after);
+  if(act==='topic' && m){ const t = (m.topics||[]).find(x=>x.key===b.dataset.key)||{};
+    ohsAsk('Outcome: '+(t.label||''),'Choose what the meeting concluded. "No change required" and "Not discussed" each need a reason. A decision needs its rationale, and then at least one action.',
+    [{id:'decision',label:'Outcome',type:'select',options:Object.entries(MR_OUT).map(([v,l])=>({v,l})),value:t.decision},{id:'discussion',label:'Discussion / what was reviewed',type:'textarea',value:t.discussion},{id:'reason',label:'Reason (no change / not discussed)',type:'textarea',value:t.reason},{id:'decision_text',label:'Decision and rationale',type:'textarea',value:t.decision_text}],
+    v=>rpc('mr_topic_set',{p_id:id,p_key:b.dataset.key,p_f:v}), after); }
+  if(act==='aadd' && m) ohsAsk('Add an action','Link to the existing CAPA, maintenance, training, change or risk record where one applies, so there is no second action register.',
+    [{id:'title',label:'Action or resource commitment',type:'textarea'},{id:'owner_id',label:'Accountable owner',type:'select',options:mrPeople()},{id:'due_on',label:'Due date',type:'date'},{id:'linked_type',label:'Linked record type',type:'select',options:MR_LINKS.filter(x=>x.v)},{id:'linked_id',label:'Linked record number (optional)'}],
+    v=>rpc('mr_action_add',{p_id:id,p_key:b.dataset.key,p_f:v}), after);
+  if(act==='acomplete') ohsAsk('Mark action done','Describe what was done and where the evidence is kept.',[{id:'note',label:'What was done',type:'textarea'}], v=>rpc('mr_action_complete',{p_action:id,p_note:v.note}), after);
+  if(act==='avoid') ohsAsk('Void action','The action stays in the record, marked void with your reason.',[{id:'reason',label:'Reason',type:'textarea'}], v=>rpc('mr_action_void',{p_action:id,p_reason:v.reason}), after);
+  if(act==='approve' && m){ const yn = [{v:'yes',l:'Yes'},{v:'partly',l:'Partly'},{v:'no',l:'No'}];
+    ohsAsk('Approve the review record','After approval this record is locked. All topics need an outcome, and every decision needs an action.',
+    [{id:'suitability',label:'Is the system suitable?',type:'select',options:yn},{id:'suitability_note',label:'If not fully: what falls short',type:'textarea'},{id:'adequacy',label:'Is it adequate?',type:'select',options:yn},{id:'adequacy_note',label:'If not fully: what falls short',type:'textarea'},{id:'effectiveness',label:'Is it effective?',type:'select',options:yn},{id:'effectiveness_note',label:'If not fully: what falls short',type:'textarea'},
+     {id:'changes_required',label:'Changes required to the system (or "None required")',type:'textarea'},{id:'resources_decision',label:'Resource decisions (or "No additional resources required")',type:'textarea'},{id:'next_review_date',label:'Next review date',type:'date'},{id:'approval_note',label:'Approval note'}],
+    v=>rpc('mr_approve',{p_id:id,p_f:{conclusion:{suitability:v.suitability,suitability_note:v.suitability_note,adequacy:v.adequacy,adequacy_note:v.adequacy_note,effectiveness:v.effectiveness,effectiveness_note:v.effectiveness_note,changes_required:v.changes_required},resources_decision:v.resources_decision,next_review_date:v.next_review_date,approval_note:v.approval_note}}), after); }
+  if(act==='addendum') ohsAsk('Add an addendum','The approved record does not change. This adds a dated note beneath it.',[{id:'note',label:'Addendum',type:'textarea'}], v=>rpc('mr_addendum_add',{p_id:id,p_note:v.note}), after);
+  if(act==='void') ohsAsk('Void this record','A voided record is kept, with your reason, and its open actions are voided.',[{id:'reason',label:'Reason',type:'textarea'}], v=>rpc('mr_void',{p_id:id,p_reason:v.reason}), after);
+});
 
 let complianceChartInstance = null;
 let foodsafeTempChartInstance = null;
@@ -13782,7 +13829,10 @@ function renderNewMetricForm(){
         <label class="field">Target<input type="number" id="nm-target" step="any" /></label>
         ${metricSourceChoice==='auto'
           ? `<label class="field">Direction<input id="nm-direction-display" value="${selectedAuto.direction==='higher'?'Higher is better':'Lower is better'}" disabled style="opacity:.65;" /></label>`
-          : `<label class="field">Direction<select id="nm-direction"><option value="higher">Higher is better</option><option value="lower">Lower is better</option></select></label>`}
+          : `<label class="field">Comparison rule<select id="nm-rule">${Object.entries(METRIC_RULES).map(([k,l])=>`<option value="${k}">${l}</option>`).join('')}</select></label>
+             <label class="field">Upper limit (only for "Within a range")<input type="number" step="any" id="nm-target2" /></label>
+             <label class="field">Reporting period<input id="nm-period" placeholder="e.g. per month, per quarter, rolling 12 months" /></label>
+             <label class="field">Denominator / exposure<input id="nm-denominator" placeholder="e.g. per 200,000 hours worked, per 10,000 units" /></label>`}
         <label class="field" style="flex-direction:row;align-items:center;gap:6px;"><input type="checkbox" id="nm-critical" style="width:auto;" /> Critical Metric</label>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px;">
@@ -13802,14 +13852,14 @@ function renderMetricRow(m, value, status){
         <div style="display:flex;align-items:center;gap:10px;min-width:0;">
           <span style="color:#a39a86;">${open?'▾':'›'}</span>
           <div style="min-width:0;">
-            <div class="audit-sub" style="text-transform:uppercase;">${esc(m.category)||'—'}${m.critical?' · CRITICAL':''}</div>
+            <div class="audit-sub" style="text-transform:uppercase;">${esc(m.category)||'—'}${m.critical?' · CRITICAL':''}${isSampleMetric(m)?' · SAMPLE DATA':''}</div>
             <div class="audit-title">${esc(m.name)}</div>
           </div>
         </div>
         <div class="flex-wrap">
           <div style="text-align:right;">
             <div class="serif" style="font-size:18px;color:var(--navy);">${value===null?'—':value}<span style="font-size:11px;color:var(--muted);"> ${esc(m.unit)}</span></div>
-            <div style="font-size:11px;color:var(--muted);">target ${m.target} ${esc(m.unit)}${delta!==null?` · ${delta>=0?'+':''}${delta}`:''}</div>
+            <div style="font-size:11px;color:var(--muted);">target ${esc(metricTargetText(m))}${(delta!==null && ['gte','lte','exact'].includes(metricRule(m)))?` · ${delta>=0?'+':''}${delta}`:''}${m.period?` · ${esc(m.period)}`:''}${m.denominator?` · ${esc(m.denominator)}`:''}</div>
           </div>
           ${status ? `<span class="tag tag-${status==='On Target'?'green':'rust'}">${status==='On Target'?'on target':'off target'}</span>` : `<span class="tag tag-neutral">no data yet</span>`}
         </div>
@@ -13835,7 +13885,13 @@ function renderMetricDetail(m, value){
       <label class="field">Category<input data-metric-field="${m.id}:category" value="${esc(m.category)}" /></label>
       <label class="field">Unit<input data-metric-field="${m.id}:unit" value="${esc(m.unit)}" /></label>
       <label class="field">Target<input type="number" step="any" data-metric-field="${m.id}:target" value="${m.target}" /></label>
-      <label class="field">Direction<select data-metric-field="${m.id}:direction"><option value="higher" ${m.direction==='higher'?'selected':''}>Higher is better</option><option value="lower" ${m.direction==='lower'?'selected':''}>Lower is better</option></select></label>
+      ${m.source==="manual"
+        ? `<label class="field">Comparison rule<select data-metric-field="${m.id}:rule">${Object.entries(METRIC_RULES).map(([k,l])=>`<option value="${k}" ${metricRule(m)===k?'selected':''}>${l}</option>`).join('')}</select></label>
+           ${metricRule(m)==="range" ? `<label class="field">Upper limit<input type="number" step="any" data-metric-field="${m.id}:target2" value="${m.target2??''}" /></label>` : ''}
+           <label class="field">Reporting period<input data-metric-field="${m.id}:period" value="${esc(m.period||'')}" placeholder="e.g. per month" /></label>
+           <label class="field">Denominator / exposure<input data-metric-field="${m.id}:denominator" value="${esc(m.denominator||'')}" placeholder="e.g. per 200,000 hours worked" /></label>
+           <label class="field" style="flex-direction:row;align-items:center;gap:6px;grid-column:1/-1;"><input type="checkbox" data-metric-sample="${m.id}" ${isSampleMetric(m)?'checked':''} style="width:auto;" /> This is sample / demonstration data (kept out of management reports)</label>`
+        : `<div class="field"><span>Comparison rule</span><span style="font-size:14px;">${esc(METRIC_RULES[metricRule(m)])}</span></div>`}
     </div>
     ${m.source==="manual" ? `
       <div class="card p4 top-border" style="margin-bottom:12px;">
@@ -14560,7 +14616,10 @@ function buildMgmtReviewPrintReport(){
     : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">AQ</div>`;
   const brandName = c.name ? esc(c.name) : "AuditQMS Pro Suite";
   const row = (label, value) => `<tr><th>${esc(label)}</th><td>${value===null||value===undefined?'—':esc(String(value))}</td></tr>`;
-  const latestMeeting = state.mgmtReviewMeetings[0];
+  const mrAppr = ((window.__mr && window.__mr.rows) || []).find(x=>x.status==='approved');
+  const latestMeeting = mrAppr ? { date: mrAppr.meeting_date + ' (' + mrAppr.ref + ')', attendees: (mrAppr.attendees||[]).map(a=>a.name).join(', '),
+    decisions: (mrAppr.topics||[]).filter(t=>t.decision==='decision').map(t=>t.label+': '+t.decision_text).join(' | ') || 'No decisions recorded',
+    approval: { approvedBy: mrName(mrAppr.approved_by) } } : state.mgmtReviewMeetings[0];
 
   document.getElementById('print-report').innerHTML = `
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -14572,14 +14631,14 @@ function buildMgmtReviewPrintReport(){
     </div>
     <div class="section-title">Executive Summary</div>
     <table><tbody>
-      ${row("Overall Compliance Score", d.overallScore===null?null:`${d.overallScore}% (${overallGrade.label})`)}
+      ${row("Average Scored Audit Result (not a measure of overall compliance)", d.overallScore===null?'Not assessed (no scored audits)':`${d.overallScore}% (${overallGrade.label})`)}
       ${row("Audit Compliance", `${d.internalAudits.filter(a=>a.status==='Closed').length}/${d.internalAudits.length} Internal · ${d.externalAudits.filter(a=>a.status==='Closed').length}/${d.externalAudits.length} External closed`)}
       ${row("CAPA Completion", d.capaCompletionPct===null?null:`${d.capaCompletionPct}% (${d.capaClosed}/${d.capaTotal} closed)`)}
       ${row("Risk Management Status", `${d.openRisks.length} open · ${d.criticalOpenRisks.length} critical`)}
     </tbody></table>
     <div class="section-title">Performance</div>
     <table><tbody>
-      ${row("Objectives Achievement", d.objectivesAchievement===null?null:`${d.objectivesAchievement}% of KPI metrics on target`)}
+      ${row("Live KPI metrics on target (sample data excluded)", d.objectivesAchievement===null?null:`${d.objectivesAchievement}% of live KPI metrics on target`)}
     </tbody></table>
     <div class="section-title">Audit Results</div>
     <table><tbody>
@@ -14590,14 +14649,15 @@ function buildMgmtReviewPrintReport(){
     </tbody></table>
     <div class="section-title">Customer Focus</div>
     <table><tbody>
-      ${row("Customer Complaints", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`)}
+      ${(()=>{ const c = (typeof window.__cmStats==='function') ? window.__cmStats() : null; return c ? row("Customer Complaints (controlled register)", `${c.total} logged · ${c.open} open · ${c.late} past deadline`) : ''; })()}
+      ${row("Other complaint observations (sensory evaluations, linked only)", `${d.custComplaints.length} logged · ${d.custComplaintsOpen} need action`)}
       ${row("Customer Satisfaction", d.csatAvg===null?null:`${d.csatAvg.toFixed(1)} / 5 (${csatBucket.label})`)}
       ${row("COPQ Total", state.copqEntries.length ? `R ${d.copqTotal.toLocaleString()}` : null)}
     </tbody></table>
     <div class="section-title">Risk & Compliance</div>
     <table><tbody>
-      ${row("Business Risks", `${d.businessHighRisks.length} High/Critical`)}
-      ${row("Regulatory Compliance", `${d.regulatoryBucket.label}`)}
+      ${row("Business-category risks needing attention", `${d.businessHighRisks.length} High/Critical (Business category only)`)}
+      ${row("Compliance Concerns Requiring Review (not a legal determination)", `${d.regulatoryBucket.label}`)}
       ${row("Supplier Performance", d.totalSuppliers ? `${Math.round((d.supplierApproved/d.totalSuppliers)*100)}% approved` : null)}
     </tbody></table>
     <div class="section-title">Continual Improvement</div>
@@ -17405,7 +17465,7 @@ function attachHandlers(){
   if(createMetric) createMetric.onclick=()=>{
     const target = Number(document.getElementById('nm-target').value);
     if(Number.isNaN(target)) return;
-    let name, autoType = null, source = metricSourceChoice, unit, direction;
+    let name, autoType = null, source = metricSourceChoice, unit, direction, rule = null, target2, period = '', denominator = '';
     if(source==="auto"){
       const selectedAuto = AUTO_METRIC_OPTIONS.find(o=>o.id===metricAutoTypeChoice) || AUTO_METRIC_OPTIONS[0];
       autoType = selectedAuto.id;
@@ -17416,14 +17476,16 @@ function attachHandlers(){
       name = document.getElementById('nm-name').value.trim();
       if(!name) return;
       unit = document.getElementById('nm-unit').value;
-      direction = document.getElementById('nm-direction').value;
+      rule = document.getElementById('nm-rule').value; direction = rule==="lte" ? "lower" : "higher";
+      if(rule==="range"){ const hi = document.getElementById('nm-target2').value; if(hi==="" || Number.isNaN(Number(hi)) || Number(hi) < target){ alert('For a range, set an upper limit that is not below the target.'); return; } target2 = Number(hi); }
+      period = document.getElementById('nm-period').value.trim(); denominator = document.getElementById('nm-denominator').value.trim();
     }
     const existingNames = new Set(state.metrics.map(m=>m.name));
     if(existingNames.has(name)){ alert(`A metric named "${name}" already exists. Edit the existing one instead of creating a duplicate.`); return; }
     const metric = {
       id: uid(), name, category: document.getElementById('nm-category').value,
       unit, target,
-      direction,
+      direction, rule: rule || (direction==="lower" ? "lte" : "gte"), target2, period, denominator,
       critical: document.getElementById('nm-critical').checked,
       source, autoType, history: []
     };
@@ -17438,9 +17500,14 @@ function attachHandlers(){
       const [id, field] = el.dataset.metricField.split(':');
       const m = state.metrics.find(x=>x.id===id);
       if(!m) return;
-      m[field] = field==="target" ? Number(el.value) : el.value;
+      m[field] = (field==="target" || field==="target2") ? Number(el.value) : el.value;
+      if(field==="rule") m.direction = el.value==="lte" ? "lower" : "higher";
       persist(); render();
     };
+  });
+  document.querySelectorAll('[data-metric-sample]').forEach(el=>el.onchange=()=>{
+    const m = state.metrics.find(x=>x.id===el.dataset.metricSample); if(!m) return;
+    m.sample = el.checked; if(!el.checked && m.isDemo) m.isDemo = false; persist(); render();
   });
   document.querySelectorAll('[data-action="add-reading"]').forEach(el=>el.onclick=()=>{
     const id = el.dataset.metric;
