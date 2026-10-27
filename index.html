@@ -10120,6 +10120,7 @@ function renderMainNav(){
 
 /* ---------- render ---------- */
 function render(){
+  if(window.__kpi && typeof kpiLoad==='function'){ try{ kpiLoad(); }catch(e){} }
   scoreCache.clear();
   document.body.classList.toggle('dark', darkMode);
   const root = document.getElementById("app");
@@ -11350,7 +11351,7 @@ function renderOfiRow(o){
 }
 
 /* ---- Management Review: controlled meeting record (cloud) ---- */
-window.__mr = window.__mr || {rows:null, actions:[], addenda:[], dir:null, err:null, loading:false, open:null, hist:{}};
+window.__mr = window.__mr || {rows:null, actions:[], addenda:[], dir:null, err:null, loading:false, open:null, hist:{}, verify:{}};
 const MR_PROG = {iso9001:'ISO 9001 management review', foodsafety:'ISO 22000 / FSSC 22000 management review', sqf_annual:'SQF annual system review', sqf_monthly:'SQF monthly senior-management update', ohs:'OHS management review (ISO 45001)'};
 const MR_TONE = {draft:'navy', held:'amber', approved:'green', void:'neutral'};
 const MR_STATUS_LABEL = {draft:'Scheduled', held:'Held — record open', approved:'Approved', void:'Void'};
@@ -11374,13 +11375,60 @@ const mrMyRole = () => String((typeof currentProfile!=='undefined' && currentPro
 const mrMyId = () => (typeof currentProfile!=='undefined' && currentProfile && currentProfile.id) || null;
 const mrIsMgr = () => ['admin','quality manager','department manager'].includes(mrMyRole());
 const mrPeople = () => (window.__mr.dir||[]).map(p=>({v:p.id,l:p.full_name}));
+
+/* The report the meeting reviews, frozen when the meeting is marked held. The app calculates these figures; the server stores them, fingerprints them and builds the list of earlier-review actions itself. */
+function mrBuildFigures(m){
+  const d = mgmtReviewCore(), qo = qualityObjectivesSummary();
+  const trn = (typeof window.__trainingStats === 'function') ? window.__trainingStats() : null;
+  const sc = (typeof window.__scStats === 'function') ? window.__scStats() : null;
+  const live = liveMetrics();
+  return {
+    generated_at: new Date().toISOString(),
+    scope: { site: m.site_scope, period_from: m.period_from, period_to: m.period_to, programme: m.programme },
+    limitation: 'Figures are calculated by the app from the registers as they stood when the meeting was marked held, then frozen by the server. The server cannot recompute them independently. Registers that do not date their records are not filtered by the review period.',
+    audits: { internal_total: d.internalAudits.length, internal_closed: d.internalAudits.filter(a=>a.status==="Closed").length, external_total: d.externalAudits.length, external_closed: d.externalAudits.filter(a=>a.status==="Closed").length,
+              findings_total: d.allFindings.length, findings_open: d.openFindings.length, findings_overdue: d.overdueFindings.length, average_scored_result: d.overallScore, scored_audits: d.audits.map(scoreOf).filter(x=>x!==null).length },
+    capa: { total: d.capaTotal, closed: d.capaClosed, completion_pct: d.capaCompletionPct },
+    risks: { open: d.openRisks.length, critical: d.criticalOpenRisks.length, business_category_high: d.businessHighRisks.length },
+    customer: { complaints_other_observations: d.custComplaints.length, complaints_open: d.custComplaintsOpen, csat_average: d.csatAvg===null?null:Math.round(d.csatAvg*10)/10, csat_responses: state.csatEntries.length },
+    copq_total: d.copqTotal,
+    suppliers: { total: d.totalSuppliers, approved: d.supplierApproved },
+    compliance_flag: d.regulatoryBucket.label,
+    objectives: { total: qo.total, achieved: qo.achieved, at_risk: qo.atRisk, pct: qo.pct },
+    resources: { training_requirements: trn?trn.total:0, training_complete: trn?trn.complete:0, calibration_total: sc?sc.calTotal:state.calibrationRecords.length, calibration_overdue: sc?sc.calOverdue:state.calibrationRecords.filter(c=>c.nextDueDate && daysUntil(c.nextDueDate)<0).length },
+    kpis: live.map(k=>{ const v = metricCurrentValue(k); return { name:k.name, category:k.category||'', unit:k.unit||'', target_text:metricTargetText(k), period:k.period||'', value:v, status:metricStatus(k,v) }; }),
+    kpis_sample_excluded: (state.metrics||[]).length - live.length
+  };
+}
+const MR_EVIDENCE = { audits:['audits'], nonconformity:['capa'], customer:['customer'], complaints:['customer'], objectives:['objectives','kpis'], monitoring:['kpis'], performance:['kpis','copq'], suppliers:['suppliers'],
+  risk_effect:['risks'], risks:['risks'], resources:['resources'], previous_actions:['previous_actions'], compliance:['compliance'], ohs_performance:['kpis'] };
+function mrEvidenceLines(key, snap, dirName){
+  const L = [], n = (v,u) => v===null||v===undefined ? 'not enough data' : v + (u||'');
+  (MR_EVIDENCE[key]||[]).forEach(k=>{
+    if(k==='audits'){ const a=snap.audits||{}; L.push(`Internal audits closed ${n(a.internal_closed)}/${n(a.internal_total)}; external ${n(a.external_closed)}/${n(a.external_total)}; findings open ${n(a.findings_open)} (${n(a.findings_overdue)} overdue); average scored audit result ${a.average_scored_result===null?'not assessed':a.average_scored_result+'%'} across ${n(a.scored_audits)} scored audit(s)`); }
+    if(k==='capa'){ const c=snap.capa||{}; L.push(c.total ? `Findings/CAPA closed ${c.closed}/${c.total} (${c.completion_pct}%)` : 'No findings/CAPA recorded — not enough data'); }
+    if(k==='customer'){ const c=snap.customer||{}; L.push(`Customer satisfaction ${c.csat_average===null||c.csat_average===undefined?'not enough data':c.csat_average+' from '+c.csat_responses+' response(s)'}; other complaint observations ${n(c.complaints_other_observations)} (${n(c.complaints_open)} needing action)`); }
+    if(k==='risks'){ const r=snap.risks||{}; L.push(`Open risks ${n(r.open)}, critical ${n(r.critical)}, business-category high ${n(r.business_category_high)}. These are counts only; whether the controls reduced exposure must be judged and recorded in the discussion.`); }
+    if(k==='suppliers'){ const s=snap.suppliers||{}; L.push(s.total ? `Suppliers approved ${s.approved}/${s.total}. Delivery and rejection trends are not captured here.` : 'No suppliers recorded — not enough data'); }
+    if(k==='objectives'){ const o=snap.objectives||{}; L.push(o.total ? `Quality objectives achieved ${o.achieved}/${o.total}; at risk or missed ${o.at_risk}` : 'No quality objectives recorded — not enough data'); }
+    if(k==='copq'){ L.push(`Cost of poor quality recorded: ${n(snap.copq_total)}`); }
+    if(k==='compliance'){ L.push(`Compliance flag from these inputs: ${snap.compliance_flag||'not enough data'} (not a legal conclusion)`); }
+    if(k==='resources'){ const r=snap.resources||{}; L.push(`Training requirements complete ${n(r.training_complete)}/${n(r.training_requirements)}; calibrations overdue ${n(r.calibration_overdue)} of ${n(r.calibration_total)}`); }
+    if(k==='kpis'){ const ks=snap.kpis||[]; L.push(ks.length ? `KPIs with a status: ${ks.filter(x=>x.status).length}/${ks.length}; on target ${ks.filter(x=>x.status==='On Target').length}; off target ${ks.filter(x=>x.status && x.status!=='On Target').length}. ${ks.filter(x=>x.status!=='On Target').slice(0,6).map(x=>`${x.name}: ${x.value===null?'no data':x.value+' '+x.unit} vs ${x.target_text}`).join('; ')}` : 'No live KPIs recorded — not enough data'); }
+    if(k==='previous_actions'){ const p=snap.previous_actions||[]; L.push(p.length ? `${p.length} action(s) from earlier approved reviews: ${p.filter(x=>x.status==='open').length} open (${p.filter(x=>x.overdue).length} overdue), ${p.filter(x=>x.status==='done').length} done` : 'No actions from earlier approved reviews of this programme'); p.slice(0,12).forEach(x=>L.push(`${x.meeting_ref}: ${x.title} — ${dirName(x.owner_id)}, due ${x.due_on}, ${x.status}${x.overdue?' (OVERDUE)':''}`)); }
+  });
+  if(!L.length) L.push('No figures are captured for this topic. Record what was reviewed in the discussion.');
+  return L;
+}
+
 function mrDetail(m){
   const c = window.__mr, acts = c.actions.filter(a=>a.meeting_id===m.id), adds = c.addenda.filter(a=>a.meeting_id===m.id);
   const att = (m.attendees||[]).map(a=>esc(a.name)).join(', ') || '—';
   const canApprove = ['admin','quality manager','approver'].includes(mrMyRole());
   const topics = (m.topics||[]).map(t=>{
     const ta = acts.filter(a=>a.topic_key===t.key);
-    const body = t.decision ? `<div style="font-size:12px;margin-top:3px;"><strong>${esc(MR_OUT[t.decision]||t.decision)}</strong>${t.discussion?` — ${esc(t.discussion)}`:''}${t.reason?`<br>Reason: ${esc(t.reason)}`:''}${t.decision_text?`<br>Decision: ${esc(t.decision_text)}`:''}</div>` : `<div style="font-size:12px;color:#8a6d00;margin-top:3px;">No outcome recorded yet</div>`;
+    const ev = m.snapshot ? `<details style="margin-top:3px;"><summary style="cursor:pointer;font-size:11.5px;color:#555;">Figures reviewed for this topic</summary><div style="font-size:11.5px;padding:4px 0 0 8px;">${mrEvidenceLines(t.key, m.snapshot, mrName).map(l=>`<div>• ${esc(l)}</div>`).join('')}</div></details>` : '';
+    const body = ev + (t.decision ? `<div style="font-size:12px;margin-top:3px;"><strong>${esc(MR_OUT[t.decision]||t.decision)}</strong>${t.discussion?` — ${esc(t.discussion)}`:''}${t.reason?`<br>Reason: ${esc(t.reason)}`:''}${t.decision_text?`<br>Decision: ${esc(t.decision_text)}`:''}</div>` : `<div style="font-size:12px;color:#8a6d00;margin-top:3px;">No outcome recorded yet</div>`);
     return `<div style="padding:8px 0;border-bottom:1px solid var(--line2);"><div style="font-weight:600;font-size:13px;">${esc(t.label)}</div>${body}
       ${ta.map(a=>`<div style="font-size:12px;margin:4px 0 0 12px;padding:4px 8px;border-left:3px solid var(--line,#ddd);">${esc(a.title)}<br>Owner: ${esc(mrName(a.owner_id))} · Due ${esc(a.due_on)} · <strong>${esc(a.status)}</strong>${a.linked_type?` · Linked: ${esc(a.linked_type)}${a.linked_id?' '+esc(a.linked_id):''}`:''}${a.done_note?`<br>${esc(a.done_note)}`:''}
         ${a.status==='open' && (a.owner_id===mrMyId() || mrIsMgr()) ? `<br><button class="btn btn-ghost" style="font-size:11px;" data-mr-act="acomplete" data-id="${esc(a.id)}">Mark done</button>`:''}${a.status==='open' && mrIsMgr() ? ` <button class="btn btn-ghost" style="font-size:11px;" data-mr-act="avoid" data-id="${esc(a.id)}">Void</button>`:''}</div>`).join('')}
@@ -11390,7 +11438,7 @@ function mrDetail(m){
   const concl = cc ? `<div class="card p4" style="margin-top:10px;font-size:12.5px;"><strong>Overall system conclusion</strong><br>Suitable: ${esc(cc.suitability)}${cc.suitability_note?' — '+esc(cc.suitability_note):''}<br>Adequate: ${esc(cc.adequacy)}${cc.adequacy_note?' — '+esc(cc.adequacy_note):''}<br>Effective: ${esc(cc.effectiveness)}${cc.effectiveness_note?' — '+esc(cc.effectiveness_note):''}<br>Changes required: ${esc(cc.changes_required)}<br>Resource decisions: ${esc(m.resources_decision||'')}<br>Next review: ${esc(m.next_review_date||'')}<br>Approved ${esc(new Date(m.approved_at).toLocaleString())} by ${esc(mrName(m.approved_by))}${m.approved_sole?' (sole eligible approver — also the chair)':''}: ${esc(m.approval_note||'')}</div>` : '';
   return `<div style="font-size:12.5px;line-height:1.5;">
     <div>${esc(MR_PROG[m.programme]||m.programme)}<br>Review period: ${esc(m.period_from)} to ${esc(m.period_to)} · Scope: ${esc(m.site_scope)}<br>Chair: ${esc(mrName(m.chair_id))}${m.status!=='draft'?`<br>Attendees: ${att}`:''}${m.agenda?`<br>Agenda: ${esc(m.agenda)}`:''}${m.void_reason?`<br><strong>Void reason:</strong> ${esc(m.void_reason)}`:''}</div>
-    <p class="muted-italic" style="font-size:11.5px;margin:8px 0;">Report figures are not yet frozen into this record. The frozen report snapshot arrives in the next step. Until then, record what the meeting reviewed in the topic notes.</p>
+    ${m.snapshot ? `<div class="card p4" style="margin:8px 0;font-size:12px;"><strong>Report reviewed at this meeting</strong> — frozen ${esc(new Date(m.snapshot_at).toLocaleString())}<br>Fingerprint (SHA-256): <code style="word-break:break-all;">${esc(m.snapshot_hash)}</code> <button class="btn btn-ghost" style="font-size:11px;" data-mr-act="verify" data-id="${esc(m.id)}">Verify</button> ${c.verify&&c.verify[m.id]?`<strong>${esc(c.verify[m.id])}</strong>`:''}<br><span class="muted-italic">${esc(m.snapshot.limitation||'')}</span></div>` : (m.status==='held' && mrIsMgr() ? `<div class="card p4" style="margin:8px 0;font-size:12px;">This record has no frozen report snapshot. <button class="btn btn-primary" style="font-size:11px;" data-mr-act="snap" data-id="${esc(m.id)}">Freeze the report now</button></div>` : `<p class="muted-italic" style="font-size:11.5px;">No report snapshot was frozen for this record.</p>`)}
     ${topics}${concl}
     ${adds.length?`<div style="margin-top:10px;"><strong>Addenda</strong>${adds.map(a=>`<div style="border-left:3px solid var(--line,#ddd);padding-left:8px;margin-top:4px;">${esc(new Date(a.at).toLocaleString())} — ${esc(mrName(a.added_by))}: ${esc(a.note)}</div>`).join('')}</div>`:''}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">
@@ -11425,15 +11473,17 @@ document.addEventListener('click', async e=>{
   const progs = Object.entries(MR_PROG).map(([v,l])=>({v,l}));
   const headFields = x => [{id:'programme',label:'Review type',type:'select',options:progs,value:x&&x.programme},{id:'period_from',label:'Review period from',type:'date',value:x&&x.period_from},{id:'period_to',label:'Review period to',type:'date',value:x&&x.period_to},
     {id:'site_scope',label:'Site / business scope covered',value:x&&x.site_scope},{id:'meeting_date',label:'Meeting date',type:'date',value:x&&x.meeting_date},{id:'chair_id',label:'Chair',type:'select',options:mrPeople(),value:x&&x.chair_id},{id:'agenda',label:'Agenda (optional)',type:'textarea',value:x&&x.agenda}];
+  if(act==='verify'){ const r = await supabaseClient.rpc('mr_snapshot_verify',{p_id:id}); c.verify[id] = r.error ? r.error.message : (r.data.ok ? 'Verified: the stored report matches its fingerprint.' : 'MISMATCH: the stored report does not match its fingerprint.'); render(); return; }
+  if(act==='snap' && m){ const r = await supabaseClient.rpc('mr_snapshot_take',{p_id:id,p_figures:mrBuildFigures(m)}); if(r.error){ alert(r.error.message); return; } await mrLoad(true); return; }
   if(act==='toggle'){ c.open = c.open===id ? null : id; render(); return; }
   if(act==='hist'){ if(c.hist[id]){ delete c.hist[id]; render(); return; } const r = await supabaseClient.from('ohs_events').select('*').eq('record_id',id).order('at',{ascending:true}); c.hist[id] = r.data||[]; render(); return; }
   if(act==='create') ohsAsk('Schedule a management review','The topic list follows the review type. Clause wording is provisional until checked against the current standard.', headFields(null), async v=>{
     const r = await supabaseClient.rpc('mr_create',{p_f:v}); if(r.error) return r.error.message; c.open = r.data.id; return null; }, after);
   if(act==='edit' && m) ohsAsk('Edit meeting details','Changes are logged in the history.', headFields(m).filter(f=>f.id!=='programme'), v=>rpc('mr_update',{p_id:id,p_f:v}), after);
-  if(act==='held' && m) ohsAsk('Mark as held','List everyone who actually attended, one per line. The chair must be included. Names that match a user are linked to that user.',
+  if(act==='held' && m) ohsAsk('Mark as held','List everyone who actually attended, one per line. The chair must be included. Names that match a user are linked to that user. The report figures are frozen at this moment.',
     [{id:'names',label:'Attendees',type:'textarea',value:mrName(m.chair_id)}], v=>{
       const dir = c.dir||[]; const att = (v.names||'').split(/[\n,;]+/).map(s=>s.trim()).filter(Boolean).map(n=>{ const p = dir.find(x=>(x.full_name||'').toLowerCase()===n.toLowerCase()); return p?{name:p.full_name,id:p.id}:{name:n}; });
-      return rpc('mr_mark_held',{p_id:id,p_f:{attendees:att}}); }, after);
+      return rpc('mr_mark_held',{p_id:id,p_f:{attendees:att,snapshot:mrBuildFigures(m)}}); }, after);
   if(act==='topic' && m){ const t = (m.topics||[]).find(x=>x.key===b.dataset.key)||{};
     ohsAsk('Outcome: '+(t.label||''),'Choose what the meeting concluded. "No change required" and "Not discussed" each need a reason. A decision needs its rationale, and then at least one action.',
     [{id:'decision',label:'Outcome',type:'select',options:Object.entries(MR_OUT).map(([v,l])=>({v,l})),value:t.decision},{id:'discussion',label:'Discussion / what was reviewed',type:'textarea',value:t.discussion},{id:'reason',label:'Reason (no change / not discussed)',type:'textarea',value:t.reason},{id:'decision_text',label:'Decision and rationale',type:'textarea',value:t.decision_text}],
@@ -13777,6 +13827,26 @@ function renderTempProductDetail(p){
 /* ---------- KPI metrics render ---------- */
 let showNewMetric = false;
 let openMetricId = null;
+/* ---- KPI metrics: cloud store (definitions are changed with a logged reason, readings are never deleted) ---- */
+window.__kpi = window.__kpi || {loaded:false, loading:false, err:null};
+const kpiEditor = () => ['admin','quality manager'].includes(String((typeof currentProfile!=='undefined' && currentProfile && currentProfile.role) || '').toLowerCase());
+const kpiReader = () => ['admin','quality manager','approver','department manager'].includes(String((typeof currentProfile!=='undefined' && currentProfile && currentProfile.role) || '').toLowerCase());
+function kpiLegacy(){ return (state.metrics||[]).filter(m=>!m.cloud && !isSampleMetric(m)); }
+async function kpiLoad(force){
+  const c = window.__kpi; if(!cloudReady() || c.loading) return; if(!force && (c.loaded || c.err)) return;
+  c.loading = true; c.err = null;
+  const [a,b] = await Promise.all([supabaseClient.from('kpi_metrics').select('*').eq('status','active').order('created_at'), supabaseClient.from('kpi_readings').select('*').order('on_date').order('at')]);
+  c.loading = false;
+  if(a.error || b.error){ c.err = (a.error||b.error).message; render(); return; }
+  const cloud = (a.data||[]).map(r=>({ id:r.id, name:r.name, category:r.category||'', unit:r.unit||'', rule:r.rule, direction:r.rule==='lte'?'lower':'higher', target:Number(r.target), target2:r.target2===null?undefined:Number(r.target2),
+    period:r.period||'', denominator:r.denominator||'', critical:!!r.critical, source:r.source, autoType:r.auto_type, sample:!!r.sample, cloud:true,
+    history:(b.data||[]).filter(x=>x.metric_id===r.id).map(x=>({id:x.id, date:x.on_date, value:Number(x.value), note:x.note||'', at:x.at})) }));
+  const names = new Set(cloud.map(m=>m.name.toLowerCase()));
+  state.metrics = [...cloud, ...(state.metrics||[]).filter(m=>!m.cloud && !names.has(String(m.name).toLowerCase()))];
+  c.loaded = true; persist(); render();
+}
+function kpiItemFor(m){ return { name:m.name, category:m.category||'', unit:m.unit||'', rule:metricRule(m), target:m.target, target2:m.target2===undefined?null:m.target2, period:m.period||'', denominator:m.denominator||'', critical:!!m.critical, source:m.source, auto_type:m.autoType||null, history:(m.history||[]).map(h=>({date:h.date,value:h.value})) }; }
+function kpiDef(m, over){ const o = Object.assign({ name:m.name, category:m.category||'', unit:m.unit||'', rule:metricRule(m), target:m.target, target2:m.target2===undefined?null:m.target2, period:m.period||'', denominator:m.denominator||'', critical:!!m.critical, sample:!!m.sample }, over||{}); return o; }
 let metricSourceChoice = "manual";
 let metricAutoTypeChoice = AUTO_METRIC_OPTIONS[0].id;
 
@@ -13794,9 +13864,11 @@ function renderMetrics(){
         <button class="btn btn-ghost" data-action="seed-sample-metrics">+ Load Sample SHEQ Metrics</button>
         <button class="btn btn-ghost" data-action="export-metrics-csv">⬇ CSV</button>
         <button class="btn btn-ghost" data-action="export-metrics-pdf">📄 Export Report</button>
-        <button class="btn btn-primary" data-action="toggle-new-metric">+ New Metric</button>
+        ${(!cloudReady() || kpiEditor()) ? `<button class="btn btn-primary" data-action="toggle-new-metric">+ New Metric</button>` : ''}
       </div>
     </div>
+    ${window.__kpi.err ? `<p style="color:#a33;font-size:12.5px;">Could not load metrics from the server: ${esc(window.__kpi.err)}</p>` : ''}
+    ${(cloudReady() && kpiEditor() && kpiLegacy().length) ? `<div class="card p4" style="margin-bottom:12px;font-size:12.5px;"><strong>${kpiLegacy().length} metric(s) are stored only on this device.</strong> Upload them so every user and device sees them, with their readings. Sample data is never uploaded.<div style="margin-top:8px;"><button class="btn btn-primary" data-action="kpi-upload">Upload to the cloud</button></div></div>` : ''}
     <div class="stats" style="grid-template-columns:repeat(3,1fr);">
       ${statCard("📊", "Metrics Tracked", metrics.length)}
       ${statCard("✅", "On Target", onTarget)}
@@ -13871,37 +13943,41 @@ function renderMetricRow(m, value, status){
 }
 
 function renderMetricDetail(m, value){
+  const dis = (m.cloud && !kpiEditor()) ? 'disabled' : '';
+  const canRead = !m.cloud || kpiReader();
   const historyRows = (m.source==="manual" && m.history && m.history.length) ?
     [...m.history].sort((a,b)=>b.date.localeCompare(a.date)).map(h=>`
       <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line2);font-size:13px;">
-        <span>${h.date}</span><span>${h.value} ${esc(m.unit)}</span>
-        <button class="x-btn" data-action="delete-reading" data-metric="${m.id}" data-reading="${h.id}">✕</button>
+        <span>${h.date}</span><span>${h.value} ${esc(m.unit)}${h.note?` <span class="muted-italic" style="font-size:11px;">— ${esc(h.note)}</span>`:''}</span>
+        ${m.cloud ? '' : `<button class="x-btn" data-action="delete-reading" data-metric="${m.id}" data-reading="${h.id}">✕</button>`}
       </div>
     `).join('') : `<p class="muted-italic">No readings logged yet.</p>`;
 
   return `
     <div class="grid2" style="margin-bottom:12px;">
-      ${m.source==="manual" ? `<label class="field" style="grid-column:1/-1;">Metric Name<input data-metric-field="${m.id}:name" value="${esc(m.name)}" /></label>` :
+      ${m.source==="manual" ? `<label class="field" style="grid-column:1/-1;">Metric Name<input data-metric-field="${m.id}:name" ${dis} value="${esc(m.name)}" /></label>` :
         `<div class="field" style="grid-column:1/-1;"><span>Metric Name</span><span style="font-size:14px;">${esc(m.name)} <span class="muted-italic" style="font-size:11px;">(auto-calculated from ${AUTO_METRIC_OPTIONS.find(o=>o.id===m.autoType)?.label || m.autoType})</span></span></div>`}
-      <label class="field">Category<input data-metric-field="${m.id}:category" value="${esc(m.category)}" /></label>
-      <label class="field">Unit<input data-metric-field="${m.id}:unit" value="${esc(m.unit)}" /></label>
-      <label class="field">Target<input type="number" step="any" data-metric-field="${m.id}:target" value="${m.target}" /></label>
+      <label class="field">Category<input data-metric-field="${m.id}:category" ${dis} value="${esc(m.category)}" /></label>
+      <label class="field">Unit<input data-metric-field="${m.id}:unit" ${dis} value="${esc(m.unit)}" /></label>
+      <label class="field">Target<input type="number" step="any" data-metric-field="${m.id}:target" ${dis} value="${m.target}" /></label>
       ${m.source==="manual"
-        ? `<label class="field">Comparison rule<select data-metric-field="${m.id}:rule">${Object.entries(METRIC_RULES).map(([k,l])=>`<option value="${k}" ${metricRule(m)===k?'selected':''}>${l}</option>`).join('')}</select></label>
-           ${metricRule(m)==="range" ? `<label class="field">Upper limit<input type="number" step="any" data-metric-field="${m.id}:target2" value="${m.target2??''}" /></label>` : ''}
-           <label class="field">Reporting period<input data-metric-field="${m.id}:period" value="${esc(m.period||'')}" placeholder="e.g. per month" /></label>
-           <label class="field">Denominator / exposure<input data-metric-field="${m.id}:denominator" value="${esc(m.denominator||'')}" placeholder="e.g. per 200,000 hours worked" /></label>
-           <label class="field" style="flex-direction:row;align-items:center;gap:6px;grid-column:1/-1;"><input type="checkbox" data-metric-sample="${m.id}" ${isSampleMetric(m)?'checked':''} style="width:auto;" /> This is sample / demonstration data (kept out of management reports)</label>`
+        ? `<label class="field">Comparison rule<select data-metric-field="${m.id}:rule" ${dis}>${Object.entries(METRIC_RULES).map(([k,l])=>`<option value="${k}" ${metricRule(m)===k?'selected':''}>${l}</option>`).join('')}</select></label>
+           ${metricRule(m)==="range" ? `<label class="field">Upper limit<input type="number" step="any" data-metric-field="${m.id}:target2" ${dis} value="${m.target2??''}" /></label>` : ''}
+           <label class="field">Reporting period<input data-metric-field="${m.id}:period" ${dis} value="${esc(m.period||'')}" placeholder="e.g. per month" /></label>
+           <label class="field">Denominator / exposure<input data-metric-field="${m.id}:denominator" ${dis} value="${esc(m.denominator||'')}" placeholder="e.g. per 200,000 hours worked" /></label>
+           <label class="field" style="flex-direction:row;align-items:center;gap:6px;grid-column:1/-1;"><input type="checkbox" ${dis} data-metric-sample="${m.id}" ${isSampleMetric(m)?'checked':''} style="width:auto;" /> This is sample / demonstration data (kept out of management reports)</label>`
         : `<div class="field"><span>Comparison rule</span><span style="font-size:14px;">${esc(METRIC_RULES[metricRule(m)])}</span></div>`}
     </div>
     ${m.source==="manual" ? `
       <div class="card p4 top-border" style="margin-bottom:12px;">
         <h3 class="serif" style="font-size:15px;margin:0 0 10px;">Log a Reading</h3>
-        <div class="grid3">
+        ${canRead ? `<div class="grid3">
           <label class="field">Date<input type="date" id="reading-date-${m.id}" value="${today()}" /></label>
           <label class="field">Value<input type="number" step="any" id="reading-value-${m.id}" /></label>
+          <label class="field">Note (optional)<input id="reading-note-${m.id}" placeholder="e.g. source, correction of an earlier entry" /></label>
           <button class="btn btn-primary" style="align-self:end;" data-action="add-reading" data-metric="${m.id}">+ Add Reading</button>
-        </div>
+        </div>` : ''}
+        ${m.cloud ? `<p class="muted-italic" style="font-size:11.5px;">Readings are never deleted. To correct a mistake, log the right value with a note; the latest entry for the latest date is used.</p>` : ''}
         ${m.history && m.history.length>=2 ? `<div class="top-border"><canvas id="metric-chart-${m.id}" height="120"></canvas></div>` : ''}
         <div class="top-border">${historyRows}</div>
       </div>
@@ -13911,7 +13987,7 @@ function renderMetricDetail(m, value){
       </div>
     `}
     <div style="display:flex;justify-content:flex-end;">
-      <button class="btn btn-danger" data-action="delete-metric" data-metric="${m.id}">Delete Metric</button>
+      ${m.cloud ? (kpiEditor() ? `<button class="btn btn-danger" data-action="delete-metric" data-metric="${m.id}">Retire Metric</button>` : '') : `<button class="btn btn-danger" data-action="delete-metric" data-metric="${m.id}">Delete Metric</button>`}
     </div>
   `;
 }
@@ -17483,6 +17559,11 @@ function attachHandlers(){
     }
     const existingNames = new Set(state.metrics.map(m=>m.name));
     if(existingNames.has(name)){ alert(`A metric named "${name}" already exists. Edit the existing one instead of creating a duplicate.`); return; }
+    if(cloudReady()){
+      const f = { name, category: document.getElementById('nm-category').value, unit, rule: rule || (direction==="lower" ? "lte" : "gte"), target, target2: target2===undefined?null:target2, period, denominator, critical: document.getElementById('nm-critical').checked, source, auto_type: autoType };
+      supabaseClient.rpc('kpi_metric_save',{p_id:null,p_f:f}).then(r=>{ if(r.error){ alert(r.error.message); return; } openMetricId = r.data; showNewMetric=false; kpiLoad(true); });
+      return;
+    }
     const metric = {
       id: uid(), name, category: document.getElementById('nm-category').value,
       unit, target,
@@ -17501,6 +17582,14 @@ function attachHandlers(){
       const [id, field] = el.dataset.metricField.split(':');
       const m = state.metrics.find(x=>x.id===id);
       if(!m) return;
+      if(m.cloud){
+        const nv = (field==="target" || field==="target2") ? (el.value===''?null:Number(el.value)) : el.value;
+        const over = {[field]:nv}; const sensitive = ['target','target2','rule'].includes(field);
+        const save = async why => { const r = await supabaseClient.rpc('kpi_metric_save',{p_id:id,p_f:Object.assign(kpiDef(m,over),{change_reason:why||null})}); return r.error ? r.error.message : null; };
+        if(sensitive){ render(); ohsAsk('Change the target or rule','Earlier readings were judged against the old definition. The change and your reason are logged.',[{id:'why',label:'Reason for the change',type:'textarea'}], v=>save(v.why), ()=>kpiLoad(true)); }
+        else save(null).then(err=>{ if(err) alert(err); kpiLoad(true); });
+        return;
+      }
       m[field] = (field==="target" || field==="target2") ? Number(el.value) : el.value;
       if(field==="rule") m.direction = el.value==="lte" ? "lower" : "higher";
       persist(); render();
@@ -17508,6 +17597,7 @@ function attachHandlers(){
   });
   document.querySelectorAll('[data-metric-sample]').forEach(el=>el.onchange=()=>{
     const m = state.metrics.find(x=>x.id===el.dataset.metricSample); if(!m) return;
+    if(m.cloud){ supabaseClient.rpc('kpi_metric_save',{p_id:m.id,p_f:kpiDef(m,{sample:el.checked})}).then(r=>{ if(r.error) alert(r.error.message); kpiLoad(true); }); return; }
     m.sample = el.checked; if(!el.checked && m.isDemo) m.isDemo = false; persist(); render();
   });
   document.querySelectorAll('[data-action="add-reading"]').forEach(el=>el.onclick=()=>{
@@ -17516,7 +17606,8 @@ function attachHandlers(){
     if(!m) return;
     const date = document.getElementById(`reading-date-${id}`).value || today();
     const value = Number(document.getElementById(`reading-value-${id}`).value);
-    if(Number.isNaN(value)) return;
+    if(Number.isNaN(value) || document.getElementById(`reading-value-${id}`).value==='') return;
+    if(m.cloud){ const note = (document.getElementById(`reading-note-${id}`)||{}).value||''; supabaseClient.rpc('kpi_reading_add',{p_metric:id,p_date:date,p_value:value,p_note:note}).then(r=>{ if(r.error) alert(r.error.message); kpiLoad(true); }); return; }
     m.history.push({ id: uid(), date, value });
     persist(); render();
   });
@@ -17527,10 +17618,18 @@ function attachHandlers(){
     persist(); render();
   });
   document.querySelectorAll('[data-action="delete-metric"]').forEach(el=>el.onclick=()=>{
+    const cm = state.metrics.find(m=>m.id===el.dataset.metric);
+    if(cm && cm.cloud){ ohsAsk('Retire this metric','It stops appearing in reports. The metric, its readings and your reason stay on record.',[{id:'why',label:'Reason',type:'textarea'}], async v=>{ const r = await supabaseClient.rpc('kpi_metric_retire',{p_id:cm.id,p_reason:v.why}); return r.error ? r.error.message : null; }, ()=>{ openMetricId=null; return kpiLoad(true); }); return; }
     if(!confirm("Delete this metric? This cannot be undone.")) return;
     state.metrics = state.metrics.filter(m=>m.id!==el.dataset.metric);
     openMetricId = null; persist(); render();
   });
+  const kpiUpBtn = document.querySelector('[data-action="kpi-upload"]');
+  if(kpiUpBtn) kpiUpBtn.onclick = async ()=>{
+    const items = kpiLegacy().map(kpiItemFor);
+    const r = await supabaseClient.rpc('kpi_import',{p_items:items}); if(r.error){ alert(r.error.message); return; }
+    alert(`Uploaded ${r.data.metrics} metric(s) and ${r.data.readings} reading(s). Skipped ${r.data.skipped} (already in the cloud or incomplete).`); kpiLoad(true);
+  };
   const seedMetricsBtn = document.querySelector('[data-action="seed-sample-metrics"]');
   if(seedMetricsBtn) seedMetricsBtn.onclick=()=>{
     const added = seedSampleMetrics();
