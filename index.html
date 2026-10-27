@@ -10469,6 +10469,61 @@ function metricTrend(key, currentValue){
   return Math.round((currentValue - prev.metrics[key])*10)/10;
 }
 
+
+/* ---- Tracked Performance Index: stored snapshots. Trends compare defined periods (this month against the latest snapshot from an earlier month), not "your last visit". ---- */
+window.__dash = window.__dash || {snaps:null, loading:false, err:null, triedOn:null, calc:null};
+const DASH_MIN_CONTROLS = 3;
+async function dashLoad(force){
+  const c = window.__dash; if(!cloudReady() || c.loading) return; if(!force && (c.snaps || c.err)) return;
+  c.loading = true;
+  const r = await supabaseClient.from('dash_snapshots').select('taken_on,period,index_value,coverage_n,coverage_of,items,definition_version').order('taken_on',{ascending:true}).limit(400);
+  c.loading = false; if(r.error){ c.err = r.error.message; c.snaps = c.snaps || []; } else { c.err = null; c.snaps = r.data||[]; }
+  render();
+}
+function dashEnsure(){
+  const c = window.__dash; if(!cloudReady()) return;
+  if(c.snaps===null){ dashLoad(); return; }
+  const role = String((typeof currentProfile!=='undefined' && currentProfile && currentProfile.role) || '').toLowerCase();
+  const calc = c.calc; if(!calc || !['admin','quality manager','approver','department manager'].includes(role)) return;
+  if(c.triedOn===today() || c.snaps.some(x=>x.taken_on===today())) return;
+  c.triedOn = today();
+  supabaseClient.rpc('dash_snapshot_save',{p_index:calc.index, p_cov:calc.cov, p_of:calc.of, p_items:calc.items, p_version:1}).then(r=>{ if(!r.error) dashLoad(true); });
+}
+function dashPriorSnap(){ const cur = today().slice(0,7); const s = (window.__dash.snaps||[]).filter(x=>x.period<cur); return s.length ? s[s.length-1] : null; }
+function dashTrend(key, current){
+  if(current===null || current===undefined) return null;
+  const p = dashPriorSnap(); if(!p) return null;
+  const prev = key==='overall' ? (p.index_value===null||p.index_value===undefined ? null : Number(p.index_value)) : (p.items && p.items[key] && p.items[key].result!==null && p.items[key].result!==undefined ? Number(p.items[key].result) : null);
+  if(prev===null) return null;
+  return { pp: Math.round((current-prev)*10)/10, date: p.taken_on };
+}
+function dashPP(t){ return t.pp===0 ? '— No change' : (t.pp>0 ? '↑ +' : '↓ ') + t.pp + ' pp'; }
+function dashChartMonths(){
+  const out = []; const now = new Date();
+  for(let i=11;i>=0;i--){ const d = new Date(now.getFullYear(), now.getMonth()-i, 1); const m = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+    const sn = (window.__dash.snaps||[]).filter(x=>x.period===m); const last = sn.length ? sn[sn.length-1] : null; out.push({ month:m, v: last && last.index_value!==null && last.index_value!==undefined ? Number(last.index_value) : null }); }
+  return out;
+}
+document.addEventListener('click', e=>{
+  const nav = e.target.closest && e.target.closest('#ohs-modal-root [data-navid]'); if(nav){ document.getElementById('ohs-modal-root').innerHTML=''; return; }
+  const b = e.target.closest && e.target.closest('[data-dash-calc]'); if(!b) return;
+  const root = document.getElementById('ohs-modal-root'); const c = window.__dash.calc; if(!root || !c) return;
+  const inc = c.meta.filter(x=>x.score!==null), exc = c.meta.filter(x=>x.score===null), prior = dashPriorSnap();
+  const frac = x => x.den===null||x.den===undefined ? '' : (x.num===null||x.num===undefined ? `${x.den} ${x.denLabel||'records'}` : `${x.num}/${x.den} ${x.denLabel||''}`);
+  root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;">
+    <h2>How the Tracked Performance Index is calculated</h2>
+    <p class="ohs-hint">${c.index===null?'Not enough data for an index yet.':`<strong>${c.index}%</strong> — a simple average of the controls below that have enough data. Every included control counts equally. This is an internal indicator, not a measure of legal or standard compliance.`}</p>
+    <p style="font-size:12.5px;margin:0 0 8px;">Data coverage: <strong>${c.cov} of ${c.of}</strong> controls assessed (at least ${DASH_MIN_CONTROLS} are needed for an index). Calculated ${esc(new Date(c.at).toLocaleString())}. Scope: ${esc(c.scope)}.</p>
+    <p style="font-size:12.5px;margin:0 0 8px;">${prior ? `Trend compares with the snapshot saved on ${esc(prior.taken_on)} (an earlier month), in percentage points (pp).` : 'No snapshot from an earlier month exists yet, so no trend is shown. A snapshot is saved automatically the first time a manager opens the Dashboard each day.'}</p>
+    <h3 style="font-size:14px;margin:10px 0 4px;">Included (${inc.length})</h3>
+    ${inc.map(x=>`<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--line,#eee);"><strong>${esc(x.label)}: ${x.score}%</strong> ${frac(x)?`<span class="muted-italic">· ${esc(frac(x))}</span>`:''}<br><span class="muted-italic">${esc(x.def)}</span>${(c.nav||{})[x.key]?`<br><button class="btn btn-ghost" style="font-size:11px;" data-navid="${(c.nav||{})[x.key]}">View source records</button>`:''}</div>`).join('') || '<p class="muted-italic" style="font-size:12px;">None yet.</p>'}
+    <h3 style="font-size:14px;margin:12px 0 4px;">Not included (${exc.length})</h3>
+    ${exc.map(x=>`<div style="font-size:12px;padding:6px 0;border-bottom:1px solid var(--line,#eee);"><strong>${esc(x.label)}</strong> — Not assessed: ${esc(x.reason)}<br><span class="muted-italic">${esc(x.def)}</span></div>`).join('') || '<p class="muted-italic" style="font-size:12px;">Every control has data.</p>'}
+    <p class="muted-italic" style="font-size:11.5px;margin-top:10px;">A favourable average never hides an urgent event: critical NCRs, overdue controls, high or critical risks and similar items are listed on the Dashboard regardless of the index.</p>
+    <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Close</button></div></div></div>`;
+  root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
+});
+
 function renderDashboard(){
   // Signed in to the database: audit figures come from managed database audits only. Legacy device-only audits are counted separately, never mixed in.
   const managedMode = !!(typeof cloudReady==='function' && cloudReady() && currentCloudUser);
@@ -10563,20 +10618,24 @@ function renderDashboard(){
   if(_trn && _trn.reassess) alerts.push(`⚠️ ${_trn.reassess} competence reassessment${_trn.reassess===1?'':'s'} due within 30 days`);
   if(_trn && _trn.dueSoon) alerts.push(`⚠️ ${_trn.dueSoon} training assignment${_trn.dueSoon===1?'':'s'} due within 7 days`);
 
-  const moduleScores = [
-    {label:"Average Scored Audit Result", score:avgScore},
-    {label:"CAPA Management", score:capaScore},
-    {label:"Risk Control Health", score:riskScore},
-    {label:"KPI Metrics On-Target", score:metricsScore},
-    {label:"Document Control", score:documentScore},
-    {label:"Training / Competence in Good Standing", score:trainingScore},
-    {label:"HACCP Compliance", score:haccpScore},
-    {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore},
-    {label:"Supplier Approval Rate", score:supplierScore},
-    {label:"Allergen Controls", score:allergenScore},
-    {label:"Scheduled Controls Compliance", score:cipScore},
-    {label:"Sensory Evaluation Pass Rate", score:sensoryScore}
+  const _allF = state.audits.flatMap(a=>a.findings||[]);
+  const _riskHealthy = (_rx.all||[]).filter(x=>!x.needsReview && (x.level==='Low'||x.level==='Medium'||x.verified)).length;
+  const dashMeta = [
+    {key:"audit", label:"Average Scored Audit Result", score:avgScore, num:null, den:scored.length, denLabel:"scored audits", min:1, def:"Average pass rate across managed audits that have Pass/Fail items scored. Not a legal or standard compliance result."},
+    {key:"capa", label:"CAPA Management", score:capaScore, num:_allF.filter(f=>f.status==="Closed").length, den:_allF.length, denLabel:"audit findings closed", min:1, def:"Closed audit findings divided by all audit findings. Counts closure, not verified effectiveness."},
+    {key:"risk", label:"Risk Control Health", score:riskScore, num:_riskHealthy, den:(_rx.all||[]).length, denLabel:"active risks healthy", min:5, def:"Active risks that need no review and are Low/Medium, or have verified controls, divided by active risks. Needs at least 5 active risks."},
+    {key:"kpiMetrics", label:"KPI Metrics On-Target", score:metricsScore, num:onTargetMetrics, den:metricsWithData.length, denLabel:"live KPIs on target", min:1, def:"Live KPIs with a value that meet their own target rule. Sample metrics are excluded."},
+    {key:"documents", label:"Document Control", score:documentScore, num:docsInGoodStanding, den:totalDocs, denLabel:"documents in good standing", min:1, def:"Approved or published documents not overdue for review, divided by all controlled documents. Does not measure acknowledgment or training."},
+    {key:"training", label:"Training / Competence in Good Standing", score:trainingScore, num:_trn?_trn.complete:0, den:_trn?_trn.total:0, denLabel:"requirements complete", min:5, def:"Person-by-skill requirements that are trained and, where required, signed competent. Needs at least 5 requirements."},
+    {key:"haccp", label:"HACCP Compliance", score:haccpScore, num:_fs?_fs.keyGood:0, den:_fs?_fs.keyPoints:0, denLabel:"CCP/OPRP points good", min:3, def:"CCP/OPRP points whose last reading passed, is not overdue and has no open deviation. Needs at least 3 points."},
+    {key:"recall", label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore, num:null, den:null, min:1, def:"Recall or mock-recall exercises completed within their target in the last 12 months."},
+    {key:"supplier", label:"Supplier Approval Rate", score:supplierScore, num:state.suppliers.filter(s=>s.approvalStatus==="Approved").length, den:totalSuppliers, denLabel:"suppliers approved", min:1, def:"Approved suppliers divided by all suppliers on the register."},
+    {key:"allergen", label:"Allergen Controls", score:allergenScore, num:_al?_al.good:0, den:_al?_al.products:0, denLabel:"products good", min:3, def:"Active products whose label is verified against the allergen register with no open incident. Needs at least 3 products."},
+    {key:"cip", label:"Scheduled Controls Compliance", score:cipScore, num:_sc?_sc.good:0, den:_sc?_sc.controls:0, denLabel:"controls good", min:3, def:"Active scheduled controls (CIP, calibration, pest, verification, drills) that are not overdue and have no open deviation. Needs at least 3 controls."},
+    {key:"sensory", label:"Sensory Evaluation Pass Rate", score:sensoryScore, num:_snSt?_snSt.recentPass:0, den:_snSt?_snSt.recent:0, denLabel:"recent evaluations passed", min:5, def:"Recent sensory evaluations that passed. Needs at least 5 evaluations."}
   ];
+  dashMeta.forEach(x=>{ if(x.score===null) x.reason = (x.den===null||x.den===undefined) ? 'no result recorded' : (x.den===0 ? 'no records yet' : `only ${x.den} of the minimum ${x.min} needed`); });
+  const moduleScores = dashMeta;
   const availableScores = moduleScores.filter(x=>x.score!==null);
   const MIN_MODULES_FOR_OVERALL = 3;
   const overallScore = availableScores.length >= MIN_MODULES_FOR_OVERALL ? Math.round(availableScores.reduce((a,b)=>a+b.score,0)/availableScores.length) : null;
@@ -10589,7 +10648,11 @@ function renderDashboard(){
     lab:labScore
   };
   recordComplianceSnapshot(overallScore, metricSnapshot);
-  const trend = complianceTrend();
+  window.__dash.calc = { index: overallScore, cov: availableScores.length, of: moduleScores.length, at: new Date().toISOString(), scope: managedMode ? 'Managed database audits only; other records as held in the app' : 'All records held on this device', meta: dashMeta,
+    items: Object.fromEntries(dashMeta.map(x=>[x.key, {result:x.score, num:x.num, den:x.den}])) };
+  dashEnsure();
+  const _tr = dashTrend('overall', overallScore);
+  const trend = _tr ? _tr.pp : null;
 
   const KPI_NAV_TARGETS = {
     audit:"nav-audit-register", capa:"nav-capa", risk:"nav-risk", training:"nav-people-training",
@@ -10597,18 +10660,19 @@ function renderDashboard(){
     haccp:"nav-fs-today", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-sc-due",
     sensory:"nav-sensory-0", lab:"nav-lab-trend"
   };
+  window.__dash.calc.nav = KPI_NAV_TARGETS;
   const kpiHints = {
     audit: scored.length ? `${scored.length} scored audit${scored.length===1?'':'s'}${avgScore===0?' — all scored items failed':''}` : 'no scored audits yet',
     training: (_trn && _trn.total>0 && _trn.total<5) ? `${_trn.complete}/${_trn.total} requirements — small base, not in the index` : null
   };
   function kpiRow(label, score, key){
     const g = complianceGrade(score);
-    const t = metricTrend(key, score);
-    const trendHtml = t===null ? '' : `<span style="font-size:11px;color:${t>=0?'var(--green)':'var(--rust)'};margin-left:6px;">${t>=0?'↑ +':'↓ '}${t}%</span>`;
+    const t = dashTrend(key, score);
+    const trendHtml = t===null ? '' : `<span title="Compared with the snapshot saved on ${esc(t.date)}" style="font-size:11px;color:${t.pp>0?'var(--green)':t.pp<0?'var(--rust)':'var(--muted)'};margin-left:6px;">${dashPP(t)}</span>`;
     const navId = KPI_NAV_TARGETS[key];
     const inner = `
       <span>${GRADE_EMOJI[g.tone]} ${label}</span>
-      <span>${score===null&&kpiHints[key]&&key!=='overall'?`<span class="muted-italic">${kpiHints[key]}</span>`:score===null?(key==='overall'?`<span class="muted-italic">not enough data (${overallCoverage}; needs ${MIN_MODULES_FOR_OVERALL})</span>`:'<span class="muted-italic">no data yet</span>'):`<strong>${score}%</strong>${key==='audit'?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${kpiHints.audit})</span>`:''}`}${key==='overall'&&score!==null?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${overallCoverage})</span>`:''}${trendHtml}</span>
+      <span>${score===null&&kpiHints[key]&&key!=='overall'?`<span class="muted-italic">${kpiHints[key]}</span>`:score===null?(key==='overall'?`<span class="muted-italic">not enough data (${overallCoverage}; needs ${MIN_MODULES_FOR_OVERALL})</span>`:'<span class="muted-italic">Not assessed</span>'):`<strong>${score}%</strong>${key==='audit'?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${kpiHints.audit})</span>`:''}`}${key==='overall'&&score!==null?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${overallCoverage})</span>`:''}${trendHtml}</span>
     `;
     if(navId){
       return `<button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button>`;
@@ -10817,7 +10881,7 @@ function renderDashboard(){
     <div class="stats" style="margin-bottom:16px;">
       ${statCard("📋", "Open Audits", openAudits, "nav-audit-register")}
       ${statCard("⏳", "Overdue CAPAs", overdue.length, "nav-capa")}
-      ${statCard("🚨", "High Risks", highRisks.length, "nav-risk")}
+      ${statCard("🚨", "Open High/Critical Risks", highRisks.length, "nav-risk")}
       ${statCard("📄", "Pending Documents", pendingDocuments, "nav-documents")}
       ${statCard("🚚", "Approved Suppliers", approvedSuppliers, "nav-suppliers-list")}
       ${statCard("👥", "Active Employees", activeEmployees, "nav-people-training")}
@@ -10831,9 +10895,10 @@ function renderDashboard(){
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
         <h3 class="serif" style="font-size:16px;margin:0;">Enterprise KPI Snapshot</h3>
+        <button class="btn btn-ghost" style="font-size:12px;" data-dash-calc="1">View calculation</button>
       </div>
       ${kpiGroup("Compliance Overview", [
-        {label:"Composite Control Health Index", score:overallScore, key:"overall"},
+        {label:"Tracked Performance Index", score:overallScore, key:"overall"},
         {label:"Average Scored Audit Result", score:avgScore, key:"audit"},
         {label:"CAPA Completion", score:capaScore, key:"capa"},
         {label:"Risk Control Health", score:riskScore, key:"risk"}
@@ -10854,14 +10919,14 @@ function renderDashboard(){
       ${kpiGroup("Laboratory", [
         {label:"Laboratory Performance", score:labScore, key:"lab"}
       ])}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">The Composite Control Health Index is a simple average of the tracked controls that have enough data. It is an internal indicator, not a measure of legal or standard compliance, and every control counts equally. Controls with too little data show "no data yet" or "small base" and are not averaged in. Trend arrows compare to your last visit in a previous month.</p>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">The Tracked Performance Index is a simple average of the tracked controls that have enough data. It is an internal indicator, not a measure of legal or standard compliance, and every control counts equally. Controls with too little data show "Not assessed" or "small base" and are not averaged in. "0%" means measured and none passed. Trend arrows compare to your last visit in a previous month.</p>
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <h3 class="serif" style="font-size:16px;margin:0;">Composite Index Trend</h3>
-        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'Not enough data':overallScore+'% — '+overallGrade.label+' · '+overallCoverage}${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}</span>
+        <h3 class="serif" style="font-size:16px;margin:0;">Tracked Performance Index Trend</h3>
+        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'Not enough data':overallScore+'% — '+overallGrade.label+' · '+overallCoverage}${_tr?` (${dashPP(_tr)})`:''}</span>
       </div>
-      ${state.complianceScoreHistory.filter(h=>h.score!=null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas>` : `<p class="muted-italic" style="font-size:12px;">Come back next month to start seeing your compliance trend over time.</p>`}
+      ${dashChartMonths().filter(m=>m.v!==null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas><p class="muted-italic" style="font-size:11px;margin:6px 0 0;">Latest snapshot in each month. Months with no snapshot are gaps, not zeros.</p>` : `<p class="muted-italic" style="font-size:12px;">The trend appears once snapshots exist for at least two months. A snapshot is saved automatically the first time a manager opens the Dashboard each day.</p>`}
     </div>
     <div class="stats">
       ${statCard("📋", "Total Audits", audits.length, "nav-audit-register")}
@@ -10948,8 +11013,8 @@ function renderDashboard(){
 
         const staticRows = [
           { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint: _mrA ? `From the latest approved review record (${_mrA.ref})` : "Set in ⚙ Company settings, or approve a management review record" },
-          { label:"Composite Index Trend (12 Months)", value: overallScore===null?null:`${overallScore}%${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}`, tone: overallGrade.tone, hint:null },
-          { label:"Business Risks Needing Attention", value: `${businessHighRisks.length} High/Critical Risk(s)`, tone: businessHighRisks.length>0?'rust':'green', hint:null }
+          { label:"Tracked Performance Index Trend (12 Months)", value: overallScore===null?null:`${overallScore}%${_tr?` (${dashPP(_tr)})`:''}`, tone: overallGrade.tone, hint:null },
+          { label:"Open High/Critical Risks (all categories)", value: `${riskExposure().high.length} High/Critical Risk(s)`, tone: riskExposure().high.length>0?'rust':'green', hint:`Same count as the Dashboard card. Business category only: ${businessHighRisks.length}.` }
         ];
         const staticHtml = staticRows.map(r=>`
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2);font-size:13px;">
@@ -11541,10 +11606,10 @@ function renderComplianceChart(){
   if(complianceChartInstance){ complianceChartInstance.destroy(); complianceChartInstance = null; }
   const canvas = document.getElementById('compliance-trend-chart');
   if(!canvas) return;
-  const sorted = [...state.complianceScoreHistory].filter(h=>h.score!=null).sort((a,b)=>a.month.localeCompare(b.month));
+  const sorted = dashChartMonths();
   complianceChartInstance = new Chart(canvas, {
     type: 'line',
-    data: { labels: sorted.map(h=>h.month), datasets: [{ label:'Composite Control Health Index %', data: sorted.map(h=>h.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3 }] },
+    data: { labels: sorted.map(h=>h.month), datasets: [{ label:'Tracked Performance Index %', data: sorted.map(h=>h.v), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3, spanGaps:false }] },
     options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:false, max:100 }, x:{ grid:{display:false} } } }
   });
 }
@@ -14392,7 +14457,7 @@ function renderQualityCycle(){
     {icon:"⚠️", tag:"CHECK", title:"Record Findings", items:["Non-Conformances","Observations","Opportunities for Improvement"]},
     {icon:"🛠", tag:"ACT", title:"CAPA Management", items:["Assign Owner","Due Date","Root Cause","Corrective Action","Preventive Action"]},
     {icon:"✔", tag:"VERIFY", title:"Verification", items:["Verify Effectiveness","Close CAPA"]},
-    {icon:"📊", tag:"UPDATE", title:"Live Dashboard — Automatic Updates", items:["Composite Control Health Index","Average Scored Audit Result","CAPA Closure Rate","Open Findings","Risk Level","Supplier Performance*","Training Compliance*","Document Status*"]},
+    {icon:"📊", tag:"UPDATE", title:"Live Dashboard — Automatic Updates", items:["Tracked Performance Index","Average Scored Audit Result","CAPA Closure Rate","Open Findings","Risk Level","Supplier Performance*","Training Compliance*","Document Status*"]},
     {icon:"👥", tag:"REVIEW", title:"Management Review — Executive Decision Making", items:["Review KPIs","Analyze Trends","Review Risks","Allocate Resources","Set Objectives"]},
     {icon:"🚀", tag:"IMPROVE", title:"Continuous Improvement", items:["Update Procedures","Improve Processes","Train Employees","Reduce Risks"]},
     {icon:"📋", tag:"PLAN", title:"New Audit Plan — Cycle Starts Again", items:[]}
@@ -14416,7 +14481,7 @@ function renderQualityCycle(){
       `).join('')}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">The Composite Control Health Index updates automatically</h3>
+      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">The Tracked Performance Index updates automatically</h3>
       <p style="font-size:13px;margin:0 0 8px;">Every significant activity in the app feeds back into your live index:</p>
       <ul style="margin:0 0 10px;padding-left:18px;font-size:13px;">
         <li>Audit completed → Average Scored Audit Result recalculated</li>
@@ -14424,10 +14489,10 @@ function renderQualityCycle(){
         <li>Risk assessment updated → Risk Management score updated</li>
         <li>KPI reading logged → KPI Metrics On-Target % updated</li>
       </ul>
-      <p style="font-size:13px;margin:0;">Those individual scores are averaged into a single <strong>Composite Control Health Index (0–100%)</strong>, shown on your Dashboard. It is an internal indicator of how many of your tracked controls are in good standing. It is not a measure of legal or standard compliance, and it needs at least three controls with enough data.</p>
+      <p style="font-size:13px;margin:0;">Those individual scores are averaged into a single <strong>Tracked Performance Index (0–100%)</strong>, shown on your Dashboard. It is an internal indicator of how many of your tracked controls are in good standing. It is not a measure of legal or standard compliance, and it needs at least three controls with enough data.</p>
     </div>
     <div class="card p4">
-      <p class="muted-italic" style="font-size:11px;margin:0;">* Supplier Performance, Training Compliance, and Document Status appear in the full vision for this cycle, but aren't built as modules in the app yet — they're not part of today's live Composite Control Health Index. Everything else above is already working and calculating in real time from your data.</p>
+      <p class="muted-italic" style="font-size:11px;margin:0;">* Supplier Performance, Training Compliance, and Document Status appear in the full vision for this cycle, but aren't built as modules in the app yet — they're not part of today's live Tracked Performance Index. Everything else above is already working and calculating in real time from your data.</p>
     </div>
   `;
 }
