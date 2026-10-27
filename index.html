@@ -10564,12 +10564,12 @@ function renderDashboard(){
   if(_trn && _trn.dueSoon) alerts.push(`⚠️ ${_trn.dueSoon} training assignment${_trn.dueSoon===1?'':'s'} due within 7 days`);
 
   const moduleScores = [
-    {label:"Audit Compliance", score:avgScore},
+    {label:"Average Scored Audit Result", score:avgScore},
     {label:"CAPA Management", score:capaScore},
     {label:"Risk Control Health", score:riskScore},
     {label:"KPI Metrics On-Target", score:metricsScore},
     {label:"Document Control", score:documentScore},
-    {label:"Training Compliance", score:trainingScore},
+    {label:"Training / Competence in Good Standing", score:trainingScore},
     {label:"HACCP Compliance", score:haccpScore},
     {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore},
     {label:"Supplier Approval Rate", score:supplierScore},
@@ -10597,6 +10597,10 @@ function renderDashboard(){
     haccp:"nav-fs-today", recall:"nav-trace-recall", allergen:"nav-fs-allergens", cip:"nav-fs-sc-due",
     sensory:"nav-sensory-0", lab:"nav-lab-trend"
   };
+  const kpiHints = {
+    audit: scored.length ? `${scored.length} scored audit${scored.length===1?'':'s'}${avgScore===0?' — all scored items failed':''}` : 'no scored audits yet',
+    training: (_trn && _trn.total>0 && _trn.total<5) ? `${_trn.complete}/${_trn.total} requirements — small base, not in the index` : null
+  };
   function kpiRow(label, score, key){
     const g = complianceGrade(score);
     const t = metricTrend(key, score);
@@ -10604,7 +10608,7 @@ function renderDashboard(){
     const navId = KPI_NAV_TARGETS[key];
     const inner = `
       <span>${GRADE_EMOJI[g.tone]} ${label}</span>
-      <span>${score===null?(key==='overall'?`<span class="muted-italic">not enough data (${overallCoverage}; needs ${MIN_MODULES_FOR_OVERALL})</span>`:'<span class="muted-italic">no data yet</span>'):`<strong>${score}%</strong>`}${key==='overall'&&score!==null?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${overallCoverage})</span>`:''}${trendHtml}</span>
+      <span>${score===null&&kpiHints[key]&&key!=='overall'?`<span class="muted-italic">${kpiHints[key]}</span>`:score===null?(key==='overall'?`<span class="muted-italic">not enough data (${overallCoverage}; needs ${MIN_MODULES_FOR_OVERALL})</span>`:'<span class="muted-italic">no data yet</span>'):`<strong>${score}%</strong>${key==='audit'?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${kpiHints.audit})</span>`:''}`}${key==='overall'&&score!==null?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${overallCoverage})</span>`:''}${trendHtml}</span>
     `;
     if(navId){
       return `<button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button>`;
@@ -10829,13 +10833,13 @@ function renderDashboard(){
         <h3 class="serif" style="font-size:16px;margin:0;">Enterprise KPI Snapshot</h3>
       </div>
       ${kpiGroup("Compliance Overview", [
-        {label:"Overall Compliance Score", score:overallScore, key:"overall"},
-        {label:"Audit Compliance", score:avgScore, key:"audit"},
+        {label:"Composite Control Health Index", score:overallScore, key:"overall"},
+        {label:"Average Scored Audit Result", score:avgScore, key:"audit"},
         {label:"CAPA Completion", score:capaScore, key:"capa"},
         {label:"Risk Control Health", score:riskScore, key:"risk"}
       ])}
       ${kpiGroup("Operational Performance", [
-        {label:"Training Compliance", score:trainingScore, key:"training"},
+        {label:"Training / Competence in Good Standing", score:trainingScore, key:"training"},
         {label:"Document Control", score:documentScore, key:"documents"},
         {label:"KPI Metrics On-Target", score:metricsScore, key:"kpiMetrics"},
         {label:"Supplier Approval Rate", score:supplierScore, key:"supplier"}
@@ -10850,11 +10854,11 @@ function renderDashboard(){
       ${kpiGroup("Laboratory", [
         {label:"Laboratory Performance", score:labScore, key:"lab"}
       ])}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">Metrics with no records yet show "no data yet" and aren't averaged into the overall score. Trend arrows compare to your last visit in a previous month.</p>
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">The Composite Control Health Index is a simple average of the tracked controls that have enough data. It is an internal indicator, not a measure of legal or standard compliance, and every control counts equally. Controls with too little data show "no data yet" or "small base" and are not averaged in. Trend arrows compare to your last visit in a previous month.</p>
     </div>
     <div class="card p4" style="margin-bottom:16px;">
       <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <h3 class="serif" style="font-size:16px;margin:0;">Compliance Trend</h3>
+        <h3 class="serif" style="font-size:16px;margin:0;">Composite Index Trend</h3>
         <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'Not enough data':overallScore+'% — '+overallGrade.label+' · '+overallCoverage}${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}</span>
       </div>
       ${state.complianceScoreHistory.filter(h=>h.score!=null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas>` : `<p class="muted-italic" style="font-size:12px;">Come back next month to start seeing your compliance trend over time.</p>`}
@@ -10904,7 +10908,10 @@ function renderDashboard(){
       <p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Quick glance only — see Management Review for the full report.</p>
       ${(() => {
         const c = state.companySettings || {};
-        const mgmtDue = c.nextManagementReviewDate ? daysUntil(c.nextManagementReviewDate) : null;
+        if(typeof mrLoad==='function') mrLoad();
+        const _mrA = ((window.__mr&&window.__mr.rows)||[]).filter(x=>x.status==='approved'&&x.next_review_date).sort((a,b)=>String(b.meeting_date).localeCompare(String(a.meeting_date)))[0];
+        const mgmtDate = _mrA ? _mrA.next_review_date : c.nextManagementReviewDate;
+        const mgmtDue = mgmtDate ? daysUntil(mgmtDate) : null;
         const internalAudits = audits.filter(a=>(a.auditType||"Internal")==="Internal");
         const externalAudits = audits.filter(a=>a.auditType==="External");
         const internalClosed = internalAudits.filter(a=>a.status==="Closed").length;
@@ -10940,8 +10947,8 @@ function renderDashboard(){
             : {emoji:"🟢", label:"No concerns flagged by these inputs", tone:"green"};
 
         const staticRows = [
-          { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint:"Set in ⚙ Company settings" },
-          { label:"Overall Compliance Trend (12 Months)", value: overallScore===null?null:`${overallScore}%${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}`, tone: overallGrade.tone, hint:null },
+          { label:"Management Review Due", value: mgmtDue===null ? null : (mgmtDue<0 ? `Overdue by ${Math.abs(mgmtDue)} day(s)` : `Due in ${mgmtDue} day(s)`), tone: mgmtDue===null?null:(mgmtDue<0?'rust':mgmtDue<=14?'amber':'green'), hint: _mrA ? `From the latest approved review record (${_mrA.ref})` : "Set in ⚙ Company settings, or approve a management review record" },
+          { label:"Composite Index Trend (12 Months)", value: overallScore===null?null:`${overallScore}%${trend!==null?` (${trend>=0?'↑ +':'↓ '}${trend}%)`:''}`, tone: overallGrade.tone, hint:null },
           { label:"Business Risks Needing Attention", value: `${businessHighRisks.length} High/Critical Risk(s)`, tone: businessHighRisks.length>0?'rust':'green', hint:null }
         ];
         const staticHtml = staticRows.map(r=>`
@@ -11537,7 +11544,7 @@ function renderComplianceChart(){
   const sorted = [...state.complianceScoreHistory].filter(h=>h.score!=null).sort((a,b)=>a.month.localeCompare(b.month));
   complianceChartInstance = new Chart(canvas, {
     type: 'line',
-    data: { labels: sorted.map(h=>h.month), datasets: [{ label:'Overall Compliance %', data: sorted.map(h=>h.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3 }] },
+    data: { labels: sorted.map(h=>h.month), datasets: [{ label:'Composite Control Health Index %', data: sorted.map(h=>h.score), borderColor:'#1c2b4a', backgroundColor:'rgba(28,43,74,.12)', fill:true, tension:.25, pointRadius:3 }] },
     options: { plugins:{ legend:{ display:false } }, scales:{ y:{ beginAtZero:false, max:100 }, x:{ grid:{display:false} } } }
   });
 }
@@ -14385,7 +14392,7 @@ function renderQualityCycle(){
     {icon:"⚠️", tag:"CHECK", title:"Record Findings", items:["Non-Conformances","Observations","Opportunities for Improvement"]},
     {icon:"🛠", tag:"ACT", title:"CAPA Management", items:["Assign Owner","Due Date","Root Cause","Corrective Action","Preventive Action"]},
     {icon:"✔", tag:"VERIFY", title:"Verification", items:["Verify Effectiveness","Close CAPA"]},
-    {icon:"📊", tag:"UPDATE", title:"Live Dashboard — Automatic Updates", items:["Overall Compliance Score","Audit Score","CAPA Closure Rate","Open Findings","Risk Level","Supplier Performance*","Training Compliance*","Document Status*"]},
+    {icon:"📊", tag:"UPDATE", title:"Live Dashboard — Automatic Updates", items:["Composite Control Health Index","Average Scored Audit Result","CAPA Closure Rate","Open Findings","Risk Level","Supplier Performance*","Training Compliance*","Document Status*"]},
     {icon:"👥", tag:"REVIEW", title:"Management Review — Executive Decision Making", items:["Review KPIs","Analyze Trends","Review Risks","Allocate Resources","Set Objectives"]},
     {icon:"🚀", tag:"IMPROVE", title:"Continuous Improvement", items:["Update Procedures","Improve Processes","Train Employees","Reduce Risks"]},
     {icon:"📋", tag:"PLAN", title:"New Audit Plan — Cycle Starts Again", items:[]}
@@ -14409,18 +14416,18 @@ function renderQualityCycle(){
       `).join('')}
     </div>
     <div class="card p4" style="margin-bottom:16px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">The Overall Compliance Score updates automatically</h3>
-      <p style="font-size:13px;margin:0 0 8px;">Every significant activity in the app feeds back into your live score:</p>
+      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">The Composite Control Health Index updates automatically</h3>
+      <p style="font-size:13px;margin:0 0 8px;">Every significant activity in the app feeds back into your live index:</p>
       <ul style="margin:0 0 10px;padding-left:18px;font-size:13px;">
-        <li>Audit completed → Audit Compliance recalculated</li>
+        <li>Audit completed → Average Scored Audit Result recalculated</li>
         <li>CAPA closed → CAPA Closure Rate updated</li>
         <li>Risk assessment updated → Risk Management score updated</li>
         <li>KPI reading logged → KPI Metrics On-Target % updated</li>
       </ul>
-      <p style="font-size:13px;margin:0;">Those individual scores roll up into a single <strong>Overall Compliance Score (0–100%)</strong>, shown right on your Dashboard.</p>
+      <p style="font-size:13px;margin:0;">Those individual scores are averaged into a single <strong>Composite Control Health Index (0–100%)</strong>, shown on your Dashboard. It is an internal indicator of how many of your tracked controls are in good standing. It is not a measure of legal or standard compliance, and it needs at least three controls with enough data.</p>
     </div>
     <div class="card p4">
-      <p class="muted-italic" style="font-size:11px;margin:0;">* Supplier Performance, Training Compliance, and Document Status appear in the full vision for this cycle, but aren't built as modules in the app yet — they're not part of today's live Overall Compliance Score. Everything else above is already working and calculating in real time from your data.</p>
+      <p class="muted-italic" style="font-size:11px;margin:0;">* Supplier Performance, Training Compliance, and Document Status appear in the full vision for this cycle, but aren't built as modules in the app yet — they're not part of today's live Composite Control Health Index. Everything else above is already working and calculating in real time from your data.</p>
     </div>
   `;
 }
@@ -14800,7 +14807,7 @@ async function buildAuditPrintReport(a){
     <div class="section-title">Executive Score &amp; Risk Index</div>
     <div style="border:2px solid ${overallResultTone==='rust'?'#9b3f28':overallResultTone==='amber'?'#8a5a10':'#3f6b2e'};border-radius:8px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.05em;">Overall Compliance</div>
+        <div style="font-size:11px;color:#555;text-transform:uppercase;letter-spacing:.05em;">Audit Result (scored items passed)</div>
         <div style="font-size:28px;font-weight:700;color:${overallResultTone==='rust'?'#9b3f28':overallResultTone==='amber'?'#8a5a10':'#3f6b2e'};">${score!==null? score+'%' : '—'} ${printBadge(overallResultLabel, overallResultTone)}</div>
       </div>
       <div style="display:flex;gap:20px;">
