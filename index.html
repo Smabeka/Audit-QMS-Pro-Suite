@@ -387,6 +387,12 @@ window.onerror = function(msg, url, line, col, error) {
   .p4{padding:16px;}
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;}
   @media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr);}}
+  .dash-sec{margin-bottom:12px;}
+  .dash-sec>summary{cursor:pointer;list-style:none;padding:14px 16px;min-height:44px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;background:var(--paper);border:1px solid var(--line);border-radius:12px;font-weight:600;font-size:15px;}
+  .dash-sec>summary::-webkit-details-marker{display:none;}
+  .dash-sec>summary::after{content:'▾';color:var(--muted);margin-left:8px;}
+  .dash-sec:not([open])>summary::after{content:'›';}
+  @media(max-width:480px){ .brand p{display:none;} .hdr-ws{display:none !important;} body{font-size:16px;} .stat-value{font-size:26px;} }
   .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px;}
   .stat-value{font-size:24px;font-family:'Fraunces',serif;color:var(--navy);}
   input,select{background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:inherit;width:100%;}
@@ -10160,8 +10166,8 @@ function render(){
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             ${CLIENT_WORKSPACES_ENABLED
   ? `<button class="btn btn-ghost no-print" data-action="open-workspace-modal" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="Switch client workspace">🏢 ${esc(currentWorkspaceName())}</button>`
-  : `<span class="tag tag-neutral no-print" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🏢 ${esc(currentWorkspaceName())}</span>`}
-            ${CLOUD_ENABLED ? `<button class="btn btn-ghost no-print" data-action="open-cloud-modal" style="font-size:12px;padding:6px 10px;" title="Cloud backup">☁️ ${currentCloudUser ? 'Synced' : 'Sign In'}</button>` : ''}
+  : `<span class="tag tag-neutral no-print hdr-ws" style="font-size:12px;padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">🏢 ${esc(currentWorkspaceName())}</span>`}
+            ${CLOUD_ENABLED ? `<button class="btn btn-ghost no-print" data-action="open-cloud-modal" style="font-size:12px;padding:6px 10px;" title="${currentCloudUser ? (navigator.onLine===false ? 'You are offline. Anything you save is kept on this device only until you are back online.' : 'Signed in and connected. Each record is saved to the server when you submit it; this device also keeps a local copy.') : 'Sign in to save records to the server'}">☁️ ${currentCloudUser ? (navigator.onLine===false ? 'Offline' : 'Connected') : 'Sign In'}</button>` : ''}
             <button class="btn btn-ghost no-print" data-action="toggle-dark" style="font-size:12px;padding:6px 10px;" title="Toggle dark mode">${darkMode?'☀️':'🌙'}</button>
             ${PRO_GATE_ENABLED ? (isPro() ? `<span class="pro-tag">PRO</span>` : `<button class="btn btn-ghost no-print" data-action="open-pro-modal" style="font-size:12px;padding:6px 10px;">Unlock Pro</button>`) : ''}
             <span class="saved-flash" id="saved-flash" style="opacity:0;transition:opacity .3s;">● saved</span>
@@ -10524,6 +10530,15 @@ document.addEventListener('click', e=>{
   root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
 });
 
+/* ---- collapsible dashboard sections: open by default on a wide screen, collapsed on a phone; the user's own choice is remembered for the session ---- */
+window.__dashOpen = window.__dashOpen || {};
+function dashSecOpen(key, title, defOpen){
+  const o = window.__dashOpen[key]; const open = o===undefined ? (window.innerWidth>=900 || defOpen) : o;
+  return `<details class="dash-sec" data-dash-sec="${key}" ${open?'open':''}><summary>${esc(title)}</summary><div style="padding-top:12px;">`;
+}
+function dashSecClose(){ return `</div></details>`; }
+document.addEventListener('toggle', e=>{ const d = e.target; if(d && d.matches && d.matches('details[data-dash-sec]')) window.__dashOpen[d.dataset.dashSec] = d.open; }, true);
+
 function renderDashboard(){
   // Signed in to the database: audit figures come from managed database audits only. Legacy device-only audits are counted separately, never mixed in.
   const managedMode = !!(typeof cloudReady==='function' && cloudReady() && currentCloudUser);
@@ -10723,7 +10738,12 @@ function renderDashboard(){
       if(_oh.lapsed) priorities.push({dot:"🟡", text:`${_oh.lapsed} contractor${_oh.lapsed===1?' has':'s have'} lapsed documents`, navId:"nav-ohs-contractors", urgency:20+_oh.lapsed}); } }
   { const _fm = (window.__fmStats && window.__fmStats()) || null; if(_fm && _fm.overdue) priorities.push({dot:"🟡", text:_fm.reviewed ? `FSMS checklist review is overdue (${_fm.age} days since the last signed review)` : "Sign the first FSMS checklist review", navId:"nav-fs-fsms-checklist", urgency:3}); }
   overdue.forEach(f=>priorities.push({dot:"🔴", text:`Close overdue CAPA: ${f.desc}`, jumpAudit:f.auditId, urgency:-daysUntil(f.dueDate)}));
-  highRisks.forEach(r=>priorities.push({dot:"🔴", text:`Review high risk: ${r.label||'Untitled risk'}`, navId:"nav-risk", urgency:r.level==="Critical"?1000:500}));
+  if(highRisks.length) priorities.push({dot:"🔴", text:`${highRisks.length} open high/critical risk${highRisks.length===1?'':'s'}${_rx.critical.length?` — ${_rx.critical.length} critical, ${highRisks.length-_rx.critical.length} high`:''}`, navId:"nav-risk", urgency:_rx.critical.length?1000:500});
+  if(_ncr && _ncr.critical) priorities.push({dot:"🔴", text:`${_ncr.critical} critical NCR${_ncr.critical===1?'':'s'} still active`, navId:"nav-ncr", urgency:900});
+  if(supplierExpiring.length) priorities.push({dot:"🟡", text:`${supplierExpiring.length} supplier approval${supplierExpiring.length===1?'':'s'} expire this week`, navId:"nav-suppliers-list", urgency:3});
+  if(_trn && _trn.revgap) priorities.push({dot:"🟡", text:`${_trn.revgap} training gap${_trn.revgap===1?'':'s'} from document revisions`, navId:"nav-people-training", urgency:2});
+  if(_trn && _trn.reassess) priorities.push({dot:"🟡", text:`${_trn.reassess} competence reassessment${_trn.reassess===1?'':'s'} due within 30 days`, navId:"nav-people-training", urgency:2});
+  if(_trn && _trn.dueSoon) priorities.push({dot:"🟡", text:`${_trn.dueSoon} training assignment${_trn.dueSoon===1?'':'s'} due within 7 days`, navId:"nav-people-training", urgency:2});
   if(_rx.live){
     if(_rx.treatmentOverdue) priorities.push({dot:"🔴", text:`${_rx.treatmentOverdue} risk${_rx.treatmentOverdue===1?' has':'s have'} overdue treatment actions`, navId:"nav-risk", urgency:60});
     if(_rx.unverified) priorities.push({dot:"🟡", text:`Verify the controls on ${_rx.unverified} High/Critical risk${_rx.unverified===1?'':'s'}`, navId:"nav-risk", urgency:40});
@@ -10764,6 +10784,40 @@ function renderDashboard(){
     return d;
   }
 
+  /* Action required: one list, each item shown once and linked to its source records. */
+  const _red = priorities.filter(x=>x.dot==="🔴").length, _amb = priorities.filter(x=>x.dot==="🟡").length;
+  const _actRow = p=>{ const accent = p.dot==="🔴" ? "var(--rust)" : p.dot==="🟡" ? "var(--amber)" : "var(--green)";
+    return `<button ${p.jumpAudit?`data-jump-audit="${p.jumpAudit}"`:`data-navid="${p.navId}"`} class="audit-row" style="border-radius:8px;border-left:4px solid ${accent};margin-bottom:6px;min-height:44px;"><span style="font-size:14px;text-align:left;">${p.dot} ${esc(p.text)}</span><span style="color:var(--muted);">›</span></button>`; };
+  const actionPanelHtml = `<div class="card p4" style="margin-bottom:16px;border-left:4px solid ${_red?'var(--rust)':_amb?'var(--amber)':'var(--green)'};">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+      <h3 class="serif" style="font-size:16px;margin:0;">Action required</h3>
+      <span class="muted-italic" style="font-size:12px;">${priorities.length ? `${_red} urgent · ${_amb} to do soon` : 'nothing flagged'}</span>
+    </div>
+    ${priorities.length ? priorities.slice(0,6).map(_actRow).join('') + (priorities.length>6 ? `<details style="margin-top:4px;"><summary style="cursor:pointer;font-size:13px;padding:8px 0;">Show ${priorities.length-6} more</summary>${priorities.slice(6,30).map(_actRow).join('')}${priorities.length>30?`<p class="muted-italic" style="font-size:12px;">${priorities.length-30} more are in their own modules.</p>`:''}</details>` : '')
+      : `<p class="muted-italic" style="font-size:13px;margin:0;">Nothing needs action based on what is recorded in the app. This does not replace checking the work area.</p>`}
+  </div>`;
+  const _holds = state.batches.filter(b=>b.status==="Quarantine").length;
+  const _expiredLots = state.batches.filter(b=>batchExpiryStatus(b)==="Expired").length;
+  const keyCardsHtml = `<div class="stats" style="margin-bottom:16px;">
+      ${statCard("📋", "Open Audits", openAudits, "nav-audit-register")}
+      ${statCard("⏳", "Overdue CAPAs", overdue.length, "nav-capa")}
+      ${statCard("🚩", "Active NCRs", _ncr ? _ncr.active : "—", "nav-ncr")}
+      ${statCard("🔒", "Lots on Hold", _holds, "nav-trace-batch")}
+    </div>`;
+  const moreCountsHtml = `<div class="stats" style="margin-bottom:16px;">
+      ${statCard("🚨", "Open High/Critical Risks", highRisks.length, "nav-risk")}
+      ${statCard("📄", "Pending Documents", pendingDocuments, "nav-documents")}
+      ${statCard("🔍", "Expired Lots", _expiredLots, "nav-trace-batch")}
+      ${statCard("🚚", "Approved Suppliers", approvedSuppliers, "nav-suppliers-list")}
+      ${statCard("👥", "Active Employees", activeEmployees, "nav-people-training")}
+      ${statCard("📋", "Total Audits", audits.length, "nav-audit-register")}
+      ${statCard("⚠", "Open Findings", openFindings.length, "nav-capa")}
+      ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length, "nav-documents")}
+      ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length, "nav-people-training")}
+      ${statCard("🚨", "Active Recalls", (window.recallActiveCount ? window.recallActiveCount() : 0), "nav-trace-recall")}
+      ${statCard("🌡️", "Open Food Safety Deviations", _fs ? _fs.openDeviations : "—", "nav-fs-deviations")}
+    </div>`;
+
   return `
   ${isWorkspaceEmpty() ? `
     <div class="card p4" style="margin-bottom:16px;background:var(--navy-bg);border-color:#c3cee2;">
@@ -10783,6 +10837,54 @@ function renderDashboard(){
       </div>
     </div>
   ` : ''}
+  ${actionPanelHtml}
+  ${keyCardsHtml}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:16px;">
+      ${can('createAudit') ? '<button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;min-height:44px;">+ New Audit</button>' : ''}
+      ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;min-height:44px;">+ Raise CAPA</button>' : ''}
+      ${capaRoleIn(['admin','quality_manager']) ? '<button class="btn btn-ghost" data-quick-action="upload-document" style="justify-content:center;min-height:44px;">+ Upload Doc</button>' : ''}
+      <button class="btn btn-ghost" data-quick-action="report-incident" style="justify-content:center;min-height:44px;">+ Report Incident</button>
+      ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-ghost" data-quick-action="add-risk" style="justify-content:center;min-height:44px;">+ Add Risk</button>' : ''}
+    </div>
+  ${dashSecOpen('perf','Performance: Tracked Performance Index, KPIs and trend',false)}
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+        <h3 class="serif" style="font-size:16px;margin:0;">Enterprise KPI Snapshot</h3>
+        <button class="btn btn-ghost" style="font-size:12px;" data-dash-calc="1">View calculation</button>
+      </div>
+      ${kpiGroup("Compliance Overview", [
+        {label:"Tracked Performance Index", score:overallScore, key:"overall"},
+        {label:"Average Scored Audit Result", score:avgScore, key:"audit"},
+        {label:"CAPA Completion", score:capaScore, key:"capa"},
+        {label:"Risk Control Health", score:riskScore, key:"risk"}
+      ])}
+      ${kpiGroup("Operational Performance", [
+        {label:"Training / Competence in Good Standing", score:trainingScore, key:"training"},
+        {label:"Document Control", score:documentScore, key:"documents"},
+        {label:"KPI Metrics On-Target", score:metricsScore, key:"kpiMetrics"},
+        {label:"Supplier Approval Rate", score:supplierScore, key:"supplier"}
+      ])}
+      ${kpiGroup("Food Safety", [
+        {label:"HACCP Compliance", score:haccpScore, key:"haccp"},
+        {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore, key:"recall"},
+        {label:"Allergen Controls", score:allergenScore, key:"allergen"},
+        {label:"Scheduled Controls Compliance", score:cipScore, key:"cip"},
+        {label:"Sensory Evaluation Pass Rate", score:sensoryScore, key:"sensory"}
+      ])}
+      ${kpiGroup("Laboratory", [
+        {label:"Laboratory Performance", score:labScore, key:"lab"}
+      ])}
+      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">The Tracked Performance Index is a simple average of the tracked controls that have enough data. It is an internal indicator, not a measure of legal or standard compliance, and every control counts equally. Controls with too little data show "Not assessed" or "small base" and are not averaged in. "0%" means measured and none passed. Trend arrows compare to your last visit in a previous month.</p>
+    </div>
+    <div class="card p4" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <h3 class="serif" style="font-size:16px;margin:0;">Tracked Performance Index Trend</h3>
+        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'Not enough data':overallScore+'% — '+overallGrade.label+' · '+overallCoverage}${_tr?` (${dashPP(_tr)})`:''}</span>
+      </div>
+      ${dashChartMonths().filter(m=>m.v!==null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas><p class="muted-italic" style="font-size:11px;margin:6px 0 0;">Latest snapshot in each month. Months with no snapshot are gaps, not zeros.</p>` : `<p class="muted-italic" style="font-size:12px;">The trend appears once snapshots exist for at least two months. A snapshot is saved automatically the first time a manager opens the Dashboard each day.</p>`}
+    </div>
+  ${dashSecClose()}
+  ${dashSecOpen('audits','Audits and findings',false)}
   <div class="card p4" style="margin-bottom:16px;">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:12px;">
       <h3 class="serif" style="font-size:15px;margin:0;">🔍 Filter by Standard</h3>
@@ -10796,7 +10898,7 @@ function renderDashboard(){
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Audit Completion</div>
         <div style="font-size:26px;font-weight:700;margin-top:4px;">${dashCompletionRate===null?'—':dashCompletionRate+'%'}</div>
         <div class="muted-italic" style="font-size:12px;">${dashClosedAudits} of ${dashCounted.length} closed${dashCounted.length<5?' — percentage shown once there are 5 audits':''} (cancelled excluded)</div>
-        <div class="muted-italic" style="font-size:11px;">${managedMode?`Managed database audits only${legacyAuditCount?` · ${legacyAuditCount} legacy device-only audit(s) not counted`:''}`:'Not signed in to the database — showing audits stored on this device'}</div>
+        <div class="muted-italic" style="font-size:11px;">${managedMode?`Managed database audits only${legacyAuditCount?` · ${legacyAuditCount} legacy device-only audit(s) not counted <button data-navid="nav-audit-register" style="background:none;border:none;color:var(--navy);text-decoration:underline;cursor:pointer;font-size:11px;padding:0;">Review legacy audits</button>`:''}`:'Not signed in to the database — showing audits stored on this device'}</div>
       </div>
       <div class="card p4" style="margin:0;">
         <div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);">Open Findings</div>
@@ -10847,97 +10949,6 @@ function renderDashboard(){
       </div>
     ` : dashboardStandardFilter!=="All" ? `<p class="muted-italic" style="margin-top:10px;font-size:12px;">No open findings for ${esc(dashboardStandardFilter)}.</p>` : ''}
   </div>
-  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">
-      ${can('createAudit') ? '<button class="btn btn-primary" data-quick-action="new-audit" style="justify-content:center;">+ New Audit</button>' : ''}
-      ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-ghost" data-quick-action="raise-capa" style="justify-content:center;">+ Raise CAPA</button>' : ''}
-      ${capaRoleIn(['admin','quality_manager']) ? '<button class="btn btn-ghost" data-quick-action="upload-document" style="justify-content:center;">+ Upload Doc</button>' : ''}
-      <button class="btn btn-ghost" data-quick-action="report-incident" style="justify-content:center;">+ Report Incident</button>
-      ${capaRoleIn(CAPA_ROLES_CREATE) ? '<button class="btn btn-ghost" data-quick-action="add-risk" style="justify-content:center;">+ Add Risk</button>' : ''}
-    </div>
-    ${topPriorities.length ? `
-    <div class="card p4" style="margin-bottom:16px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Today's Priorities</h3>
-      ${topPriorities.map(p=>{
-        const accent = p.dot==="🔴" ? "var(--rust)" : p.dot==="🟡" ? "var(--amber)" : "var(--green)";
-        return `
-        <button ${p.jumpAudit?`data-jump-audit="${p.jumpAudit}"`:`data-navid="${p.navId}"`} class="audit-row" style="border-radius:8px;border-left:3px solid ${accent};margin-bottom:4px;">
-          <span style="font-size:13px;">${p.dot} ${esc(p.text)}</span>
-        </button>
-      `;}).join('')}
-    </div>` : ''}
-    ${!capaRoleIn(['admin','quality_manager','auditor']) ? '' : `<div class="card p4" style="margin-bottom:16px;">
-      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Recent Activity</h3>
-      ${recentActivity.length===0 ? `<p class="muted-italic" style="font-size:13px;">No activity logged yet — actions like creating audits, CAPAs, risks, documents, and supplier approvals will appear here.</p>` : (() => {
-        let lastDay = null;
-        return recentActivity.map(a=>{
-          const day = activityDayLabel(a.ts);
-          const dayHeader = day!==lastDay ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 0 4px;">${esc(day)}</div>` : '';
-          lastDay = day;
-          const time = new Date(a.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-          return `${dayHeader}<div style="font-size:13px;padding:4px 0;"><span style="color:var(--muted);">${day==="Today"?time:''}</span> ${esc(a.text)}</div>`;
-        }).join('');
-      })()}
-    </div>`}
-    <div class="stats" style="margin-bottom:16px;">
-      ${statCard("📋", "Open Audits", openAudits, "nav-audit-register")}
-      ${statCard("⏳", "Overdue CAPAs", overdue.length, "nav-capa")}
-      ${statCard("🚨", "Open High/Critical Risks", highRisks.length, "nav-risk")}
-      ${statCard("📄", "Pending Documents", pendingDocuments, "nav-documents")}
-      ${statCard("🚚", "Approved Suppliers", approvedSuppliers, "nav-suppliers-list")}
-      ${statCard("👥", "Active Employees", activeEmployees, "nav-people-training")}
-    </div>
-    ${alerts.length ? `
-      <div class="card p4" style="margin-bottom:16px;border-color:var(--rustBg);">
-        <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Alerts</h3>
-        ${alerts.map(a=>`<div style="padding:5px 0;font-size:13px;">${a}</div>`).join('')}
-      </div>
-    ` : ''}
-    <div class="card p4" style="margin-bottom:16px;">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
-        <h3 class="serif" style="font-size:16px;margin:0;">Enterprise KPI Snapshot</h3>
-        <button class="btn btn-ghost" style="font-size:12px;" data-dash-calc="1">View calculation</button>
-      </div>
-      ${kpiGroup("Compliance Overview", [
-        {label:"Tracked Performance Index", score:overallScore, key:"overall"},
-        {label:"Average Scored Audit Result", score:avgScore, key:"audit"},
-        {label:"CAPA Completion", score:capaScore, key:"capa"},
-        {label:"Risk Control Health", score:riskScore, key:"risk"}
-      ])}
-      ${kpiGroup("Operational Performance", [
-        {label:"Training / Competence in Good Standing", score:trainingScore, key:"training"},
-        {label:"Document Control", score:documentScore, key:"documents"},
-        {label:"KPI Metrics On-Target", score:metricsScore, key:"kpiMetrics"},
-        {label:"Supplier Approval Rate", score:supplierScore, key:"supplier"}
-      ])}
-      ${kpiGroup("Food Safety", [
-        {label:"HACCP Compliance", score:haccpScore, key:"haccp"},
-        {label:"Recall Readiness (exercises within target, last 12 months)", score:recallScore, key:"recall"},
-        {label:"Allergen Controls", score:allergenScore, key:"allergen"},
-        {label:"Scheduled Controls Compliance", score:cipScore, key:"cip"},
-        {label:"Sensory Evaluation Pass Rate", score:sensoryScore, key:"sensory"}
-      ])}
-      ${kpiGroup("Laboratory", [
-        {label:"Laboratory Performance", score:labScore, key:"lab"}
-      ])}
-      <p class="muted-italic" style="font-size:11px;margin:10px 0 0;">The Tracked Performance Index is a simple average of the tracked controls that have enough data. It is an internal indicator, not a measure of legal or standard compliance, and every control counts equally. Controls with too little data show "Not assessed" or "small base" and are not averaged in. "0%" means measured and none passed. Trend arrows compare to your last visit in a previous month.</p>
-    </div>
-    <div class="card p4" style="margin-bottom:16px;">
-      <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
-        <h3 class="serif" style="font-size:16px;margin:0;">Tracked Performance Index Trend</h3>
-        <span class="tag tag-${overallGrade.tone}" style="font-size:13px;">${overallScore===null?'Not enough data':overallScore+'% — '+overallGrade.label+' · '+overallCoverage}${_tr?` (${dashPP(_tr)})`:''}</span>
-      </div>
-      ${dashChartMonths().filter(m=>m.v!==null).length>=2 ? `<canvas id="compliance-trend-chart" height="100"></canvas><p class="muted-italic" style="font-size:11px;margin:6px 0 0;">Latest snapshot in each month. Months with no snapshot are gaps, not zeros.</p>` : `<p class="muted-italic" style="font-size:12px;">The trend appears once snapshots exist for at least two months. A snapshot is saved automatically the first time a manager opens the Dashboard each day.</p>`}
-    </div>
-    <div class="stats">
-      ${statCard("📋", "Total Audits", audits.length, "nav-audit-register")}
-      ${statCard("⚠", "Open Findings", openFindings.length, "nav-capa")}
-      ${_ncr ? statCard("🚩", "Active NCRs", _ncr.active, "nav-ncr") : ''}
-      ${statCard("📄", "Docs Review Overdue", state.documents.filter(d=>documentReviewStatus(d)==="Overdue").length, "nav-documents")}
-      ${statCard("🎓", "Training Overdue", state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length, "nav-people-training")}
-      ${statCard("🚨", "Active Recalls", (window.recallActiveCount ? window.recallActiveCount() : 0), "nav-trace-recall")}
-      ${statCard("🔍", "Batches Expired/Quarantine", state.batches.filter(b=>batchExpiryStatus(b)==="Expired" || b.status==="Quarantine").length, "nav-trace-batch")}
-      ${statCard("🌡️", "Open Food Safety Deviations", _fs ? _fs.openDeviations : "—", "nav-fs-deviations")}
-    </div>
     <div class="card p4" style="margin-bottom:16px;">
       <h3 class="serif" style="font-size:16px;margin:0 0 10px;">Priority Findings</h3>
       ${critical.filter(f=>f.status!=="Closed").length===0 ? `<p class="muted-italic">No major or critical findings open right now.</p>` :
@@ -10968,7 +10979,12 @@ function renderDashboard(){
         </button>`;
       }).join('')}
     </div>
-    <div class="card p4" style="margin-top:16px;">
+  ${dashSecClose()}
+  ${dashSecOpen('counts','More counts',false)}
+  ${moreCountsHtml}
+  ${dashSecClose()}
+  ${dashSecOpen('mgmt','Executive summary',false)}
+    <div class="card p4" style="margin:0;">
       <h3 class="serif" style="font-size:16px;margin:0 0 4px;">📌 Executive Summary</h3>
       <p class="muted-italic" style="font-size:11px;margin:0 0 10px;">Quick glance only — see Management Review for the full report.</p>
       ${(() => {
@@ -11100,6 +11116,23 @@ function renderDashboard(){
         return staticHtml + copqHtml + csatHtml;
       })()}
     </div>
+  ${dashSecClose()}
+${!capaRoleIn(['admin','quality_manager','auditor']) ? '' : dashSecOpen('activity','Recent activity',false)}
+    ${!capaRoleIn(['admin','quality_manager','auditor']) ? '' : `<div class="card p4" style="margin-bottom:16px;">
+      <h3 class="serif" style="font-size:15px;margin:0 0 8px;">Recent Activity</h3>
+      ${recentActivity.length===0 ? `<p class="muted-italic" style="font-size:13px;">No activity logged yet — actions like creating audits, CAPAs, risks, documents, and supplier approvals will appear here.</p>` : (() => {
+        let lastDay = null;
+        return recentActivity.map(a=>{
+          const day = activityDayLabel(a.ts);
+          const dayHeader = day!==lastDay ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:10px 0 4px;">${esc(day)}</div>` : '';
+          lastDay = day;
+          const time = new Date(a.ts).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          return `${dayHeader}<div style="font-size:13px;padding:4px 0;"><span style="color:var(--muted);">${day==="Today"?time:''}</span> ${esc(a.text)}</div>`;
+        }).join('');
+      })()}
+    </div>`}
+
+${!capaRoleIn(['admin','quality_manager','auditor']) ? '' : dashSecClose()}
   `;
 }
 function renderManagementReview(){
