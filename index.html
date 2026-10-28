@@ -10512,6 +10512,25 @@ function dashChartMonths(){
 }
 document.addEventListener('click', e=>{
   const nav = e.target.closest && e.target.closest('#ohs-modal-root [data-navid]'); if(nav){ document.getElementById('ohs-modal-root').innerHTML=''; return; }
+  const ib = e.target.closest && e.target.closest('[data-dash-info]');
+  if(ib){
+    const root = document.getElementById('ohs-modal-root'); const c = window.__dash.calc; if(!root || !c) return;
+    const k = ib.dataset.dashInfo; if(k==='overall'){ const cb = document.createElement('button'); cb.dataset.dashCalc='1'; document.body.appendChild(cb); cb.click(); cb.remove(); return; }
+    const x = c.meta.find(m=>m.key===k); if(!x) return; const prior = dashPriorSnap(), tr = dashTrend(k, x.score);
+    root.innerHTML = `<div class="ohs-modal-backdrop" data-role="backdrop"><div class="ohs-modal" role="dialog" style="max-height:90vh;overflow:auto;">
+      <h2>${esc(x.label)}</h2>
+      <p style="font-size:13px;margin:0 0 8px;"><strong>${x.score===null?'Not assessed':x.score+'%'}</strong>${x.score===null?` — ${esc(x.reason)}`:''}</p>
+      <p style="font-size:12.5px;margin:0 0 6px;"><strong>Definition:</strong> ${esc(x.def)}</p>
+      <p style="font-size:12.5px;margin:0 0 6px;"><strong>Numerator / denominator:</strong> ${x.den===null||x.den===undefined ? 'not a simple fraction (see definition)' : (x.num===null||x.num===undefined ? esc(x.den+' '+(x.denLabel||'records')) : esc(x.num+' of '+x.den+' '+(x.denLabel||'')))}</p>
+      <p style="font-size:12.5px;margin:0 0 6px;"><strong>Reporting period:</strong> current records as at the last calculation, not a past period.</p>
+      <p style="font-size:12.5px;margin:0 0 6px;"><strong>Scope:</strong> ${esc(c.scope)}.</p>
+      <p style="font-size:12.5px;margin:0 0 6px;"><strong>Last updated:</strong> ${esc(new Date(c.at).toLocaleString())}</p>
+      <p style="font-size:12.5px;margin:0 0 6px;"><strong>Trend:</strong> ${tr ? esc(dashPP(tr))+' against the snapshot of '+esc(tr.date) : (prior ? 'not available for this measure (no result in the earlier snapshot, or not assessed now)' : 'no earlier-month snapshot yet')}</p>
+      ${(c.nav||{})[k] ? `<button class="btn btn-primary" style="margin-top:6px;" data-navid="${c.nav[k]}">View source records</button>` : ''}
+      <div class="ohs-modal-actions"><button type="button" class="ohs-btn-secondary" data-oa="cancel">Close</button></div></div></div>`;
+    root.querySelector('[data-oa="cancel"]').onclick = ()=>{ root.innerHTML=''; };
+    return;
+  }
   const b = e.target.closest && e.target.closest('[data-dash-calc]'); if(!b) return;
   const root = document.getElementById('ohs-modal-root'); const c = window.__dash.calc; if(!root || !c) return;
   const inc = c.meta.filter(x=>x.score!==null), exc = c.meta.filter(x=>x.score===null), prior = dashPriorSnap();
@@ -10689,10 +10708,11 @@ function renderDashboard(){
       <span>${GRADE_EMOJI[g.tone]} ${label}</span>
       <span>${score===null&&kpiHints[key]&&key!=='overall'?`<span class="muted-italic">${kpiHints[key]}</span>`:score===null?(key==='overall'?`<span class="muted-italic">not enough data (${overallCoverage}; needs ${MIN_MODULES_FOR_OVERALL})</span>`:'<span class="muted-italic">Not assessed</span>'):`<strong>${score}%</strong>${key==='audit'?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${kpiHints.audit})</span>`:''}`}${key==='overall'&&score!==null?`<span class="muted-italic" style="font-size:11px;margin-left:6px;">(${overallCoverage})</span>`:''}${trendHtml}</span>
     `;
+    const _infoBtn = key==='lab' ? '' : `<button data-dash-info="${key}" title="What does this measure?" aria-label="What does ${esc(label)} measure?" style="flex:none;min-width:44px;min-height:44px;background:none;border:none;border-bottom:1px solid var(--line2);cursor:pointer;color:var(--muted);font-size:15px;">ⓘ</button>`;
     if(navId){
-      return `<button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button>`;
+      return `<div style="display:flex;align-items:stretch;"><div style="flex:1;min-width:0;"><button data-navid="${navId}" style="display:flex;width:100%;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);border-top:none;border-left:none;border-right:none;background:none;font-size:13px;text-align:left;cursor:pointer;color:inherit;">${inner}</button></div>${_infoBtn}</div>`;
     }
-    return `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">${inner}</div>`;
+    return `<div style="display:flex;align-items:stretch;"><div style="flex:1;min-width:0;display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px;">${inner}</div>${_infoBtn}</div>`;
   }
   function kpiGroup(title, rows){
     return `
@@ -10798,12 +10818,24 @@ function renderDashboard(){
   </div>`;
   const _holds = state.batches.filter(b=>b.status==="Quarantine").length;
   const _expiredLots = state.batches.filter(b=>batchExpiryStatus(b)==="Expired").length;
-  const keyCardsHtml = `<div class="stats" style="margin-bottom:16px;">
-      ${statCard("📋", "Open Audits", openAudits, "nav-audit-register")}
-      ${statCard("⏳", "Overdue CAPAs", overdue.length, "nav-capa")}
-      ${statCard("🚩", "Active NCRs", _ncr ? _ncr.active : "—", "nav-ncr")}
-      ${statCard("🔒", "Lots on Hold", _holds, "nav-trace-batch")}
-    </div>`;
+  const _roleK = String((typeof currentProfile!=='undefined' && currentProfile && currentProfile.role) || '').toLowerCase();
+  const _ohK = (window.__ohsDashStats && window.__ohsDashStats()) || null;
+  if(typeof mrLoad==='function') mrLoad();
+  const _mrOverdue = ((window.__mr && window.__mr.actions) || []).filter(a=>a.status==='open' && a.due_on < today()).length;
+  const _mrLoaded = !!(window.__mr && window.__mr.rows);
+  const _criticalOpen = _rx.critical.length + (_ncr ? _ncr.critical : 0) + (_ohK ? _ohK.ccFailed : 0);
+  /* Same dashboard for everyone; only the four headline cards change with the role. */
+  const _cards = _roleK==='approver' ? [
+      ["🔴","Critical Issues Open",_criticalOpen,"nav-risk"], ["⏳","Overdue CAPAs",overdue.length,"nav-capa"],
+      ["📈","Overdue Review Actions",_mrLoaded?_mrOverdue:"—","nav-mgmt-review"], ["📄","Pending Documents",pendingDocuments,"nav-documents"]
+    ] : _roleK==='department manager' ? [
+      ["🛑","Failed Critical Controls",_ohK?_ohK.ccFailed:"—","nav-ohs-critical"], ["🔎","Overdue Routine Checks",_ohK?_ohK.chkOverdue:"—","nav-ohs-hira"],
+      ["⚠","Critical OHS Findings Open",_ohK?_ohK.obsCrit:"—","nav-ohs-observations"], ["🎓","Training Overdue",state.trainingRecords.filter(t=>trainingStatus(t)==="Overdue").length,"nav-people-training"]
+    ] : [
+      ["📋","Open Audits",openAudits,"nav-audit-register"], ["⏳","Overdue CAPAs",overdue.length,"nav-capa"],
+      ["🚩","Active NCRs",_ncr?_ncr.active:"—","nav-ncr"], ["🔒","Lots on Hold",_holds,"nav-trace-batch"]
+    ];
+  const keyCardsHtml = `<div class="stats" style="margin-bottom:16px;">${_cards.map(c=>statCard(c[0],c[1],c[2],c[3])).join('')}</div>`;
   const moreCountsHtml = `<div class="stats" style="margin-bottom:16px;">
       ${statCard("🚨", "Open High/Critical Risks", highRisks.length, "nav-risk")}
       ${statCard("📄", "Pending Documents", pendingDocuments, "nav-documents")}
