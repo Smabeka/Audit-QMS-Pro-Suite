@@ -21,7 +21,7 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#211f4e">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -38,23 +38,23 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
    ========================================================================== */
 
 :root {
-  --ohs-cream: #f7f3ea;
+  --ohs-cream: #f3f5fa;
   --ohs-cream-panel: #ffffff;
-  --ohs-navy: #1b2a4a;
-  --ohs-navy-dark: #14213d;
-  --ohs-rust: #8b5e34;
-  --ohs-rust-dark: #6f4a2a;
-  --ohs-border: #ddd4c0;
+  --ohs-navy: #211f4e;
+  --ohs-navy-dark: #18163d;
+  --ohs-rust: #0A7A6A;
+  --ohs-rust-dark: #086758;
+  --ohs-border: #e1e4ee;
   --ohs-text: #2a2a2a;
-  --ohs-text-muted: #7a7266;
+  --ohs-text-muted: #667086;
   --ohs-success-bg: #eaf3ea;
   --ohs-success-text: #2f5d34;
   --ohs-warning-bg: #fdf3e3;
   --ohs-warning-text: #8a5a12;
   --ohs-error-bg: #fbeaea;
   --ohs-error-text: #8b3a3a;
-  --ohs-font-serif: Georgia, 'Times New Roman', serif;
-  --ohs-font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --ohs-font-serif: 'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --ohs-font-sans: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 /* ---- Modal shell -------------------------------------------------------- */
@@ -354,22 +354,22 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
 }
 
   :root{
-    --bg:#f7f5ee; --paper:#ffffff; --line:#e2dbc9; --line2:#eee7d5; --ink:#2a2620;
-    --muted:#8a8168; --navy:#1c2b4a; --navyBg:#e4e9f2; --rust:#9b3f28; --rustBg:#f6e4dd;
+    --bg:#f3f5fa; --paper:#ffffff; --line:#e1e4ee; --line2:#eceff6; --ink:#1A0F2E;
+    --muted:#667086; --navy:#211f4e; --navyBg:#e8e9f6; --teal:#0A7A6A; --tealBg:#e0f2ef; --rust:#9b3f28; --rustBg:#f6e4dd;
     --green:#3f6b2e; --greenBg:#e6ede0; --amber:#8a5a10; --amberBg:#faedd4;
   }
   body.dark{
-    --bg:#121212; --paper:#1d1d1d; --line:#333029; --line2:#2b2822; --ink:#f0ede4;
-    --muted:#a39a86; --navy:#5b7fc4; --navyBg:#26314a; --rust:#e08669; --rustBg:#3d251f;
+    --bg:#0f0e22; --paper:#1b1938; --line:#2e2b57; --line2:#25224a; --ink:#f4f1ff;
+    --muted:#a9a6c8; --navy:#5f5bd0; --navyBg:#26234f; --teal:#2cc4ad; --tealBg:#12363a; --rust:#e08669; --rustBg:#3d251f;
     --green:#8fc46e; --greenBg:#213321; --amber:#e0b95f; --amberBg:#3a3020;
   }
   body.dark .logo{background:var(--navy);}
-  body.dark header{background:rgba(18,18,18,.95);}
+  body.dark header{background:rgba(15,14,34,.95);}
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);color:var(--ink);font-family:'Public Sans',sans-serif;}
-  h1,h2,h3,.serif{font-family:'Fraunces',serif;}
+  h1,h2,h3,.serif{font-family:'Public Sans',system-ui,sans-serif;font-weight:700;letter-spacing:-.01em;}
   .wrap{max-width:900px;margin:0 auto;padding:0 20px;}
-  header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(247,245,238,.95);backdrop-filter:blur(6px);z-index:10;}
+  header{border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(255,255,255,.94);backdrop-filter:blur(6px);z-index:10;}
   .headrow{display:flex;align-items:center;justify-content:space-between;padding:16px 0;flex-wrap:wrap;gap:10px;row-gap:14px;}
   .brand{display:flex;align-items:flex-start;gap:10px;}
   .sig-box{border:1px dashed var(--line);border-radius:8px;padding:10px;background:#faf8f2;}
@@ -379,6 +379,12 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
     .headrow>div:last-child{margin-top:2px;}
   }
   .brand-w .q{font-weight:800;}
+  #vx-boot{position:fixed;inset:0;z-index:99999;background:#f3f5fa;display:flex;align-items:center;justify-content:center;animation:vxBoot .45s ease .9s forwards;}
+  #vx-boot .vx-bw{margin-top:18px;}
+  #vx-boot .brand-w{font-size:36px;line-height:1.1;}
+  #vx-boot .brand-w .q{font-size:.46em;vertical-align:.55em;letter-spacing:.05em;}
+  @keyframes vxBoot{to{opacity:0;visibility:hidden;}}
+  @media (prefers-color-scheme:dark){#vx-boot{background:#0f0e22;}#vx-boot .brand-w{color:#f4f1ff;}#vx-boot .brand-w .x{color:#2cc4ad;}}
   .hd-logo{display:flex;flex-shrink:0;}
   .hd-logo .vx-logo,#print-report .vx-logo{margin:0;box-shadow:none;border-radius:10px;}
   .vx-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px 16px;background:linear-gradient(160deg,#eef0f6,#dfe3ee);}
@@ -424,7 +430,9 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
   .tabnav::-webkit-scrollbar{display:none;}
   [data-action="breadcrumb-back"]::-webkit-scrollbar{display:none;}
   main{padding:24px 0 60px;}
-  .card{background:var(--paper);border:1px solid var(--line);border-radius:12px;box-shadow:0 1px 2px rgba(30,25,15,.04);}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 3px rgba(33,31,78,.06),0 8px 24px rgba(33,31,78,.04);}
+  .stats .card{border-top:3px solid var(--teal);}
+  body.dark .card{box-shadow:none;}
   .p4{padding:16px;}
   .stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:20px;}
   @media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr);}}
@@ -435,19 +443,19 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
   .dash-sec:not([open])>summary::after{content:'›';}
   @media(max-width:480px){ .brand p{display:none;} .hdr-ws{display:none !important;} body{font-size:16px;} .stat-value{font-size:26px;} }
   .stat-label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:4px;}
-  .stat-value{font-size:24px;font-family:'Fraunces',serif;color:var(--navy);}
+  .stat-value{font-size:26px;font-family:'Public Sans',system-ui,sans-serif;font-weight:800;color:var(--navy);}
   input,select{background:#fff;border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--ink);font-family:inherit;width:100%;}
   input:focus,select:focus{outline:none;border-color:var(--rust);box-shadow:0 0 0 3px rgba(155,63,40,.12);}
   label.field{display:flex;flex-direction:column;gap:4px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
-  .btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:6px;font-size:14px;cursor:pointer;border:none;font-family:inherit;}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:10px;font-size:14px;cursor:pointer;border:none;font-family:inherit;}
   .btn-primary{background:var(--navy);color:#fff;font-weight:500;}
-  .btn-primary:hover{background:#16223b;}
-  .btn-ghost{background:transparent;border:1px solid var(--line);color:#4a4535;}
-  .btn-ghost:hover{background:#efe9dc;}
+  .btn-primary:hover{background:#18163d;}
+  .btn-ghost{background:transparent;border:1px solid var(--line);color:var(--ink);}
+  .btn-ghost:hover{background:var(--navyBg);}
   .btn-danger{background:transparent;border:1px solid #e8c3b5;color:var(--rust);}
   .btn-danger:hover{background:var(--rustBg);}
   .tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;border:1px solid;font-size:11px;font-weight:500;}
-  .tag-neutral{background:#efe9dc;color:#5c5540;border-color:#ddd4bc;}
+  .tag-neutral{background:var(--navyBg);color:var(--ink);border-color:var(--line);}
   .tag-rust{background:var(--rustBg);color:var(--rust);border-color:#e8c3b5;}
   .tag-green{background:var(--greenBg);color:var(--green);border-color:#c7dab8;}
   .tag-navy{background:var(--navyBg);color:var(--navy);border-color:#c3cee2;}
@@ -464,7 +472,7 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
   .item-row{display:flex;align-items:flex-start;gap:8px;padding:4px 0;}
   .result-toggle{display:flex;gap:2px;flex-shrink:0;}
   .result-toggle button{background:none;border:none;cursor:pointer;padding:4px;border-radius:4px;font-size:16px;line-height:1;}
-  .result-toggle button.active{background:#efe9dc;}
+  .result-toggle button.active{background:var(--navyBg);}
   .finding-box{border:1px solid var(--line2);border-radius:10px;padding:12px;margin-bottom:10px;}
   .muted-italic{color:#a39a86;font-style:italic;font-size:13px;}
   .flex-wrap{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}
@@ -496,7 +504,7 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
   }
 </style>
 </head>
-<body>
+<body><div id="vx-boot" aria-hidden="true"><div style="text-align:center"><svg viewBox="0 0 100 100" width="96" height="96" aria-hidden="true" style="border-radius:22px;box-shadow:0 10px 28px rgba(25,201,174,.28)"><defs><linearGradient id="bsa" x1="0" y1="0" x2="0" y2="1"><stop offset=".42" stop-color="#1f1b4e"/><stop offset=".75" stop-color="#1a6f7c"/><stop offset="1" stop-color="#19f0cc"/></linearGradient><linearGradient id="bsb" x1="0" y1="0" x2="0" y2="1"><stop offset=".25" stop-color="#fff"/><stop offset="1" stop-color="#43f2d3"/></linearGradient><linearGradient id="bsc" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a3fd2"/><stop offset="1" stop-color="#22f0c8"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#bsa)"/><polygon points="21.4,21.3 36.7,21.3 50.0,63.0 50.0,78.1 42.0,78.1" fill="url(#bsb)"/><polygon points="50.0,63.0 63.8,21.3 79.2,21.3 58.0,78.1 50.0,78.1" fill="url(#bsc)" stroke="url(#bsc)" stroke-width=".15"/></svg><div class="vx-bw"><span class="brand-w">Veni<span class="x">X</span>tus <span class="q">QMS</span></span></div></div></div>
 <div id="app"></div>
 <div id="ohs-modal-root"></div>
 <div id="print-report"></div>
