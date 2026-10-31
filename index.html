@@ -379,6 +379,8 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
     .headrow>div:last-child{margin-top:2px;}
   }
   .brand-w .q{font-weight:800;}
+  .hd-logo{display:flex;flex-shrink:0;}
+  .hd-logo .vx-logo,#print-report .vx-logo{margin:0;box-shadow:none;border-radius:10px;}
   .vx-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px 16px;background:linear-gradient(160deg,#eef0f6,#dfe3ee);}
   .vx-card{width:100%;max-width:440px;background:#fff;border-radius:28px;padding:34px 26px 24px;box-shadow:0 18px 50px rgba(26,15,46,.16);font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A0F2E;}
   .vx-top{text-align:center;margin-bottom:18px;}
@@ -398,6 +400,7 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
   .vx-btn{width:100%;height:52px;border:none;border-radius:12px;background:#0A7A6A;color:#fff;font-size:17px;font-weight:600;font-family:inherit;cursor:pointer;margin-top:6px;}
   .vx-btn:hover{background:#086758;} .vx-btn:disabled{opacity:.6;cursor:default;}
   .vx-row{display:flex;justify-content:space-between;align-items:center;margin:2px 0 10px;}
+  .vx-links{margin-top:14px;}
   .vx-center{justify-content:center;margin-top:16px;}
   .vx-link{background:none;border:none;color:#0A7A6A;font-size:15px;font-weight:600;cursor:pointer;padding:6px 0;font-family:inherit;}
   .vx-msg{border-radius:12px;padding:10px 14px;font-size:14px;margin-bottom:14px;}
@@ -9933,9 +9936,8 @@ function renderLoginScreen(){
         ${loginMode==="login" ? `
           ${vxField('Email','login-email','email','Enter your email','mail')}
           ${vxField('Password','login-password','password','Enter your password','lock',true)}
-          <div class="vx-row"><span></span><button class="vx-link" data-action="show-reset" type="button">Forgot password?</button></div>
           <button class="vx-btn" data-action="do-login" ${cloudBusy?'disabled':''}>${cloudBusy?'Signing in…':'Log in'}</button>
-          <div class="vx-row vx-center"><button class="vx-link" data-action="show-register" type="button">Create account</button></div>
+          <div class="vx-row vx-links"><button class="vx-link" data-action="show-register" type="button">Create account</button><button class="vx-link" data-action="show-reset" type="button">Forgot password?</button></div>
           ${!cloudReady() ? `<p class="vx-note">Demo admin: admin@auditqmspro.com / admin123</p>` : ''}
         ` : loginMode==="register" ? `
           ${vxField('Full name','reg-name','text','Your full name','user')}
@@ -10219,7 +10221,7 @@ function render(){
       <header>
         <div class="wrap headrow">
           <div class="brand">
-            <div class="logo">V</div>
+            <span class="hd-logo">${BRAND.logo(44)}</span>
             <div><h1>${BRAND.html}</h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -14800,7 +14802,7 @@ function buildMetricsPrintReport(){
   const c = state.companySettings || {};
   const logoHtml = c.logoDataUrl
     ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
-    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">V</div>`;
+    : `${BRAND.logo(40)}`;
   const brandName = c.name ? esc(c.name) : BRAND.name;
 
   document.getElementById('print-report').innerHTML = `
@@ -14830,7 +14832,7 @@ function buildMicroCertificatePrintReport(recordId){
   const c = state.companySettings || {};
   const logoHtml = c.logoDataUrl
     ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
-    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">V</div>`;
+    : `${BRAND.logo(40)}`;
   const brandName = c.name ? esc(c.name) : BRAND.name;
   const brandAddress = c.address ? `<div class="meta">${esc(c.address)}${c.email?` &nbsp;·&nbsp; ${esc(c.email)}`:''}</div>` : (c.email ? `<div class="meta">${esc(c.email)}</div>` : '');
 
@@ -14899,7 +14901,7 @@ function buildMgmtReviewPrintReport(){
   const c = state.companySettings || {};
   const logoHtml = c.logoDataUrl
     ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
-    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">V</div>`;
+    : `${BRAND.logo(40)}`;
   const brandName = c.name ? esc(c.name) : BRAND.name;
   const row = (label, value) => `<tr><th>${esc(label)}</th><td>${value===null||value===undefined?'—':esc(String(value))}</td></tr>`;
   const mrAppr = ((window.__mr && window.__mr.rows) || []).find(x=>x.status==='approved');
@@ -15112,7 +15114,7 @@ async function buildAuditPrintReport(a){
   const c = state.companySettings || {};
   const logoHtml = c.logoDataUrl
     ? `<img src="${c.logoDataUrl}" style="max-height:44px;max-width:120px;" />`
-    : `<div style="width:40px;height:40px;border-radius:9px;background:#1c2b4a;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-family:sans-serif;">V</div>`;
+    : `${BRAND.logo(40)}`;
   const brandName = c.name ? esc(c.name) : BRAND.name;
   const brandAddress = c.address ? `<div class="meta">${esc(c.address)}${c.email?` &nbsp;·&nbsp; ${esc(c.email)}`:''}</div>` : (c.email ? `<div class="meta">${esc(c.email)}</div>` : '');
 
