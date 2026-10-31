@@ -9,7 +9,7 @@ window.onerror = function(msg, url, line, col, error) {
 </script>
 <script>
 /* Single place for the product name. Change here, not in the text below. */
-window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", html: '<span class="brand-w">Veni<span class="x">X</span>tus QMS</span>', address: "32 Hill Street, Ferndale, Randburg, 2194", supportEmail: "Support@auditqmspro.com" /* change to the new domain when it is live */ };
+window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", html: '<span class="brand-w">Veni<span class="x">X</span>tus <span class="q">QMS</span></span>', logo: function(n){ return '<svg class="vx-logo" viewBox="0 0 100 100" width="'+n+'" height="'+n+'" role="img" aria-label="VeniXtus"><defs><linearGradient id="vxa" x1="0" y1="0" x2="0" y2="1"><stop offset=".42" stop-color="#1f1b4e"/><stop offset=".75" stop-color="#1a6f7c"/><stop offset="1" stop-color="#19f0cc"/></linearGradient><linearGradient id="vxb" x1="0" y1="0" x2="0" y2="1"><stop offset=".25" stop-color="#fff"/><stop offset="1" stop-color="#43f2d3"/></linearGradient><linearGradient id="vxc" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5a3fd2"/><stop offset="1" stop-color="#22f0c8"/></linearGradient></defs><rect width="100" height="100" rx="22" fill="url(#vxa)"/><polygon points="21.4,21.3 36.7,21.3 50.0,63.0 50.0,78.1 42.0,78.1" fill="url(#vxb)"/><polygon points="50.0,63.0 63.8,21.3 79.2,21.3 58.0,78.1 50.0,78.1" fill="url(#vxc)" stroke="url(#vxc)" stroke-width=".15"/></svg>'; }, address: "32 Hill Street, Ferndale, Randburg, 2194", supportEmail: "Support@auditqmspro.com" /* change to the new domain when it is live */ };
 </script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -21,7 +21,7 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#211f4e">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -378,7 +378,37 @@ window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", h
     .headrow{padding:14px 0 18px;}
     .headrow>div:last-child{margin-top:2px;}
   }
-  .brand-w{color:#1A0F2E;font-weight:700;letter-spacing:-.01em;}
+  .brand-w .q{font-weight:800;}
+  .vx-page{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px 16px;background:linear-gradient(160deg,#eef0f6,#dfe3ee);}
+  .vx-card{width:100%;max-width:440px;background:#fff;border-radius:28px;padding:34px 26px 24px;box-shadow:0 18px 50px rgba(26,15,46,.16);font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;color:#1A0F2E;}
+  .vx-top{text-align:center;margin-bottom:18px;}
+  .vx-logo{display:block;margin:0 auto 14px;border-radius:22px;box-shadow:0 8px 22px rgba(25,201,174,.25);}
+  .vx-word .brand-w{font-size:34px;line-height:1.1;}
+  .vx-word .brand-w .q{font-size:.46em;vertical-align:.55em;letter-spacing:.05em;}
+  .vx-h{font-family:inherit;letter-spacing:-.01em;font-size:28px;font-weight:800;text-align:center;margin:22px 0 6px;color:#1A0F2E;}
+  .vx-sub{font-size:15px;line-height:1.45;text-align:center;color:#3d4660;margin:0 0 20px;}
+  .vx-f{margin-bottom:14px;}
+  .vx-f label{display:block;font-size:15px;font-weight:700;margin-bottom:6px;color:#1A0F2E;}
+  .vx-in{position:relative;}
+  .vx-in input{width:100%;box-sizing:border-box;height:52px;border:1.5px solid #c9cdd8;border-radius:12px;padding:0 46px 0 46px;font-size:16px;font-family:inherit;color:#1A0F2E;background:#fff;outline:none;}
+  .vx-in input:focus{border-color:#0A7A6A;box-shadow:0 0 0 3px rgba(10,122,106,.18);}
+  .vx-ic{position:absolute;left:14px;top:50%;transform:translateY(-50%);color:#6b7185;display:flex;pointer-events:none;}
+  .vx-foot .vx-ic{position:static;transform:none;color:#6b7185;}
+  .vx-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:40px;height:40px;border:none;background:none;color:#6b7185;cursor:pointer;display:flex;align-items:center;justify-content:center;border-radius:10px;}
+  .vx-btn{width:100%;height:52px;border:none;border-radius:12px;background:#0A7A6A;color:#fff;font-size:17px;font-weight:600;font-family:inherit;cursor:pointer;margin-top:6px;}
+  .vx-btn:hover{background:#086758;} .vx-btn:disabled{opacity:.6;cursor:default;}
+  .vx-row{display:flex;justify-content:space-between;align-items:center;margin:2px 0 10px;}
+  .vx-center{justify-content:center;margin-top:16px;}
+  .vx-link{background:none;border:none;color:#0A7A6A;font-size:15px;font-weight:600;cursor:pointer;padding:6px 0;font-family:inherit;}
+  .vx-msg{border-radius:12px;padding:10px 14px;font-size:14px;margin-bottom:14px;}
+  .vx-err{background:#fdecea;color:#a0301f;} .vx-ok{background:#e6f5ef;color:#0b5d4f;}
+  .vx-note{font-size:13px;line-height:1.45;color:#5a6178;text-align:center;margin:14px 0 0;}
+  .vx-foot{display:flex;align-items:center;justify-content:center;gap:8px;margin-top:22px;padding-top:16px;border-top:1px solid #e6e8ef;font-size:13px;color:#5a6178;}
+  body.dark .vx-page{background:linear-gradient(160deg,#14122e,#0c0b1d);}
+  body.dark .vx-card{background:#1b1938;color:#f4f1ff;box-shadow:none;}
+  body.dark .vx-h,body.dark .vx-f label{color:#f4f1ff;} body.dark .vx-sub,body.dark .vx-note,body.dark .vx-foot{color:#b9b6d6;}
+  body.dark .vx-in input{background:#14122e;border-color:#3a3764;color:#f4f1ff;} body.dark .vx-link{color:#2cc4ad;}
+  .brand-w{color:#1A0F2E;font-weight:800;letter-spacing:-.02em;font-family:"Public Sans",system-ui,-apple-system,"Segoe UI",sans-serif;}
   .brand-w .x{color:#0A7A6A;}
   body.dark .brand-w{color:#f4f1ff;}
   body.dark .brand-w .x{color:#2cc4ad;}
@@ -9869,52 +9899,71 @@ function activeBreadcrumb(){
   return path ? path.join(" › ") : "Dashboard";
 }
 function cloudReady(){ return CLOUD_ENABLED && !!supabaseClient; }
+function vxIcon(n){
+  const P={
+    mail:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3.5 7l8.5 6 8.5-6"/>',
+    lock:'<rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/><circle cx="12" cy="15.2" r="1.1"/>',
+    user:'<circle cx="12" cy="8.5" r="3.6"/><path d="M4.5 20c.9-3.6 3.8-5.4 7.5-5.4s6.6 1.8 7.5 5.4"/>',
+    id:'<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="11" r="2"/><path d="M6 16c.6-1.6 1.7-2.3 3-2.3s2.4.7 3 2.3M14.5 10h4M14.5 13.5h3"/>',
+    eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>'
+  };
+  return '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(P[n]||'')+'</svg>';
+}
+function vxField(label, id, type, ph, icon, eye){
+  return `<div class="vx-f"><label for="${id}">${label}</label>
+    <div class="vx-in">${icon?`<span class="vx-ic">${vxIcon(icon)}</span>`:''}<input id="${id}" type="${type}" ${ph?`placeholder="${ph}"`:''} autocomplete="${type==='password'?'current-password':type==='email'?'email':'off'}" ${icon?'':'style="padding-left:14px;"'} />${eye?`<button type="button" class="vx-eye" data-vx-eye="${id}" aria-label="Show or hide password">${vxIcon('eye')}</button>`:''}</div></div>`;
+}
 function renderLoginScreen(){
-  const title = loginMode==="register" ? "Create Account" : loginMode==="reset" ? "Reset Password" : "Sign In";
+  const heading = loginMode==="register" ? "Create account" : loginMode==="reset" ? "Reset password" : "Sign in";
+  const sub = loginMode==="register" ? "Create your account. An administrator will activate it before you can sign in."
+            : loginMode==="reset" ? (cloudReady() ? "Enter your email and we will send you a secure reset link." : "Confirm your details to set a new password.")
+            : "Welcome back! Please sign in to access your SHEQ Integrated Management System.";
+  const back = `<button class="vx-link" data-action="show-login" type="button">← Back to sign in</button>`;
   return `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;background:var(--bg,#f6f3ee);">
-      <div class="card p4" style="max-width:400px;width:100%;">
-        <div style="text-align:center;margin-bottom:18px;">
-          <div class="logo" style="margin:0 auto 10px;">V</div>
-          <h1 class="serif" style="font-size:22px;margin:0;">${BRAND.html}</h1>
-          <p class="muted-italic" style="font-size:12px;margin-top:2px;">${title}</p>
-          
+    <div class="vx-page">
+      <div class="vx-card">
+        <div class="vx-top">
+          ${BRAND.logo(84)}
+          <div class="vx-word">${BRAND.html}</div>
         </div>
-        ${loginError ? `<div class="card p4" style="background:#fdecea;border-color:var(--rust);margin-bottom:12px;"><p style="color:var(--rust);font-size:13px;margin:0;">${esc(loginError)}</p></div>` : ''}
-        ${cloudReady() && cloudStatus ? `<div class="card p4" style="background:${cloudStatus.startsWith('⚠')?'#fdecea':'#e8f5e9'};margin-bottom:12px;"><p style="font-size:13px;margin:0;">${esc(cloudStatus)}</p></div>` : ''}
+        <h2 class="vx-h">${heading}</h2>
+        <p class="vx-sub">${sub}</p>
+        ${loginError ? `<div class="vx-msg vx-err">${esc(loginError)}</div>` : ''}
+        ${cloudReady() && cloudStatus ? `<div class="vx-msg ${cloudStatus.startsWith('⚠')?'vx-err':'vx-ok'}">${esc(cloudStatus)}</div>` : ''}
         ${loginMode==="login" ? `
-          <label class="field">Email<input id="login-email" type="email" placeholder="you@company.com" /></label>
-          <label class="field" style="margin-top:8px;">Password<input id="login-password" type="password" placeholder="••••••••" /></label>
-          <button class="btn btn-primary" data-action="do-login" style="width:100%;margin-top:14px;" ${cloudBusy?'disabled':''}>${cloudBusy?'Signing in…':'Log In'}</button>
-          <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:12px;">
-            <button class="btn-link" data-action="show-register" style="background:none;border:none;color:var(--navy);cursor:pointer;padding:0;">Create account</button>
-            <button class="btn-link" data-action="show-reset" style="background:none;border:none;color:var(--navy);cursor:pointer;padding:0;">Forgot password?</button>
-          </div>
-          ${!cloudReady() ? `<p class="muted-italic" style="font-size:11px;margin-top:14px;text-align:center;">Demo admin: admin@auditqmspro.com / admin123</p>` : ''}
+          ${vxField('Email','login-email','email','Enter your email','mail')}
+          ${vxField('Password','login-password','password','Enter your password','lock',true)}
+          <div class="vx-row"><span></span><button class="vx-link" data-action="show-reset" type="button">Forgot password?</button></div>
+          <button class="vx-btn" data-action="do-login" ${cloudBusy?'disabled':''}>${cloudBusy?'Signing in…':'Log in'}</button>
+          <div class="vx-row vx-center"><button class="vx-link" data-action="show-register" type="button">Create account</button></div>
+          ${!cloudReady() ? `<p class="vx-note">Demo admin: admin@auditqmspro.com / admin123</p>` : ''}
         ` : loginMode==="register" ? `
-          <label class="field">Full Name<input id="reg-name" /></label>
-          <label class="field" style="margin-top:8px;">Email<input id="reg-email" type="email" /></label>
-          <label class="field" style="margin-top:8px;">Password<input id="reg-password" type="password" /></label>
-          <label class="field" style="margin-top:8px;">Confirm Password<input id="reg-password2" type="password" /></label>
-          <button class="btn btn-primary" data-action="do-register" style="width:100%;margin-top:14px;" ${cloudBusy?'disabled':''}>${cloudBusy?'Creating…':'Create Account'}</button>
-          <p class="muted-italic" style="font-size:11px;margin-top:10px;">New accounts are created as <strong>Employee</strong> and <strong>Disabled</strong> until an Administrator activates them and assigns the right role${cloudReady() ? ' (and you may need to confirm your email first)' : ''}.</p>
-          <button class="btn-link" data-action="show-login" style="background:none;border:none;color:var(--navy);cursor:pointer;padding:0;font-size:12px;margin-top:8px;">← Back to sign in</button>
+          ${vxField('Full name','reg-name','text','Your full name','user')}
+          ${vxField('Email','reg-email','email','Enter your email','mail')}
+          ${vxField('Password','reg-password','password','Create a password','lock',true)}
+          ${vxField('Confirm password','reg-password2','password','Repeat the password','lock',true)}
+          <button class="vx-btn" data-action="do-register" ${cloudBusy?'disabled':''}>${cloudBusy?'Creating…':'Create account'}</button>
+          <p class="vx-note">New accounts are created as <strong>Employee</strong> and <strong>Disabled</strong> until an Administrator activates them and assigns the correct role.</p>
+          <div class="vx-row vx-center">${back}</div>
         ` : `
-          <label class="field">Email<input id="reset-email" type="email" /></label>
+          ${vxField('Email','reset-email','email','Enter your email','mail')}
           ${cloudReady() ? '' : `
-          <label class="field" style="margin-top:8px;">Employee ID (for verification)<input id="reset-empid" /></label>
-          <label class="field" style="margin-top:8px;">New Password<input id="reset-password" type="password" /></label>
-          <label class="field" style="margin-top:8px;">Confirm New Password<input id="reset-password2" type="password" /></label>`}
-          <button class="btn btn-primary" data-action="do-reset" style="width:100%;margin-top:14px;" ${cloudBusy?'disabled':''}>${cloudBusy?'Sending…':'Reset Password'}</button>
-          <p class="muted-italic" style="font-size:11px;margin-top:10px;">${cloudReady() ? "We'll email you a secure reset link." : "Email + Employee ID must match your account on file."}</p>
-          <button class="btn-link" data-action="show-login" style="background:none;border:none;color:var(--navy);cursor:pointer;padding:0;font-size:12px;margin-top:8px;">← Back to sign in</button>
+          ${vxField('Employee ID (for verification)','reset-empid','text','','id')}
+          ${vxField('New password','reset-password','password','','lock',true)}
+          ${vxField('Confirm new password','reset-password2','password','','lock',true)}`}
+          <button class="vx-btn" data-action="do-reset" ${cloudBusy?'disabled':''}>${cloudBusy?'Sending…':'Reset password'}</button>
+          <p class="vx-note">${cloudReady() ? "We'll email you a secure reset link." : "Email + Employee ID must match your account on file."}</p>
+          <div class="vx-row vx-center">${back}</div>
         `}
+        <div class="vx-foot"><span class="vx-ic">${vxIcon('lock')}</span> Secure, encrypted sign in</div>
       </div>
     </div>
   `;
 }
 function attachLoginHandlers(){
   const byId = id => document.getElementById(id);
+  document.querySelectorAll('[data-vx-eye]').forEach(b=>{ b.onclick=()=>{ const i=byId(b.dataset.vxEye); if(i){ i.type = i.type==='password' ? 'text' : 'password'; } }; });
+  document.querySelectorAll('.vx-card input').forEach(inp=>{ inp.addEventListener('keydown',e=>{ if(e.key==='Enter'){ const b=document.querySelector('.vx-btn'); if(b && !b.disabled) b.click(); } }); });
   const setMode = (m) => { loginMode = m; loginError = ""; cloudStatus = ""; render(); };
   const doLogin = document.querySelector('[data-action="do-login"]');
   if(doLogin) doLogin.onclick = () => {
