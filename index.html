@@ -9,17 +9,17 @@ window.onerror = function(msg, url, line, col, error) {
 </script>
 <script>
 /* Single place for the product name. Change here, not in the text below. */
-window.BRAND = { name: "VeniXtus", legal: "VENIXTUS (Pty) Ltd", mark: "V", address: "32 Hill Street, Ferndale, Randburg, 2194", supportEmail: "Support@auditqmspro.com" /* change to the new domain when it is live */ };
+window.BRAND = { name: "VeniXtus QMS", legal: "VENIXTUS (Pty) Ltd", mark: "V", html: '<span class="brand-w">Veni<span class="x">X</span>tus QMS</span>', address: "32 Hill Street, Ferndale, Randburg, 2194", supportEmail: "Support@auditqmspro.com" /* change to the new domain when it is live */ };
 </script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>VeniXtus</title>
+<title>VeniXtus QMS</title>
 <link rel="manifest" href="manifest.json">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta name="apple-mobile-web-app-title" content="VeniXtus">
+<meta name="apple-mobile-web-app-title" content="VeniXtus QMS">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#1c2b4a">
+<meta name="theme-color" content="#211f4e">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -31,7 +31,7 @@ window.BRAND = { name: "VeniXtus", legal: "VENIXTUS (Pty) Ltd", mark: "V", addre
 /* ==========================================================================
    ohs-core.css
    Styling for OHS Act module (HIRA + Permit to Work) modals.
-   Palette pulled from the VeniXtus dashboard screenshot:
+   Palette pulled from the VeniXtus QMS dashboard screenshot:
      cream background, navy header/headings, rust/brown accents,
      serif display font, thin tan borders, pill-style secondary buttons.
    Link this in <head>, after your main styles.css.
@@ -378,6 +378,10 @@ window.BRAND = { name: "VeniXtus", legal: "VENIXTUS (Pty) Ltd", mark: "V", addre
     .headrow{padding:14px 0 18px;}
     .headrow>div:last-child{margin-top:2px;}
   }
+  .brand-w{color:#1A0F2E;font-weight:700;letter-spacing:-.01em;}
+  .brand-w .x{color:#0A7A6A;}
+  body.dark .brand-w{color:#f4f1ff;}
+  body.dark .brand-w .x{color:#2cc4ad;}
   .logo{width:44px;height:44px;border-radius:10px;background:var(--navy);display:flex;align-items:center;justify-content:center;color:#fff;font-size:17px;font-weight:700;letter-spacing:.02em;flex-shrink:0;}
   .brand h1{font-size:21px;font-weight:600;margin:0;color:var(--navy);}
   .brand p{font-size:11px;color:var(--muted);margin:2px 0 0;text-transform:uppercase;letter-spacing:.12em;}
@@ -2525,7 +2529,7 @@ async function samMakePdf(r){
   const doc = new J({unit:'pt', format:'a4'}), who = (currentUser()&&currentUser().fullName)||'Unknown user', when = new Date();
   doc.setFontSize(14); doc.text('SAMRASS data sheet — '+(r.formType||'Report'), 40, 44);
   doc.setFontSize(8.5); doc.setTextColor(150,30,30);
-  doc.text('Prepared from the VeniXtus record. NOT the official DMRE form: transcribe onto, or attach to, the current official form.', 40, 60, {maxWidth:515});
+  doc.text('Prepared from the VeniXtus QMS record. NOT the official DMRE form: transcribe onto, or attach to, the current official form.', 40, 60, {maxWidth:515});
   doc.setTextColor(0,0,0);
   const sec = (t,rows)=>{ const body = rows.filter(x=>x[1]!==undefined && x[1]!==null && String(x[1]).trim()!=='').map(x=>[x[0],String(x[1])]); if(!body.length) return; doc.autoTable({startY:(doc.lastAutoTable?doc.lastAutoTable.finalY+10:76), head:[[t,'']], body, theme:'grid', styles:{fontSize:8.5,cellPadding:3}, headStyles:{fillColor:[40,60,90]}, columnStyles:{0:{cellWidth:150,fontStyle:'bold'}}, margin:{left:40,right:40}}); };
   sec('Identification',[['Record ID',r.id],['Internal reference',r.internalRef],['Form type',r.formType],['Stage',r.status],['Mine / shaft / section',r.mineSection]]);
@@ -5138,7 +5142,7 @@ function renderCapaApprovalTab(){
 }
 
 /* ==========================================================================
-   VeniXtus â€” CAPA CONSOLIDATION BLOCK
+   VeniXtus QMS â€” CAPA CONSOLIDATION BLOCK
    --------------------------------------------------------------------------
    Paste this AFTER your existing "CAPA Approval & Appeal Workflow" section.
 
@@ -9872,7 +9876,7 @@ function renderLoginScreen(){
       <div class="card p4" style="max-width:400px;width:100%;">
         <div style="text-align:center;margin-bottom:18px;">
           <div class="logo" style="margin:0 auto 10px;">V</div>
-          <h1 class="serif" style="font-size:20px;margin:0;">VeniXtus</h1>
+          <h1 class="serif" style="font-size:22px;margin:0;">${BRAND.html}</h1>
           <p class="muted-italic" style="font-size:12px;margin-top:2px;">${title}</p>
           
         </div>
@@ -10167,7 +10171,7 @@ function render(){
         <div class="wrap headrow">
           <div class="brand">
             <div class="logo">V</div>
-            <div><h1>VeniXtus</h1><p>Integrated SHEQ Management Platform</p></div>
+            <div><h1>${BRAND.html}</h1><p>Integrated SHEQ Management Platform</p></div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             ${CLIENT_WORKSPACES_ENABLED
@@ -14534,7 +14538,7 @@ function renderQualityCycle(){
     {icon:"📋", tag:"PLAN", title:"New Audit Plan — Cycle Starts Again", items:[]}
   ];
   return `
-    <h2 class="serif" style="font-size:18px;margin:0 0 6px;">VeniXtus — Continuous Improvement Cycle</h2>
+    <h2 class="serif" style="font-size:18px;margin:0 0 6px;">VeniXtus QMS — Continuous Improvement Cycle</h2>
     <p class="muted-italic" style="font-size:12px;margin:0 0 16px;">The Plan–Do–Check–Act (PDCA) loop this app is built around.</p>
     <div>
       ${stages.map((s,i)=>`
@@ -14571,9 +14575,9 @@ function renderQualityCycle(){
 /* ---------- settings ---------- */
 const SETTINGS_SECTIONS = [
   { key:"about", label:"About", content: `
-    <p><strong>VeniXtus</strong> — Version ${APP_VERSION}</p>
-    <p>VeniXtus is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
-    <p>Built as a Progressive Web App (PWA), VeniXtus provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food & beverage, pharmaceutical, cosmetics, manufacturing, warehousing & logistics, laboratories, healthcare, and other compliance-driven environments.</p>
+    <p><strong>VeniXtus QMS</strong> — Version ${APP_VERSION}</p>
+    <p>VeniXtus QMS is a professional offline Quality Management System (QMS) designed to simplify auditing, inspections, compliance management, and Corrective and Preventive Action (CAPA) tracking. It helps organizations replace paper-based audit processes with a secure, digital, and fully offline solution.</p>
+    <p>Built as a Progressive Web App (PWA), VeniXtus QMS provides reliable access on desktops, tablets, and mobile devices without requiring a constant internet connection. It supports organizations across industries including food & beverage, pharmaceutical, cosmetics, manufacturing, warehousing & logistics, laboratories, healthcare, and other compliance-driven environments.</p>
     <p><strong>Key Features</strong></p>
     <ul>
       <li>Audit Management</li><li>Dynamic Audit Templates</li><li>CAPA Management</li>
@@ -14613,7 +14617,7 @@ const SETTINGS_SECTIONS = [
       <li>National Diploma in Food Science &amp; Nutrition — Walter Sisulu University</li>
       <li>Software Engineering Bootcamp — Stellenbosch University in partnership with HyperionDev</li>
     </ul>
-    <p>VeniXtus was developed by combining practical experience in quality assurance, food safety, and compliance with modern software engineering to provide organizations with an efficient, reliable, and user-friendly digital audit management solution.</p>
+    <p>VeniXtus QMS was developed by combining practical experience in quality assurance, food safety, and compliance with modern software engineering to provide organizations with an efficient, reliable, and user-friendly digital audit management solution.</p>
   `},
   { key:"company", label:"Company", content: `
     <p><strong>Company:</strong> VENIXTUS (Pty) Ltd</p>
@@ -14624,7 +14628,7 @@ const SETTINGS_SECTIONS = [
     <p><a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a></p>
   `},
   { key:"privacy", label:"Privacy Policy", content: `
-    <p><strong>Local data.</strong> VeniXtus is offline-first by default. Audit records, findings, CAPA records, risks, documents, client workspaces, and company settings are stored locally on your device using browser storage. This data is never sent anywhere unless you choose to use Cloud Sync (below).</p>
+    <p><strong>Local data.</strong> VeniXtus QMS is offline-first by default. Audit records, findings, CAPA records, risks, documents, client workspaces, and company settings are stored locally on your device using browser storage. This data is never sent anywhere unless you choose to use Cloud Sync (below).</p>
     <p><strong>Cloud Sync (optional).</strong> If you choose to sign in and use Cloud Sync, we collect your email address and password to create an account, and — only when you tap "Backup to Cloud" — the data for your currently active workspace is transmitted to and stored by Supabase, our database provider, hosted in the EU (Frankfurt, Germany). This is entirely optional; the app works fully offline without ever creating an account.</p>
     <p><strong>Security.</strong> Cloud-stored data is protected by database-level access rules (Row Level Security) ensuring only your own logged-in account can read or write your data. Data is transmitted over encrypted HTTPS connections.</p>
     <p><strong>Third-party resources.</strong> The app loads a small number of third-party resources over the internet: Google Fonts, the Chart.js and SheetJS libraries (for analytics charts and Excel export), and — only if Cloud Sync is used — Supabase. These providers do not receive your audit data unless you've enabled Cloud Sync as described above.</p>
@@ -14636,9 +14640,9 @@ const SETTINGS_SECTIONS = [
     <p>Questions about this policy, or requests to delete your data, can be sent to <a href="mailto:Support@auditqmspro.com">Support@auditqmspro.com</a>.</p>
   `},
   { key:"version", label:"App Version", content: `
-    <p><strong>VeniXtus — Version ${APP_VERSION}</strong></p>
+    <p><strong>VeniXtus QMS — Version ${APP_VERSION}</strong></p>
     <p style="margin-top:14px;">© 2026 VENIXTUS (Pty) Ltd. All rights reserved.</p>
-    <p>VeniXtus is proprietary software developed and maintained by VENIXTUS (Pty) Ltd. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
+    <p>VeniXtus QMS is proprietary software developed and maintained by VENIXTUS (Pty) Ltd. Unauthorized copying, modification, or distribution of this software without written permission is prohibited.</p>
   `}
 ];
 
@@ -14763,7 +14767,7 @@ function buildMetricsPrintReport(){
     </div>
     ${sectionsHtml}
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
-      Generated by VeniXtus ${APP_VERSION}
+      Generated by VeniXtus QMS ${APP_VERSION}
     </div>
   `;
 }
@@ -14907,7 +14911,7 @@ function buildMgmtReviewPrintReport(){
       </tbody></table>
     ` : `<p>No meetings logged yet.</p>`}
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
-      Generated by VeniXtus ${APP_VERSION}
+      Generated by VeniXtus QMS ${APP_VERSION}
     </div>
   `;
 }
@@ -15109,7 +15113,7 @@ async function buildAuditPrintReport(a){
       </div>
     </div>
     <div style="margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#777;text-align:center;">
-      ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by VeniXtus ${APP_VERSION}
+      ${c.footerText ? esc(c.footerText) + ' &nbsp;·&nbsp; ' : ''}${a.auditNumber?esc(a.auditNumber)+' &nbsp;·&nbsp; ':''}Generated by VeniXtus QMS ${APP_VERSION}
     </div>
   `;
 }
@@ -18104,7 +18108,7 @@ function attachHandlers(){
         if(!data.audits) throw new Error("Invalid backup file");
         if(!confirm("Restoring will replace all current audits with the backup file. Continue?")) { restoreFileInput.value = ""; return; }
         state = data; openAuditId=null; persist(); render();
-      }catch(e){ alert("Could not read this file — please check it's a valid VeniXtus backup."); }
+      }catch(e){ alert("Could not read this file — please check it's a valid VeniXtus QMS backup."); }
       restoreFileInput.value = "";
     };
     reader.readAsText(file);
@@ -18169,7 +18173,7 @@ function showUpdateBanner(){
   const banner = document.createElement('div');
   banner.id = 'update-banner';
   banner.style.cssText = 'position:fixed;bottom:0;left:0;right:0;background:#1c2b4a;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;z-index:200;font-family:sans-serif;font-size:13px;gap:10px;';
-  banner.innerHTML = '<span>A new version of VeniXtus is available.</span><button id="reload-app-btn" style="background:#fff;color:#1c2b4a;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Reload</button>';
+  banner.innerHTML = '<span>A new version of VeniXtus QMS is available.</span><button id="reload-app-btn" style="background:#fff;color:#1c2b4a;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">Reload</button>';
   document.body.appendChild(banner);
   document.getElementById('reload-app-btn').onclick = () => window.location.reload();
 }
@@ -22359,7 +22363,7 @@ function showUpdateBanner(){
         '<button onclick="window.print()">Print / Save as PDF</button>' +
         '<h1>Recall evidence pack: ' + e(c.recall_number) + '</h1><div>' + e(c.title) + '</div>' +
         '<div class="banner ' + (isMock(c) ? 'mock' : 'live') + '">' + (isMock(c) ? 'EXERCISE ONLY — NOT A LIVE RECALL' : 'LIVE EVENT') + ' · Status: ' + e(String((STATUS[c.status] || [c.status])[0])) + '</div>' +
-        '<p class="note">Generated ' + e(new Date().toLocaleString()) + (who ? ' by ' + e(who) : '') + '. This pack lists the records held in VeniXtus. Evidence files are listed with their SHA-256 fingerprints; the files themselves are downloaded separately from the recall. The classification below is the organisation’s own, not an authority’s formal classification.</p>' +
+        '<p class="note">Generated ' + e(new Date().toLocaleString()) + (who ? ' by ' + e(who) : '') + '. This pack lists the records held in VeniXtus QMS. Evidence files are listed with their SHA-256 fingerprints; the files themselves are downloaded separately from the recall. The classification below is the organisation’s own, not an authority’s formal classification.</p>' +
         '<h2>1. Decision and assessment</h2><table>' + kvr('Mode', lbl(MODE, c.mode)) + kvr('Scope of action', lbl(SCOPE, c.scope)) + kvr('Product', c.product_name) + kvr('Reason', c.reason) + kvr('Hazard', c.hazard_description) +
         kvr('Internal classification', lbl(CLASS, c.classification)) + kvr('Basis for the classification', c.classification_basis) + kvr('Vulnerable consumers', c.vulnerable_consumers ? 'Yes: ' + (c.vulnerable_note || '') : 'No') +
         kvr('Trigger', (c.source_type || '') + (c.source_note ? ' — ' + c.source_note : '')) + kvr('Linked complaint / incident', c.linked_complaint_ref) + kvr('Site / line', [c.site, c.production_line].filter(Boolean).join(' · ')) +
@@ -25298,7 +25302,7 @@ function showUpdateBanner(){
     var asTone = !site ? 'neutral' : (site.assessment === 'adequate' ? 'green' : site.assessment === 'inadequate' ? 'rust' : site.assessment === 'partly_adequate' ? 'amber' : 'neutral');
     var hist = open ? F.history.filter(function(h){ return h.map_key === key; }) : [];
     return '<div style="padding:10px 0;border-bottom:1px solid var(--line2);"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;"><div style="min-width:0;font-size:13px;"><strong>' + e(c.clause) + '</strong> — ' + e(c.title) + '</div>' +
-      '<div class="flex-wrap" style="gap:4px;">' + tag(sp[0], 'Software: ' + sp[1], 'What VeniXtus offers for this requirement across all customers. It is not a conformity rating.') + (c.v ? tag('green', 'Reference checked', 'Number and heading checked against the published text on 24 Oct 2026. Confirm against the official document before relying on it.') : tag('amber', 'Provisional', 'Not yet verified against the exact edition. Confirm before relying on it.')) + '</div></div>' +
+      '<div class="flex-wrap" style="gap:4px;">' + tag(sp[0], 'Software: ' + sp[1], 'What VeniXtus QMS offers for this requirement across all customers. It is not a conformity rating.') + (c.v ? tag('green', 'Reference checked', 'Number and heading checked against the published text on 24 Oct 2026. Confirm against the official document before relying on it.') : tag('amber', 'Provisional', 'Not yet verified against the exact edition. Confirm before relying on it.')) + '</div></div>' +
       '<div class="flex-wrap" style="margin-top:6px;gap:6px;">' + c.primary.map(function(m){ return moduleChip(m); }).join('') + c.supporting.map(function(m){ return '<span style="opacity:.6;">' + moduleChip(m) + '</span>'; }).join('') + '</div>' +
       (ev.length ? '<div class="muted-italic" style="font-size:11.5px;margin-top:4px;">Evidence to look for: ' + ev.map(e).join(' · ') + '</div>' : '') +
       '<div class="flex-wrap" style="margin-top:6px;gap:6px;align-items:center;">' + tag('neutral', 'Site: ' + impl) + tag(asTone, 'Evidence: ' + asTag) + (site ? '<span class="muted-italic" style="font-size:11px;">' + e(person(site.assessed_by)) + ' · ' + e(when(site.created_at)) + '</span>' : '') +
@@ -25312,7 +25316,7 @@ function showUpdateBanner(){
       var k = counts(), list = rows(), byStd = {};
       list.forEach(function(r){ (byStd[r.std.sid] = byStd[r.std.sid] || { std:r.std, rows:[] }).rows.push(r); });
       var out = '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px;"><h2 class="serif" style="font-size:18px;margin:0;">📐 Standards & Compliance Framework</h2></div>' +
-        '<p class="muted-italic" style="margin:0 0 6px;font-size:13px;">Maps selected requirements to supporting VeniXtus functions and evidence. Mapping does not establish conformity, legal compliance, certification or accreditation.</p>' +
+        '<p class="muted-italic" style="margin:0 0 6px;font-size:13px;">Maps selected requirements to supporting VeniXtus QMS functions and evidence. Mapping does not establish conformity, legal compliance, certification or accreditation.</p>' +
         '<p class="muted-italic" style="margin:0 0 12px;font-size:12px;">Three separate questions are shown for every requirement: what the software offers (the same for every customer), what your site has implemented, and whether someone reviewed adequate evidence. This library lists <strong>selected requirements</strong>, not the complete standards. Parent headings and detailed clauses are both listed, so the counts below are not a measure of coverage. Rows marked Provisional have not yet been verified against the exact edition.</p>' +
         (F.installed ? '' : '<div class="card p4" style="background:#fff4e5;border-color:var(--amber);margin-bottom:10px;"><p style="margin:0;font-size:12.5px;">Site assessments are not installed yet. Run fw_framework_run_this.sql in Supabase to record site implementation and evidence assessments. The mapping below still works.</p></div>') +
         '<div class="flex-wrap" style="gap:8px;margin-bottom:10px;">' + tile(k.total, 'selected requirements listed') + tile(k.avail + ' / ' + k.part + ' / ' + k.lim, 'software: available / partly / limited') + tile(k.ver + ' / ' + k.prov, 'reference checked / provisional') + tile(k.impl, 'implemented at your site') + tile(k.assessed + ' (' + k.adequate + ' adequate)', 'evidence assessed') + tile(k.notAssessed, 'not yet assessed') + '</div>' +
